@@ -1,0 +1,150 @@
+# =============================================================================
+# CS 1.6 ScoutzKnivez Server — Multi-stage Debian 12 Build
+# ReHLDS + ReGameDLL_CS + Metamod-R + AMX Mod X + ReAPI
+# =============================================================================
+
+# Pinned versions
+ARG REHLDS_VERSION=3.14.0.857
+ARG REGAMEDLL_VERSION=5.28.0.756
+ARG METAMOD_VERSION=1.3.0.149
+ARG REAPI_VERSION=5.26.0.338
+ARG AMXMODX_BUILD=5474
+
+# ---------------------------------------------------------------------------
+# Stage 1: Builder — SteamCMD + HLDS + ReHLDS stack
+# ---------------------------------------------------------------------------
+FROM debian:bookworm AS builder
+
+ARG REHLDS_VERSION
+ARG REGAMEDLL_VERSION
+ARG METAMOD_VERSION
+ARG REAPI_VERSION
+ARG AMXMODX_BUILD
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        lib32gcc-s1 \
+        lib32stdc++6 \
+        lib32z1 \
+        libc6-i386 \
+        unzip \
+        tar \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install SteamCMD
+RUN mkdir -p /opt/steamcmd && \
+    curl -fsSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
+        | tar -xz -C /opt/steamcmd
+
+# Download HLDS (app 90, steam_legacy beta)
+# Run app_update multiple times — app 90 has a known bug where it doesn't
+# download all files in a single pass
+RUN /opt/steamcmd/steamcmd.sh \
+        +force_install_dir /hlds \
+        +login anonymous \
+        +app_set_config 90 mod cstrike \
+        +app_update 90 -beta steam_legacy validate \
+        +app_update 90 -beta steam_legacy validate \
+        +app_update 90 -beta steam_legacy validate \
+        +quit
+
+WORKDIR /hlds
+
+# --- ReHLDS (engine replacement) ---
+RUN curl -fsSL "https://github.com/rehlds/ReHLDS/releases/download/${REHLDS_VERSION}/rehlds-bin-${REHLDS_VERSION}.zip" \
+        -o /tmp/rehlds.zip && \
+    unzip -o /tmp/rehlds.zip -d /tmp/rehlds && \
+    cp /tmp/rehlds/bin/linux32/engine_i486.so \
+       /tmp/rehlds/bin/linux32/hlds_linux \
+       /tmp/rehlds/bin/linux32/core.so \
+       /tmp/rehlds/bin/linux32/filesystem_stdio.so \
+       /tmp/rehlds/bin/linux32/demoplayer.so \
+       . && \
+    rm -rf /tmp/rehlds /tmp/rehlds.zip
+
+# --- ReGameDLL_CS (game DLL replacement) ---
+RUN curl -fsSL "https://github.com/rehlds/ReGameDLL_CS/releases/download/${REGAMEDLL_VERSION}/regamedll-bin-${REGAMEDLL_VERSION}.zip" \
+        -o /tmp/regamedll.zip && \
+    unzip -o /tmp/regamedll.zip -d /tmp/regamedll && \
+    cp /tmp/regamedll/bin/linux32/cstrike/dlls/cs.so cstrike/dlls/cs.so && \
+    rm -rf /tmp/regamedll /tmp/regamedll.zip
+
+# --- Metamod-R ---
+RUN curl -fsSL "https://github.com/rehlds/Metamod-R/releases/download/${METAMOD_VERSION}/metamod-bin-${METAMOD_VERSION}.zip" \
+        -o /tmp/metamod.zip && \
+    unzip -o /tmp/metamod.zip -d /tmp/metamod && \
+    mkdir -p cstrike/addons/metamod && \
+    cp /tmp/metamod/addons/metamod/metamod_i386.so cstrike/addons/metamod/ && \
+    cp /tmp/metamod/addons/metamod/config.ini cstrike/addons/metamod/ && \
+    rm -rf /tmp/metamod /tmp/metamod.zip
+
+# --- AMX Mod X (base + cstrike addon) ---
+RUN curl -fsSL "https://www.amxmodx.org/amxxdrop/1.10/amxmodx-1.10.0-git${AMXMODX_BUILD}-base-linux.tar.gz" \
+        -o /tmp/amxmodx-base.tar.gz && \
+    curl -fsSL "https://www.amxmodx.org/amxxdrop/1.10/amxmodx-1.10.0-git${AMXMODX_BUILD}-cstrike-linux.tar.gz" \
+        -o /tmp/amxmodx-cs.tar.gz && \
+    tar -xzf /tmp/amxmodx-base.tar.gz -C cstrike/ && \
+    tar -xzf /tmp/amxmodx-cs.tar.gz -C cstrike/ && \
+    rm -f /tmp/amxmodx-base.tar.gz /tmp/amxmodx-cs.tar.gz
+
+# --- ReAPI (AMX Mod X module for ReHLDS/ReGameDLL API) ---
+RUN curl -fsSL "https://github.com/rehlds/ReAPI/releases/download/${REAPI_VERSION}/reapi-bin-${REAPI_VERSION}.zip" \
+        -o /tmp/reapi.zip && \
+    unzip -o /tmp/reapi.zip -d /tmp/reapi && \
+    cp /tmp/reapi/addons/amxmodx/modules/reapi_amxx_i386.so \
+       cstrike/addons/amxmodx/modules/ && \
+    cp /tmp/reapi/addons/amxmodx/scripting/include/*.inc \
+       cstrike/addons/amxmodx/scripting/include/ 2>/dev/null || true && \
+    rm -rf /tmp/reapi /tmp/reapi.zip
+
+# Compile scoutzknivez plugin
+COPY plugins/amxmodx/scripting/scoutzknivez.sma \
+     cstrike/addons/amxmodx/scripting/scoutzknivez.sma
+RUN cd cstrike/addons/amxmodx/scripting && \
+    chmod +x amxxpc compile.sh && \
+    ./amxxpc scoutzknivez.sma && \
+    mv scoutzknivez.amxx ../plugins/
+
+# Copy config files into image
+COPY config/server.cfg     cstrike/server.cfg
+COPY config/mapcycle.txt   cstrike/mapcycle.txt
+COPY config/autoexec.cfg   cstrike/autoexec.cfg
+COPY config/liblist.gam    cstrike/liblist.gam
+COPY plugins/metamod/plugins.ini   cstrike/addons/metamod/plugins.ini
+COPY plugins/amxmodx/plugins.ini   cstrike/addons/amxmodx/configs/plugins.ini
+
+# Ensure binaries are executable
+RUN chmod +x hlds_linux hlds_run
+
+# ---------------------------------------------------------------------------
+# Stage 2: Runtime — clean slim image, no build tools
+# ---------------------------------------------------------------------------
+FROM debian:bookworm-slim AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        lib32gcc-s1 \
+        lib32stdc++6 \
+        lib32z1 \
+        libc6-i386 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -s /bin/bash hlds
+
+COPY --from=builder --chown=hlds:hlds /hlds /hlds
+COPY --chmod=755 entrypoint.sh /entrypoint.sh
+
+USER hlds
+WORKDIR /hlds
+
+EXPOSE 27015/udp 27015/tcp
+
+ENTRYPOINT ["/entrypoint.sh"]

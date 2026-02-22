@@ -1,0 +1,8 @@
+# Map files (large, mount via volume)
+maps/*.bsp
+maps/*.nav
+maps/*.res
+!maps/.gitkeep
+
+# Compiled plugins (built in container)
+*.amxx
