@@ -4,6 +4,7 @@ set -e
 MAP="${MAP:-scoutzknivez}"
 MAXPLAYERS="${MAXPLAYERS:-20}"
 PORT="${PORT:-27015}"
+BOTS="${BOTS:-1}"
 
 # hlds_linux needs libs from its own directory (normally set by hlds_run)
 export LD_LIBRARY_PATH=".:$LD_LIBRARY_PATH"
@@ -50,12 +51,19 @@ trap graceful_shutdown SIGTERM SIGINT
 
 mkfifo "$FIFO"
 
+if [ "$BOTS" = "1" ]; then
+    BOT_QUOTA_ARGS=(+bot_quota 10)
+else
+    BOT_QUOTA_ARGS=(+bot_quota 0)
+fi
+
 ./hlds_linux \
     -game cstrike \
     +map "$MAP" \
     +maxplayers "$MAXPLAYERS" \
     +port "$PORT" \
     -pingboost 2 \
+    "${BOT_QUOTA_ARGS[@]}" \
     +exec server.cfg < "$FIFO" &
 HLDS_PID=$!
 
