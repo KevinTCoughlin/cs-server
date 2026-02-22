@@ -102,6 +102,9 @@ RUN curl -fsSL "https://github.com/rehlds/ReAPI/releases/download/${REAPI_VERSIO
        cstrike/addons/amxmodx/scripting/include/ 2>/dev/null || true && \
     rm -rf /tmp/reapi /tmp/reapi.zip
 
+# Copy custom maps
+COPY maps/*.bsp cstrike/maps/
+
 # Compile scoutzknivez plugin
 COPY plugins/amxmodx/scripting/scoutzknivez.sma \
      cstrike/addons/amxmodx/scripting/scoutzknivez.sma
