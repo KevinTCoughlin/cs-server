@@ -179,6 +179,9 @@ td code{color:#fff}
   color:var(--bg);
   text-decoration:none;
 }
+.gh-link[href*="ko-fi"]:hover{
+  background:var(--green);
+}
 
 /* Footer */
 footer{
@@ -274,13 +277,52 @@ footer{
     <tr><td><code>MAP</code></td><td><code>scoutzknivez</code></td><td>Starting map name</td></tr>
     <tr><td><code>MAXPLAYERS</code></td><td><code>20</code></td><td>Maximum player slots</td></tr>
     <tr><td><code>PORT</code></td><td><code>27015</code></td><td>Server listen port</td></tr>
+    <tr><td><code>BOTS</code></td><td><code>1</code></td><td>Enable bots (1=on, 0=off)</td></tr>
   </tbody>
 </table>
+</section>
+
+<section>
+<h2>// Bots</h2>
+<p style="font-size:0.85rem;margin-bottom:1rem">Bots are enabled by default using ReGameDLL_CS's built-in ZBot support. 10 bots fill the server automatically — no human player required to start.</p>
+<table>
+  <thead>
+    <tr><th>Cvar</th><th>Value</th><th>Effect</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>bot_quota</code></td><td><code>10</code></td><td>Target number of bots</td></tr>
+    <tr><td><code>bot_quota_mode</code></td><td><code>fill</code></td><td>Bots fill empty slots; leave as humans join</td></tr>
+    <tr><td><code>bot_difficulty</code></td><td><code>1</code></td><td>Normal difficulty</td></tr>
+    <tr><td><code>bot_join_after_player</code></td><td><code>0</code></td><td>Bots join immediately</td></tr>
+    <tr><td><code>bot_auto_vacate</code></td><td><code>1</code></td><td>Bots leave to make room for humans</td></tr>
+  </tbody>
+</table>
+</section>
+
+<section>
+<h2>// Production (Quadlet)</h2>
+<p style="font-size:0.85rem;margin-bottom:1rem">Run as a rootless Podman Quadlet unit managed by systemd for auto-start, crash recovery, and graceful shutdown.</p>
+<pre><span class="prompt">$</span> <span class="cmd">podman compose up --build -d && podman compose down</span>
+<span class="prompt">$</span> <span class="cmd">systemctl --user daemon-reload</span>
+<span class="prompt">$</span> <span class="cmd">systemctl --user start scoutzknivez</span></pre>
+<p style="font-size:0.85rem;margin-top:1rem">On shutdown, players see a 30-second countdown before the server stops cleanly.</p>
+</section>
+
+<section>
+<h2>// Security</h2>
+<ul class="stack-list">
+  <li><span class="name">Read-only filesystem</span><span class="desc">Immutable root, only /tmp writable</span></li>
+  <li><span class="name">No capabilities</span><span class="desc">All Linux capabilities dropped</span></li>
+  <li><span class="name">Resource limits</span><span class="desc">512 MB memory, 2 CPU cores max</span></li>
+  <li><span class="name">Query rate limiting</span><span class="desc">Anti-amplification via sv_max_queries_sec</span></li>
+  <li><span class="name">RCON lockout</span><span class="desc">5 failures = 60 min ban</span></li>
+</ul>
 </section>
 
 <section style="text-align:center">
 <h2>// Source</h2>
 <a class="gh-link" href="https://github.com/KevinTCoughlin/cs-server">View on GitHub</a>
+<a class="gh-link" href="https://ko-fi.com/kevintcoughlin" style="margin-left:0.75rem;border-color:var(--green);color:var(--green)">Support on Ko-fi</a>
 </section>
 
 <footer>

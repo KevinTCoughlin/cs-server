@@ -77,7 +77,7 @@ The bot configuration in `config/server.cfg` keeps the server populated when hum
 | `bot_quota` | 10 | Target number of bots to maintain |
 | `bot_quota_mode` | `fill` | Bots fill empty slots; leave as humans join |
 | `bot_difficulty` | 1 | Normal difficulty |
-| `bot_join_after_player` | 1 | Bots join only after a human player connects |
+| `bot_join_after_player` | 0 | Bots join immediately (no human player required) |
 | `bot_auto_vacate` | 1 | Bots leave automatically to make room for humans |
 | `bot_allow_rogues` | 0 | Bots follow orders |
 | `bot_knives_only` | 0 | Bots use normal weapons (scoutzknivez plugin handles stripping) |
@@ -169,7 +169,6 @@ Rate limiting and anti-abuse cvars in `server.cfg`:
 |------|-------|---------|
 | `sv_max_queries_sec` | 3 | Rate-limit server info queries (anti-amplification) |
 | `sv_max_queries_window` | 30 | Query rate window in seconds |
-| `sv_enableoldqueries` | 0 | Disable legacy query protocol |
 | `sv_rcon_maxfailures` | 5 | Lock RCON after 5 bad attempts |
 | `sv_rcon_banpenalty` | 60 | 60 minute RCON ban on failure |
 
