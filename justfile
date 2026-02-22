@@ -47,6 +47,22 @@ shellcheck:
 # Run all checks
 check: lint shellcheck
 
+# Exec into running container
+shell:
+    podman exec -it scoutzknivez bash || podman exec -it scoutzknivez sh
+
+# Send RCON command to server via FIFO
+rcon cmd:
+    podman exec scoutzknivez sh -c 'echo "{{cmd}}" > /tmp/hlds-input'
+
+# Restart Quadlet service
+restart:
+    systemctl --user restart scoutzknivez
+
+# View Quadlet service journal logs
+journal:
+    journalctl --user -u scoutzknivez -f
+
 # Remove built images
 clean:
     podman rmi localhost/cs-server:latest 2>/dev/null || true
