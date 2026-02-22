@@ -42,6 +42,10 @@ graceful_shutdown() {
 
         echo "[entrypoint] Sending quit command to HLDS"
         hlds_command "quit"
+        sleep 2
+
+        # hlds_run's restart loop will try to respawn — kill the pipeline
+        kill $SCRIPT_PID 2>/dev/null || true
     fi
 
     wait "$SCRIPT_PID" 2>/dev/null || true
@@ -56,14 +60,16 @@ else
     BOT_QUOTA_ARGS="+bot_quota 0"
 fi
 
-# Use 'script' to give hlds_linux a PTY — without a PTY, hlds_linux
-# does blocking reads on stdin which freezes the game loop.
-# tail -f keeps the FIFO open; script allocates the PTY.
-tail -f "$FIFO" | script -qfc "./hlds_linux \
+# Use 'script' to give hlds a PTY — without a PTY, hlds_linux does
+# blocking reads on stdin which freezes the game loop.
+# hlds_run handles Steam API init (first crash + auto-restart creates
+# the IPC state needed for the second run to accept players).
+tail -f "$FIFO" | script -qfc "./hlds_run \
     -game cstrike \
     +map $MAP \
     +maxplayers $MAXPLAYERS \
     +port $PORT \
+    +sv_lan 1 \
     -pingboost 2 \
     +exec server.cfg \
     $BOT_QUOTA_ARGS" /dev/null &
