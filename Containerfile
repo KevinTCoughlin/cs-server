@@ -26,6 +26,9 @@ ARG AMXMODX_BUILD
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# hadolint ignore=DL3008
 RUN dpkg --add-architecture i386 && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -112,10 +115,11 @@ COPY maps/*.nav cstrike/maps/
 # Compile scoutzknivez plugin
 COPY plugins/amxmodx/scripting/scoutzknivez.sma \
      cstrike/addons/amxmodx/scripting/scoutzknivez.sma
-RUN cd cstrike/addons/amxmodx/scripting && \
-    chmod +x amxxpc compile.sh && \
+WORKDIR /hlds/cstrike/addons/amxmodx/scripting
+RUN chmod +x amxxpc compile.sh && \
     ./amxxpc scoutzknivez.sma && \
     mv scoutzknivez.amxx ../plugins/
+WORKDIR /hlds
 
 # --- CZ Bots (ZBot profiles + sounds from ReGameDLL_CS) ---
 RUN curl -fsSL "https://raw.githubusercontent.com/rehlds/ReGameDLL_CS/refs/heads/master/regamedll/extra/zBot/bot_profiles.zip" \
@@ -132,11 +136,9 @@ COPY config/liblist.gam    cstrike/liblist.gam
 COPY plugins/metamod/plugins.ini   cstrike/addons/metamod/plugins.ini
 COPY plugins/amxmodx/plugins.ini   cstrike/addons/amxmodx/configs/plugins.ini
 
-# Ensure binaries are executable
-RUN chmod +x hlds_linux hlds_run
-
-# Required for Steam API init — without this, hlds_linux crashes on first start
-RUN echo 70 > steam_appid.txt
+# Ensure binaries are executable and set Steam app ID
+RUN chmod +x hlds_linux hlds_run && \
+    echo 70 > steam_appid.txt
 
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime — clean slim image, no build tools
@@ -145,6 +147,9 @@ FROM debian:bookworm-slim AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# hadolint ignore=DL3008
 RUN dpkg --add-architecture i386 && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -155,10 +160,10 @@ RUN dpkg --add-architecture i386 && \
     && rm -rf /var/lib/apt/lists/* \
               /var/log/dpkg.log \
               /var/log/apt \
-    && find /usr/share/doc -mindepth 1 -delete 2>/dev/null || true \
-    && find /usr/share/man -mindepth 1 -delete 2>/dev/null || true \
-    && find /usr/share/locale -mindepth 1 ! -name 'en*' -delete 2>/dev/null || true \
-    && find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
+    && (find /usr/share/doc -mindepth 1 -delete 2>/dev/null || true) \
+    && (find /usr/share/man -mindepth 1 -delete 2>/dev/null || true) \
+    && (find /usr/share/locale -mindepth 1 ! -name 'en*' -delete 2>/dev/null || true) \
+    && (find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true)
 
 RUN useradd --no-log-init -r -s /usr/sbin/nologin hlds
 
