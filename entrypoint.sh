@@ -63,8 +63,8 @@ fi
     +maxplayers "$MAXPLAYERS" \
     +port "$PORT" \
     -pingboost 2 \
-    "${BOT_QUOTA_ARGS[@]}" \
-    +exec server.cfg < "$FIFO" &
+    +exec server.cfg \
+    "${BOT_QUOTA_ARGS[@]}" < "$FIFO" &
 HLDS_PID=$!
 
 # Open write end of FIFO (completes the handshake, unblocks hlds_linux)
