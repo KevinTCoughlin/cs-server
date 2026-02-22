@@ -14,14 +14,14 @@ Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack.
 
 ### 1. Add maps
 
-Place `scoutzknivez.bsp` (and any other scoutzknivez maps) into the `maps/` directory.
+Place `.bsp` files into the `maps/` directory. They get baked into the image at build time.
 
 Maps are not included in the repo due to file size. You can find them on sites like [GameBanana](https://gamebanana.com/mods/cats/5568) or [17buddies](https://www.17buddies.rocks/).
 
 ### 2. Build and run
 
 ```bash
-podman-compose up --build
+podman compose up --build
 ```
 
 The server starts on port **27015**. Connect with your CS 1.6 client:
@@ -79,4 +79,8 @@ Then in-game: `rcon_password your_password_here` followed by `rcon <command>`.
 
 1. Write `.sma` source in `plugins/amxmodx/scripting/`
 2. Add the compiled `.amxx` filename to `plugins/amxmodx/plugins.ini`
-3. Rebuild: `podman-compose up --build`
+3. Rebuild: `podman compose up --build`
+
+## License
+
+[MIT](LICENSE)

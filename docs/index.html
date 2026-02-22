@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CS 1.6 ScoutzKnivez Server</title>
+<meta name="description" content="Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0c0e;
+  --surface:#141418;
+  --border:#2a2a32;
+  --text:#c8c8d0;
+  --text-dim:#787882;
+  --accent:#ff8c00;
+  --accent-dim:#b36200;
+  --green:#4ec94e;
+  --red:#d04040;
+}
+html{font-size:16px;scroll-behavior:smooth}
+body{
+  font-family:"Courier New",Courier,"Lucida Console",monospace;
+  background:var(--bg);
+  color:var(--text);
+  line-height:1.6;
+  min-height:100vh;
+}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+.container{
+  max-width:760px;
+  margin:0 auto;
+  padding:2rem 1.5rem;
+}
+
+/* Header */
+header{
+  text-align:center;
+  padding:3rem 0 2rem;
+  border-bottom:1px solid var(--border);
+  margin-bottom:2rem;
+}
+.logo{
+  font-size:0.85rem;
+  color:var(--text-dim);
+  letter-spacing:0.05em;
+  white-space:pre;
+  line-height:1.2;
+  margin-bottom:1.5rem;
+  display:inline-block;
+  text-align:left;
+}
+h1{
+  font-size:1.6rem;
+  color:#fff;
+  letter-spacing:0.04em;
+  margin-bottom:0.5rem;
+}
+.tagline{
+  color:var(--text-dim);
+  font-size:0.85rem;
+}
+
+/* Sections */
+section{margin-bottom:2.5rem}
+h2{
+  font-size:1rem;
+  color:var(--accent);
+  text-transform:uppercase;
+  letter-spacing:0.1em;
+  margin-bottom:1rem;
+  padding-bottom:0.4rem;
+  border-bottom:1px solid var(--border);
+}
+
+/* Connect box */
+.connect-box{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-left:3px solid var(--green);
+  padding:1rem 1.25rem;
+  margin-bottom:0.75rem;
+}
+.connect-box .label{
+  font-size:0.75rem;
+  color:var(--text-dim);
+  text-transform:uppercase;
+  letter-spacing:0.08em;
+  margin-bottom:0.25rem;
+}
+.connect-box code{
+  color:#fff;
+  font-size:1rem;
+}
+.connect-note{
+  font-size:0.8rem;
+  color:var(--text-dim);
+}
+
+/* Stack list */
+.stack-list{list-style:none}
+.stack-list li{
+  padding:0.5rem 0;
+  border-bottom:1px solid var(--border);
+  font-size:0.85rem;
+}
+.stack-list li:last-child{border-bottom:none}
+.stack-list .name{color:#fff;font-weight:bold}
+.stack-list .ver{color:var(--accent-dim);margin-left:0.25rem}
+.stack-list .desc{color:var(--text-dim);display:block;margin-top:0.15rem}
+
+/* Code blocks */
+pre{
+  background:var(--surface);
+  border:1px solid var(--border);
+  padding:1rem 1.25rem;
+  overflow-x:auto;
+  font-size:0.85rem;
+  line-height:1.5;
+}
+pre .prompt{color:var(--green);user-select:none}
+pre .cmd{color:#fff}
+pre .comment{color:var(--text-dim)}
+
+/* Tables */
+table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:0.82rem;
+}
+th,td{
+  text-align:left;
+  padding:0.5rem 0.75rem;
+  border:1px solid var(--border);
+}
+th{
+  background:var(--surface);
+  color:var(--accent);
+  text-transform:uppercase;
+  font-size:0.72rem;
+  letter-spacing:0.06em;
+}
+td{background:var(--bg)}
+td code{color:#fff}
+
+/* Steps */
+.steps{list-style:none;counter-reset:step}
+.steps li{
+  counter-increment:step;
+  padding:0.6rem 0;
+  padding-left:2rem;
+  position:relative;
+  font-size:0.85rem;
+}
+.steps li::before{
+  content:counter(step);
+  position:absolute;
+  left:0;
+  color:var(--accent);
+  font-weight:bold;
+  width:1.4rem;
+  text-align:center;
+}
+
+/* GitHub link */
+.gh-link{
+  display:inline-block;
+  padding:0.6rem 1.5rem;
+  border:1px solid var(--accent);
+  color:var(--accent);
+  font-size:0.85rem;
+  letter-spacing:0.04em;
+  transition:background 0.15s,color 0.15s;
+}
+.gh-link:hover{
+  background:var(--accent);
+  color:var(--bg);
+  text-decoration:none;
+}
+
+/* Footer */
+footer{
+  border-top:1px solid var(--border);
+  padding-top:1.5rem;
+  margin-top:2rem;
+  text-align:center;
+  font-size:0.75rem;
+  color:var(--text-dim);
+}
+
+/* Responsive */
+@media(max-width:500px){
+  .container{padding:1.25rem 1rem}
+  header{padding:2rem 0 1.5rem}
+  h1{font-size:1.3rem}
+  .logo{font-size:0.65rem}
+  table{font-size:0.75rem}
+  th,td{padding:0.4rem 0.5rem}
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+<div class="logo" aria-hidden="true">   _____ ____       _  __       _
+  / ___// __/      | |/ /____  (_)   _____  ____
+  \__ \/ /__  _____| / // __ \/ / | / / _ \/_  /
+ ___/ / /___/_____/  / / / / / /| |/ /  __/ / /_
+/____/_/         /_/|_/_/ /_/_/ |___/\___/ /___/</div>
+<h1>CS 1.6 ScoutzKnivez Server</h1>
+<p class="tagline">Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack</p>
+</header>
+
+<section>
+<h2>// Quick Connect</h2>
+<div class="connect-box">
+  <div class="label">Console Command</div>
+  <code>connect &lt;your-ip&gt;:27015</code>
+</div>
+<p class="connect-note">Default port: <strong style="color:#fff">27015</strong> (UDP + TCP). Replace &lt;your-ip&gt; with your server's LAN or public IP.</p>
+</section>
+
+<section>
+<h2>// Stack</h2>
+<ul class="stack-list">
+  <li><span class="name">ReHLDS</span><span class="ver">3.14.0.857</span><span class="desc">Reverse-engineered HLDS engine</span></li>
+  <li><span class="name">ReGameDLL_CS</span><span class="ver">5.28.0.756</span><span class="desc">Reverse-engineered game DLL</span></li>
+  <li><span class="name">Metamod-R</span><span class="ver">1.3.0.149</span><span class="desc">Plugin loader</span></li>
+  <li><span class="name">AMX Mod X</span><span class="ver">1.10</span><span class="desc">Server-side scripting platform</span></li>
+  <li><span class="name">ReAPI</span><span class="ver">5.26.0.338</span><span class="desc">Extended API for ReHLDS/ReGameDLL</span></li>
+</ul>
+</section>
+
+<section>
+<h2>// Quick Start</h2>
+<ol class="steps">
+  <li>Clone the repository</li>
+  <li>Add your <code style="color:#fff">scoutzknivez.bsp</code> map file to <code style="color:#fff">maps/</code></li>
+  <li>Build and launch the server</li>
+</ol>
+<pre><span class="prompt">$</span> <span class="cmd">git clone https://github.com/KevinTCoughlin/cs-server.git</span>
+<span class="prompt">$</span> <span class="cmd">cd cs-server</span>
+<span class="comment"># place scoutzknivez.bsp into maps/</span>
+<span class="prompt">$</span> <span class="cmd">podman compose up --build</span></pre>
+</section>
+
+<section>
+<h2>// Game Settings</h2>
+<table>
+  <thead>
+    <tr><th>Setting</th><th>Value</th><th>Effect</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>sv_gravity</code></td><td><code>240</code></td><td>Low gravity (default 800)</td></tr>
+    <tr><td><code>sv_airaccelerate</code></td><td><code>100</code></td><td>High air control</td></tr>
+    <tr><td><code>mp_freezetime</code></td><td><code>0</code></td><td>No freeze on round start</td></tr>
+    <tr><td><code>mp_buytime</code></td><td><code>0</code></td><td>No buy menu</td></tr>
+    <tr><td><code>mp_roundtime</code></td><td><code>3</code></td><td>3 minute rounds</td></tr>
+    <tr><td><code>mp_startmoney</code></td><td><code>16000</code></td><td>Max starting money</td></tr>
+  </tbody>
+</table>
+</section>
+
+<section>
+<h2>// Environment Variables</h2>
+<table>
+  <thead>
+    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>MAP</code></td><td><code>scoutzknivez</code></td><td>Starting map name</td></tr>
+    <tr><td><code>MAXPLAYERS</code></td><td><code>20</code></td><td>Maximum player slots</td></tr>
+    <tr><td><code>PORT</code></td><td><code>27015</code></td><td>Server listen port</td></tr>
+  </tbody>
+</table>
+</section>
+
+<section style="text-align:center">
+<h2>// Source</h2>
+<a class="gh-link" href="https://github.com/KevinTCoughlin/cs-server">View on GitHub</a>
+</section>
+
+<footer>
+  <p>Released under the MIT License.</p>
+  <p style="margin-top:0.3rem">CS 1.6 ScoutzKnivez Server &mdash; <a href="https://github.com/KevinTCoughlin/cs-server">github.com/KevinTCoughlin/cs-server</a></p>
+</footer>
+
+</div>
+</body>
+</html>
