@@ -16,6 +16,7 @@ Environment=BOTS=1
 DropCapability=ALL
 NoNewPrivileges=true
 StopTimeout=50
+Notify=healthy
 
 [Service]
 Restart=on-failure
