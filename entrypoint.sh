@@ -10,22 +10,21 @@ BOTS="${BOTS:-1}"
 export LD_LIBRARY_PATH=".:$LD_LIBRARY_PATH"
 
 FIFO=/tmp/hlds-input
-HLDS_PID=
+SCRIPT_PID=
 
 cleanup() {
-    exec 3>&- 2>/dev/null
     rm -f "$FIFO"
 }
 trap cleanup EXIT
 
 hlds_command() {
-    echo "$1" >&3
+    echo "$1" > "$FIFO"
 }
 
 graceful_shutdown() {
     echo "[entrypoint] Caught shutdown signal, starting graceful shutdown..."
 
-    if [ -n "$HLDS_PID" ] && kill -0 "$HLDS_PID" 2>/dev/null; then
+    if [ -n "$SCRIPT_PID" ] && kill -0 "$SCRIPT_PID" 2>/dev/null; then
         hlds_command "say [SERVER] Shutting down in 30 seconds..."
         sleep 20
 
@@ -45,31 +44,31 @@ graceful_shutdown() {
         hlds_command "quit"
     fi
 
-    wait "$HLDS_PID" 2>/dev/null || true
+    wait "$SCRIPT_PID" 2>/dev/null || true
 }
 trap graceful_shutdown SIGTERM SIGINT
 
 mkfifo "$FIFO"
 
 if [ "$BOTS" = "1" ]; then
-    BOT_QUOTA_ARGS=(+bot_quota 10)
+    BOT_QUOTA_ARGS="+bot_quota 10"
 else
-    BOT_QUOTA_ARGS=(+bot_quota 0)
+    BOT_QUOTA_ARGS="+bot_quota 0"
 fi
 
-./hlds_linux \
+# Use 'script' to give hlds_linux a PTY — without a PTY, hlds_linux
+# does blocking reads on stdin which freezes the game loop.
+# tail -f keeps the FIFO open; script allocates the PTY.
+tail -f "$FIFO" | script -qfc "./hlds_linux \
     -game cstrike \
-    +map "$MAP" \
-    +maxplayers "$MAXPLAYERS" \
-    +port "$PORT" \
+    +map $MAP \
+    +maxplayers $MAXPLAYERS \
+    +port $PORT \
     -pingboost 2 \
     +exec server.cfg \
-    "${BOT_QUOTA_ARGS[@]}" < "$FIFO" &
-HLDS_PID=$!
+    $BOT_QUOTA_ARGS" /dev/null &
+SCRIPT_PID=$!
 
-# Open write end of FIFO (completes the handshake, unblocks hlds_linux)
-exec 3>"$FIFO"
+echo "[entrypoint] HLDS started (PID: $SCRIPT_PID)"
 
-echo "[entrypoint] HLDS started (PID: $HLDS_PID)"
-
-wait "$HLDS_PID" || true
+wait "$SCRIPT_PID" || true
