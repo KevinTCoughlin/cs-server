@@ -1,0 +1,26 @@
+[Unit]
+Description=CS 1.6 ScoutzKnivez Server
+After=network-online.target
+
+[Container]
+Image=localhost/cs-server:latest
+ContainerName=scoutzknivez
+PublishPort=27015:27015/udp
+PublishPort=27015:27015/tcp
+Volume=%h/Development/cs-server/config/server.cfg:/hlds/cstrike/server.cfg:ro
+Volume=%h/Development/cs-server/config/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro
+Environment=MAP=scoutzknivez
+Environment=MAXPLAYERS=20
+Environment=PORT=27015
+Environment=BOTS=1
+ReadOnly=true
+DropCapability=ALL
+Tmpfs=/tmp
+StopTimeout=50
+
+[Service]
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

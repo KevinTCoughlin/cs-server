@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+
 #include <amxmodx>
 #include <cstrike>
 #include <fun>

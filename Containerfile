@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
 # =============================================================================
 # CS 1.6 ScoutzKnivez Server — Multi-stage Debian 12 Build
 # ReHLDS + ReGameDLL_CS + Metamod-R + AMX Mod X + ReAPI
@@ -156,9 +159,18 @@ RUN useradd -m -s /bin/bash hlds
 COPY --from=builder --chown=hlds:hlds /hlds /hlds
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 
+LABEL org.opencontainers.image.title="CS 1.6 ScoutzKnivez Server" \
+      org.opencontainers.image.description="Containerized Counter-Strike 1.6 ScoutzKnivez server using the ReHLDS stack" \
+      org.opencontainers.image.source="https://github.com/KevinTCoughlin/cs-server" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="KevinTCoughlin"
+
 USER hlds
 WORKDIR /hlds
 
 EXPOSE 27015/udp 27015/tcp
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD pgrep -x hlds_linux > /dev/null || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]

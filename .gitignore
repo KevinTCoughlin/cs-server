@@ -6,3 +6,6 @@ maps/*.res
 
 # Compiled plugins (built in container)
 *.amxx
+
+# Environment variables
+.env
