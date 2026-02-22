@@ -1,0 +1,10 @@
+.git
+.github
+.editorconfig
+.env
+.env.example
+*.md
+!README.md
+justfile
+quadlet
+docs

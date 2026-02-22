@@ -152,9 +152,15 @@ RUN dpkg --add-architecture i386 && \
         lib32stdc++6 \
         lib32z1 \
         libc6-i386 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+              /var/log/dpkg.log \
+              /var/log/apt \
+    && find /usr/share/doc -mindepth 1 -delete 2>/dev/null || true \
+    && find /usr/share/man -mindepth 1 -delete 2>/dev/null || true \
+    && find /usr/share/locale -mindepth 1 ! -name 'en*' -delete 2>/dev/null || true \
+    && find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
 
-RUN useradd -m -s /bin/bash hlds
+RUN useradd --no-log-init -r -s /usr/sbin/nologin hlds
 
 COPY --from=builder --chown=hlds:hlds /hlds /hlds
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
@@ -171,6 +177,6 @@ WORKDIR /hlds
 EXPOSE 27015/udp 27015/tcp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD pgrep -x hlds_linux > /dev/null || exit 1
+    CMD grep -qs hlds_linux /proc/[0-9]*/comm || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]

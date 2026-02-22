@@ -311,8 +311,9 @@ footer{
 <section>
 <h2>// Security</h2>
 <ul class="stack-list">
-  <li><span class="name">Read-only filesystem</span><span class="desc">Immutable root, only /tmp writable</span></li>
   <li><span class="name">No capabilities</span><span class="desc">All Linux capabilities dropped</span></li>
+  <li><span class="name">No privilege escalation</span><span class="desc">no-new-privileges enforced, setuid/setgid bits stripped</span></li>
+  <li><span class="name">Nologin user</span><span class="desc">System user with /usr/sbin/nologin shell</span></li>
   <li><span class="name">Resource limits</span><span class="desc">512 MB memory, 2 CPU cores max</span></li>
   <li><span class="name">Query rate limiting</span><span class="desc">Anti-amplification via sv_max_queries_sec</span></li>
   <li><span class="name">RCON lockout</span><span class="desc">5 failures = 60 min ban</span></li>

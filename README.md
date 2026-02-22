@@ -157,8 +157,10 @@ The Quadlet is configured with `WantedBy=default.target`, so the server starts a
 
 ### Container Hardening
 
-- **Read-only root filesystem** — container runs with `ReadOnly=true`, only `/tmp` is writable (for the shutdown FIFO)
 - **No Linux capabilities** — all capabilities dropped via `DropCapability=ALL`
+- **No privilege escalation** — `NoNewPrivileges=true` prevents gaining new privileges via setuid/setgid binaries
+- **System user with nologin shell** — HLDS runs as a system user (`-r`) with `/usr/sbin/nologin`, preventing interactive login
+- **Setuid/setgid bits stripped** — all setuid/setgid bits removed from the runtime image
 - **Resource limits** — `MemoryMax=512M`, `CPUQuota=200%` (2 cores max)
 
 ### HLDS Anti-Abuse
