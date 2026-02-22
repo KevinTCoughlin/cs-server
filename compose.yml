@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Containerfile
+    image: localhost/cs-server:latest
     container_name: scoutzknivez
     ports:
       - "27015:27015/udp"
@@ -14,4 +15,5 @@ services:
       - MAXPLAYERS=20
       - MAP=scoutzknivez
       - PORT=27015
+    stop_grace_period: 50s
     restart: unless-stopped

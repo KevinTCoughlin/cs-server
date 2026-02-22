@@ -81,6 +81,90 @@ Then in-game: `rcon_password your_password_here` followed by `rcon <command>`.
 2. Add the compiled `.amxx` filename to `plugins/amxmodx/plugins.ini`
 3. Rebuild: `podman compose up --build`
 
+## Production Deployment (Quadlet)
+
+The server runs as a rootless Podman Quadlet unit managed by systemd.
+
+### Setup
+
+```bash
+# Build the image (tags as localhost/cs-server:latest)
+podman compose up --build -d && podman compose down
+
+# Reload systemd and start
+systemctl --user daemon-reload
+systemctl --user start scoutzknivez
+```
+
+### Lifecycle
+
+```bash
+systemctl --user start scoutzknivez     # start
+systemctl --user stop scoutzknivez      # graceful stop (30s countdown)
+systemctl --user restart scoutzknivez   # restart
+systemctl --user status scoutzknivez    # check status
+podman logs -f scoutzknivez             # follow logs
+```
+
+### Rebuild Workflow
+
+```bash
+podman compose up --build -d && podman compose down
+systemctl --user restart scoutzknivez
+```
+
+### Graceful Shutdown
+
+When the server receives a stop signal, it announces the shutdown to connected players:
+
+- **T-30s**: "Shutting down in 30 seconds..."
+- **T-10s**: "Shutting down in 10 seconds..."
+- **T-5s**: "Shutting down in 5 seconds..."
+- **T-2s**: "Shutting down in 2 seconds..."
+- **T-1s**: "Goodbye!"
+- **T-0s**: `quit` command sent to HLDS
+
+The Quadlet gives the container 45 seconds for the shutdown sequence, with a 50-second systemd timeout as a buffer.
+
+### Auto-Start
+
+The Quadlet is configured with `WantedBy=default.target`, so the server starts automatically on boot (after `loginctl enable-linger` is set for the user).
+
+### Crash Recovery
+
+`Restart=on-failure` restarts the container after 10 seconds if HLDS crashes, but stays stopped on a clean `systemctl stop`.
+
+## Security
+
+### Container Hardening
+
+- **Read-only root filesystem** — container runs with `ReadOnly=true`, only `/tmp` is writable (for the shutdown FIFO)
+- **No Linux capabilities** — all capabilities dropped via `DropCapability=ALL`
+- **Resource limits** — `MemoryMax=512M`, `CPUQuota=200%` (2 cores max)
+
+### HLDS Anti-Abuse
+
+Rate limiting and anti-abuse cvars in `server.cfg`:
+
+| Cvar | Value | Purpose |
+|------|-------|---------|
+| `sv_max_queries_sec` | 3 | Rate-limit server info queries (anti-amplification) |
+| `sv_max_queries_window` | 30 | Query rate window in seconds |
+| `sv_enableoldqueries` | 0 | Disable legacy query protocol |
+| `sv_rcon_maxfailures` | 5 | Lock RCON after 5 bad attempts |
+| `sv_rcon_banpenalty` | 60 | 60 minute RCON ban on failure |
+
+### Firewall
+
+Only the required ports should be open:
+
+```bash
+# CS 1.6 server
+firewall-cmd --permanent --zone=FedoraWorkstation --add-port=27015/udp
+firewall-cmd --permanent --zone=FedoraWorkstation --add-port=27015/tcp
+firewall-cmd --reload
+```
+
 ## License
 
 [MIT](LICENSE)

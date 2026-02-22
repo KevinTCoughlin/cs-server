@@ -124,6 +124,9 @@ COPY plugins/amxmodx/plugins.ini   cstrike/addons/amxmodx/configs/plugins.ini
 # Ensure binaries are executable
 RUN chmod +x hlds_linux hlds_run
 
+# Required for Steam API init — without this, hlds_linux crashes on first start
+RUN echo 70 > steam_appid.txt
+
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime — clean slim image, no build tools
 # ---------------------------------------------------------------------------
