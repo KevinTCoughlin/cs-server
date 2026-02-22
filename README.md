@@ -64,6 +64,25 @@ The `scoutzknivez.sma` AMX Mod X plugin auto-strips weapons on spawn and gives e
 | `MAP` | `scoutzknivez` | Starting map |
 | `MAXPLAYERS` | `20` | Max player slots |
 | `PORT` | `27015` | Server port |
+| `BOTS` | `1` | Enable bots (1=on, 0=off) |
+
+## Bots
+
+Bots are enabled by default using ReGameDLL_CS's built-in ZBot support — no additional plugins or downloads required.
+
+The bot configuration in `config/server.cfg` keeps the server populated when human players aren't present:
+
+| Cvar | Value | Effect |
+|------|-------|--------|
+| `bot_quota` | 10 | Target number of bots to maintain |
+| `bot_quota_mode` | `fill` | Bots fill empty slots; leave as humans join |
+| `bot_difficulty` | 1 | Normal difficulty |
+| `bot_join_after_player` | 1 | Bots join only after a human player connects |
+| `bot_auto_vacate` | 1 | Bots leave automatically to make room for humans |
+| `bot_allow_rogues` | 0 | Bots follow orders |
+| `bot_knives_only` | 0 | Bots use normal weapons (scoutzknivez plugin handles stripping) |
+
+To disable bots, set `BOTS=0` in `compose.yml` or your environment.
 
 ## RCON
 
