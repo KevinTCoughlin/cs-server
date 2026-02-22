@@ -113,10 +113,17 @@ RUN cd cstrike/addons/amxmodx/scripting && \
     ./amxxpc scoutzknivez.sma && \
     mv scoutzknivez.amxx ../plugins/
 
+# --- CZ Bots (ZBot profiles + sounds from ReGameDLL_CS) ---
+RUN curl -fsSL "https://raw.githubusercontent.com/rehlds/ReGameDLL_CS/refs/heads/master/regamedll/extra/zBot/bot_profiles.zip" \
+        -o /tmp/bot_profiles.zip && \
+    unzip -o /tmp/bot_profiles.zip -d . && \
+    rm -f /tmp/bot_profiles.zip
+
 # Copy config files into image
 COPY config/server.cfg     cstrike/server.cfg
 COPY config/mapcycle.txt   cstrike/mapcycle.txt
 COPY config/autoexec.cfg   cstrike/autoexec.cfg
+COPY config/game_init.cfg  cstrike/game_init.cfg
 COPY config/liblist.gam    cstrike/liblist.gam
 COPY plugins/metamod/plugins.ini   cstrike/addons/metamod/plugins.ini
 COPY plugins/amxmodx/plugins.ini   cstrike/addons/amxmodx/configs/plugins.ini
