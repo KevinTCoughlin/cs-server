@@ -112,14 +112,18 @@ RUN curl -fsSL "https://github.com/rehlds/ReAPI/releases/download/${REAPI_VERSIO
 COPY maps/*.bsp cstrike/maps/
 COPY maps/*.nav cstrike/maps/
 
-# Compile scoutzknivez plugin
-COPY plugins/amxmodx/scripting/scoutzknivez.sma \
-     cstrike/addons/amxmodx/scripting/scoutzknivez.sma
+# Compile custom AMX Mod X plugins
+COPY plugins/amxmodx/scripting/*.sma cstrike/addons/amxmodx/scripting/
 WORKDIR /hlds/cstrike/addons/amxmodx/scripting
 RUN chmod +x amxxpc compile.sh && \
-    ./amxxpc scoutzknivez.sma && \
-    mv scoutzknivez.amxx ../plugins/
+    for sma in scoutzknivez.sma AQS.sma rtv.sma websitebot.sma; do \
+        ./amxxpc "$sma" && mv "${sma%.sma}.amxx" ../plugins/; \
+    done
 WORKDIR /hlds
+
+# Copy AQS config and quake sound files
+COPY plugins/amxmodx/AQS.ini cstrike/addons/amxmodx/configs/AQS.ini
+COPY sound/quake/ cstrike/sound/quake/
 
 # --- CZ Bots (ZBot profiles + sounds from ReGameDLL_CS) ---
 RUN curl -fsSL "https://raw.githubusercontent.com/rehlds/ReGameDLL_CS/refs/heads/master/regamedll/extra/zBot/bot_profiles.zip" \
