@@ -239,6 +239,11 @@ footer{
 
 <section>
 <h2>// Quick Start</h2>
+<p style="font-size:0.85rem;margin-bottom:1rem"><strong style="color:#fff">Option 1: Pull from ghcr.io</strong> (fastest — pre-built image)</p>
+<pre><span class="prompt">$</span> <span class="cmd">podman pull ghcr.io/kevintcoughlin/cs-server:latest</span>
+<span class="prompt">$</span> <span class="cmd">podman run -d -p 27015:27015/udp -p 27015:27015/tcp \</span>
+  <span class="cmd">--name scoutzknivez ghcr.io/kevintcoughlin/cs-server:latest</span></pre>
+<p style="font-size:0.85rem;margin-top:1.5rem;margin-bottom:1rem"><strong style="color:#fff">Option 2: Build from source</strong> (if you need custom maps/configs)</p>
 <ol class="steps">
   <li>Clone the repository</li>
   <li>Add your <code style="color:#fff">scoutzknivez.bsp</code> map file to <code style="color:#fff">maps/</code></li>

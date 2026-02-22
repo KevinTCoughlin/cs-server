@@ -12,13 +12,33 @@ Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack.
 
 ## Quick Start
 
-### 1. Add maps
+### Option 1: Pull from ghcr.io (fastest)
+
+Pre-built images are available on GitHub Container Registry:
+
+```bash
+podman pull ghcr.io/kevintcoughlin/cs-server:latest
+podman run -d -p 27015:27015/udp -p 27015:27015/tcp \
+  --name scoutzknivez ghcr.io/kevintcoughlin/cs-server:latest
+```
+
+The server starts on port **27015**. Connect with your CS 1.6 client:
+
+```
+connect <your-lan-ip>:27015
+```
+
+### Option 2: Build from source
+
+If you need custom maps or configurations:
+
+#### 1. Add maps
 
 Place `.bsp` files into the `maps/` directory. They get baked into the image at build time.
 
 Maps are not included in the repo due to file size. You can find them on sites like [GameBanana](https://gamebanana.com/mods/cats/5568) or [17buddies](https://www.17buddies.rocks/).
 
-### 2. Build and run
+#### 2. Build and run
 
 ```bash
 podman compose up --build
@@ -30,7 +50,7 @@ The server starts on port **27015**. Connect with your CS 1.6 client:
 connect <your-lan-ip>:27015
 ```
 
-### 3. Configuration
+### Configuration
 
 Edit files in `config/` — they're bind-mounted into the container:
 
