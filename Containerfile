@@ -118,7 +118,7 @@ WORKDIR /hlds/cstrike/addons/amxmodx/scripting
 RUN chmod +x amxxpc compile.sh && \
     for sma in scoutzknivez.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma; do \
         ./amxxpc -O2 "$sma" || exit 1; \
-        mv "${sma%.sma}.amxx" ../plugins/; \
+        mv "${sma%.sma}.amxx" ../plugins/ || exit 1; \
     done
 WORKDIR /hlds
 
