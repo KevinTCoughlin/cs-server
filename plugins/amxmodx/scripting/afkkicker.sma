@@ -4,6 +4,8 @@
 // AFK Kicker — Moves idle players to spectator, then kicks them if still
 // inactive. Keeps slots open for active players on bot-filled servers.
 
+#pragma semicolon 1
+
 #include <amxmodx>
 #include <fakemeta>
 #include <cstrike>

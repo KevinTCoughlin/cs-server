@@ -5,6 +5,8 @@
 // Players type "rtv" to vote for a map change. When the threshold is reached,
 // a vote menu appears. Players can "nominate <map>" to add maps to the vote.
 
+#pragma semicolon 1
+
 #include <amxmodx>
 #include <amxmisc>
 

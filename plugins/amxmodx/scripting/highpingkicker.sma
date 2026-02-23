@@ -4,6 +4,8 @@
 // High Ping Kicker — Warns then kicks players who exceed a latency threshold.
 // Uses averaging to avoid kicking players with temporary spikes.
 
+#pragma semicolon 1
+
 #include <amxmodx>
 
 #define CHECK_INTERVAL 15.0

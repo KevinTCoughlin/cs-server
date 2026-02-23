@@ -3,6 +3,8 @@
 //
 // Advertisements — Rotating chat messages for server info, commands, and links.
 
+#pragma semicolon 1
+
 #include <amxmodx>
 
 new const g_szAds[][] = {

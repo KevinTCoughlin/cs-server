@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
 #
 # =============================================================================
-# CS 1.6 ScoutzKnivez Server — Multi-stage Debian 12 Build
+# CS 1.6 ScoutzKnivez Server — Multi-stage Debian 13 Build
 # ReHLDS + ReGameDLL_CS + Metamod-R + AMX Mod X + ReAPI
 # =============================================================================
 
@@ -16,7 +16,7 @@ ARG AMXMODX_BUILD=5474
 # ---------------------------------------------------------------------------
 # Stage 1: Builder — SteamCMD + HLDS + ReHLDS stack
 # ---------------------------------------------------------------------------
-FROM debian:bookworm AS builder
+FROM debian:trixie@sha256:2c91e484d93f0830a7e05a2b9d92a7b102be7cab562198b984a84fdbc7806d91 AS builder
 
 ARG REHLDS_VERSION
 ARG REGAMEDLL_VERSION
@@ -117,7 +117,8 @@ COPY plugins/amxmodx/scripting/*.sma cstrike/addons/amxmodx/scripting/
 WORKDIR /hlds/cstrike/addons/amxmodx/scripting
 RUN chmod +x amxxpc compile.sh && \
     for sma in scoutzknivez.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma; do \
-        ./amxxpc "$sma" && mv "${sma%.sma}.amxx" ../plugins/; \
+        ./amxxpc -O2 "$sma" || exit 1; \
+        mv "${sma%.sma}.amxx" ../plugins/; \
     done
 WORKDIR /hlds
 
@@ -147,7 +148,7 @@ RUN chmod +x hlds_linux hlds_run && \
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime — clean slim image, no build tools
 # ---------------------------------------------------------------------------
-FROM debian:bookworm-slim AS runtime
+FROM debian:trixie-slim@sha256:f6e2cfac5cf956ea044b4bd75e6397b4372ad88fe00908045e9a0d21712ae3ba AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
