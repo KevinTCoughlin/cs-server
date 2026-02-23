@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 name: Docker Image Build & Scan
 
 on:
@@ -132,7 +133,7 @@ jobs:
 
       - name: Upload SBOM
         if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: sbom
           path: sbom.spdx.json
