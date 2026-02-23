@@ -73,9 +73,23 @@ Changes to `server.cfg` take effect next round or via `rcon exec server.cfg`.
 | `mp_roundtime` | 3 | 3 minute rounds |
 | `mp_startmoney` | 16000 | Max money (unused) |
 
-## How It Works
+## Plugins
 
-The `scoutzknivez.sma` AMX Mod X plugin auto-strips weapons on spawn and gives each player a knife + scout with ammo. No buy menu interaction needed.
+| Plugin | Description |
+|--------|-------------|
+| `scoutzknivez.amxx` | Strips weapons on spawn, gives scout + knife with ammo |
+| `autobhop.amxx` | Auto bunny hop — hold jump to bhop (essential for low-grav) |
+| `AQS.amxx` | [Advanced Quake Sounds](https://github.com/ClaudiuHKS/AdvancedQuakeSounds) v8.0 — kill streaks, multi-kills, headshots, knife kills with HUD + sound announcements. Toggle with `!sounds` in chat |
+| `rtv.amxx` | Rock the Vote — type `rtv` to vote for map change, `nominate <map>` to add maps |
+| `websitebot.amxx` | Adds a spectator bot showing the server website in the scoreboard |
+| `afkkicker.amxx` | Moves idle players to spectator after 60s, kicks after 3min |
+| `highpingkicker.amxx` | Warns then kicks players exceeding 150ms average ping |
+| `advertisements.amxx` | Rotating chat messages with server info and commands |
+| `antiflood.amxx` | Chat spam prevention (built-in AMX Mod X) |
+
+### Adding Quake Sounds
+
+The AQS plugin looks for WAV files in `sound/quake/`. These are not included (copyrighted). See `sound/quake/README.md` for sourcing instructions. The plugin works in HUD-only mode without them.
 
 ## Environment Variables
 
@@ -117,8 +131,9 @@ Then in-game: `rcon_password your_password_here` followed by `rcon <command>`.
 ## Adding Plugins
 
 1. Write `.sma` source in `plugins/amxmodx/scripting/`
-2. Add the compiled `.amxx` filename to `plugins/amxmodx/plugins.ini`
-3. Rebuild: `podman compose up --build`
+2. Add the `.sma` filename to the compile loop in `Containerfile`
+3. Add the compiled `.amxx` filename to `plugins/amxmodx/plugins.ini`
+4. Rebuild: `podman compose up --build`
 
 ## Production Deployment (Quadlet)
 

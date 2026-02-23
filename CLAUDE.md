@@ -38,10 +38,20 @@ maps/                      BSP map files + NAV bot navigation mesh
 plugins/
   amxmodx/
     plugins.ini            AMX Mod X plugin load order
+    AQS.ini                Advanced Quake Sounds config (events, streaks, sounds)
     scripting/
-      scoutzknivez.sma     Custom plugin: strip weapons, give scout+knife
+      scoutzknivez.sma     Strip weapons, give scout+knife on spawn
+      autobhop.sma         Auto bunny hop (hold jump to bhop)
+      AQS.sma              Advanced Quake Sounds v8.0 (MIT, ClaudiuHKS)
+      rtv.sma              Rock the Vote + map nominations
+      websitebot.sma       Spectator bot showing server URL in scoreboard
+      afkkicker.sma        Move idle players to spec, kick after timeout
+      highpingkicker.sma   Warn then kick high-ping players
+      advertisements.sma   Rotating chat messages (server info, commands)
   metamod/
     plugins.ini            Metamod plugin list (loads AMX Mod X)
+sound/
+  quake/                   Quake sound WAVs (gitignored, see README.md)
 quadlet/
   scoutzknivez.container   Systemd Quadlet unit (rootless Podman)
 .github/workflows/
@@ -52,7 +62,7 @@ quadlet/
 
 ## Architecture
 
-- **Multi-stage container build**: Stage 1 (builder) downloads SteamCMD, HLDS, and the full ReHLDS stack, compiles the AMX Mod X plugin, copies configs. Stage 2 (runtime) is a clean Debian 12-slim with only i386 runtime libs.
+- **Multi-stage container build**: Stage 1 (builder) downloads SteamCMD, HLDS, and the full ReHLDS stack, compiles all AMX Mod X plugins via a `for` loop, copies configs. Stage 2 (runtime) is a clean Debian 12-slim with only i386 runtime libs.
 - **FIFO-based server control**: `entrypoint.sh` creates a named pipe (`/tmp/hlds-input`) for sending commands to HLDS (say, quit, rcon). The `script` utility provides a PTY so HLDS doesn't block on stdin.
 - **Graceful shutdown**: Traps SIGTERM/SIGINT, announces countdown in-game (30s → 10s → 5s → 2s → 1s), then sends `quit` via FIFO.
 - **Quadlet for systemd**: `scoutzknivez.container` unit file enables auto-start, crash recovery (restart on-failure), and resource limits (512MB RAM, 2 CPUs).

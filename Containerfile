@@ -116,7 +116,7 @@ COPY maps/*.nav cstrike/maps/
 COPY plugins/amxmodx/scripting/*.sma cstrike/addons/amxmodx/scripting/
 WORKDIR /hlds/cstrike/addons/amxmodx/scripting
 RUN chmod +x amxxpc compile.sh && \
-    for sma in scoutzknivez.sma AQS.sma rtv.sma websitebot.sma; do \
+    for sma in scoutzknivez.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma; do \
         ./amxxpc "$sma" && mv "${sma%.sma}.amxx" ../plugins/; \
     done
 WORKDIR /hlds
