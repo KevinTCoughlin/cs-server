@@ -91,6 +91,27 @@ Changes to `server.cfg` take effect next round or via `rcon exec server.cfg`.
 
 The AQS plugin looks for WAV files in `sound/quake/`. These are not included (copyrighted). See `sound/quake/README.md` for sourcing instructions. The plugin works in HUD-only mode without them.
 
+## FastDL (Fast Downloads)
+
+Custom content (maps, sounds) is served via GitHub Pages so clients download over HTTP instead of the game server's slow built-in transfer (~5 KB/s).
+
+**How it works:** `sv_downloadurl` in `server.cfg` points clients to `https://kevintcoughlin.com/cs-server/cstrike/`. The engine tries `.bz2` compressed files first, then falls back to uncompressed.
+
+### Syncing Content
+
+```bash
+just fastdl
+```
+
+This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz2` compressed variants, then commit and push to deploy via GitHub Pages.
+
+### Manual Workflow
+
+1. Place maps in `maps/` and sounds in `sound/quake/`
+2. Run `just fastdl` to sync and compress
+3. Commit the `docs/cstrike/` changes and push to `main`
+4. GitHub Pages auto-deploys from `docs/`
+
 ## Environment Variables
 
 | Variable | Default | Description |
