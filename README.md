@@ -1,5 +1,7 @@
 # CS 1.6 ScoutzKnivez Server
 
+[![GHCR](https://img.shields.io/badge/ghcr.io-cs--server-blue?style=flat-square&logo=github)](https://ghcr.io/kevintcoughlin/cs-server)
+
 Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack.
 
 ## Stack
@@ -9,6 +11,18 @@ Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack.
 - **Metamod-R** 1.3.0.149 — plugin loader
 - **AMX Mod X** 1.10 — scripting platform
 - **ReAPI** 5.26.0.338 — extended API
+
+## Install
+
+[![Install with Podman](https://img.shields.io/badge/Install_with-Podman-892CA0?style=for-the-badge&logo=podman&logoColor=white)](https://github.com/KevinTCoughlin/cs-server#install)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash
+```
+
+Requires [Podman](https://podman.io/getting-started/installation) (rootless) or [Docker](https://docs.docker.com/get-docker/). The script pulls the image from ghcr.io, creates config files, and starts the server on port 27015. With Podman it installs a systemd Quadlet unit for auto-start; with Docker it creates a container with restart policy.
+
+To uninstall: `curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash -s -- --uninstall`
 
 ## Quick Start
 
@@ -27,6 +41,8 @@ The server starts on port **27015**. Connect with your CS 1.6 client:
 ```
 connect <your-lan-ip>:27015
 ```
+
+> **Docker users:** replace `podman` with `docker` in the commands below.
 
 ### Option 2: Build from source
 

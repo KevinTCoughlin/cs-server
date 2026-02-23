@@ -183,6 +183,37 @@ td code{color:#fff}
   background:var(--green);
 }
 
+/* Install box */
+.install-box{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-left:3px solid #892CA0;
+  padding:1rem 1.25rem;
+  position:relative;
+  margin-bottom:0.75rem;
+}
+.install-box code{
+  color:#fff;
+  font-size:0.85rem;
+  word-break:break-all;
+}
+.copy-btn{
+  position:absolute;
+  top:0.75rem;
+  right:0.75rem;
+  background:var(--border);
+  border:none;
+  color:var(--text);
+  font-family:inherit;
+  font-size:0.72rem;
+  padding:0.3rem 0.6rem;
+  cursor:pointer;
+  letter-spacing:0.04em;
+  transition:background 0.15s,color 0.15s;
+}
+.copy-btn:hover{background:var(--accent);color:var(--bg)}
+.copy-btn.copied{background:var(--green);color:var(--bg)}
+
 /* Footer */
 footer{
   border-top:1px solid var(--border);
@@ -216,6 +247,15 @@ footer{
 <h1>CS 1.6 ScoutzKnivez Server</h1>
 <p class="tagline">Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack</p>
 </header>
+
+<section>
+<h2>// Install</h2>
+<div class="install-box">
+  <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash</code>
+  <button class="copy-btn" id="copy-btn" type="button">Copy</button>
+</div>
+<p class="connect-note">Requires <a href="https://podman.io/getting-started/installation">Podman</a> (rootless) or <a href="https://docs.docker.com/get-docker/">Docker</a>. The script pulls the image, creates config files, and starts the server on port <strong style="color:#fff">27015</strong>.</p>
+</section>
 
 <section>
 <h2>// Quick Connect</h2>
@@ -360,5 +400,19 @@ footer{
 </footer>
 
 </div>
+<script>
+document.getElementById('copy-btn').addEventListener('click', function() {
+  var cmd = document.getElementById('install-cmd').textContent;
+  var btn = this;
+  navigator.clipboard.writeText(cmd).then(function() {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(function() {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 2000);
+  });
+});
+</script>
 </body>
 </html>
