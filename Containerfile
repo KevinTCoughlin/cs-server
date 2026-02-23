@@ -38,6 +38,7 @@ RUN dpkg --add-architecture i386 && \
         lib32stdc++6 \
         lib32z1 \
         libc6-i386 \
+        patchelf \
         unzip \
         tar \
     && rm -rf /var/lib/apt/lists/*
@@ -71,6 +72,8 @@ RUN curl -fsSL "https://github.com/rehlds/ReHLDS/releases/download/${REHLDS_VERS
        /tmp/rehlds/bin/linux32/filesystem_stdio.so \
        /tmp/rehlds/bin/linux32/demoplayer.so \
        . && \
+    patchelf --clear-execstack engine_i486.so && \
+    patchelf --clear-execstack core.so && \
     rm -rf /tmp/rehlds /tmp/rehlds.zip
 
 # --- ReGameDLL_CS (game DLL replacement) ---
