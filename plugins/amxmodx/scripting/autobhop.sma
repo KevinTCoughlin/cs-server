@@ -4,19 +4,23 @@
 // Auto Bunny Hop — Automatically re-jumps when a player holds the jump key
 // and touches the ground. Essential for low-gravity ScoutzKnivez gameplay.
 
+#pragma semicolon 1
+
 #include <amxmodx>
 #include <fakemeta>
 
-new g_pcvarEnabled;
+// Bound directly to the cvar value — avoids a pcvar lookup on every physics
+// frame (~100 calls/sec per player, ~2000/sec at full 20-player capacity).
+new g_bEnabled;
 
 public plugin_init() {
     register_plugin("Auto Bhop", "1.0", "cs-server");
     register_forward(FM_PlayerPreThink, "fw_player_prethink");
-    g_pcvarEnabled = register_cvar("autobhop_enabled", "1");
+    bind_pcvar_num(register_cvar("autobhop_enabled", "1"), g_bEnabled);
 }
 
 public fw_player_prethink(id) {
-    if (!get_pcvar_num(g_pcvarEnabled))
+    if (!g_bEnabled)
         return FMRES_IGNORED;
 
     if (!is_user_alive(id))

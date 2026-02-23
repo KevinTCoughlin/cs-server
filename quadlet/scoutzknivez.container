@@ -7,14 +7,15 @@ Image=localhost/cs-server:latest
 ContainerName=scoutzknivez
 PublishPort=27015:27015/udp
 PublishPort=27015:27015/tcp
-Volume=%h/Development/cs-server/config/server.cfg:/hlds/cstrike/server.cfg:ro,Z
-Volume=%h/Development/cs-server/config/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro,Z
+Volume=%h/.config/cs-server/config/server.cfg:/hlds/cstrike/server.cfg:ro,Z
+Volume=%h/.config/cs-server/config/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro,Z
 Environment=MAP=scoutzknivez
 Environment=MAXPLAYERS=20
 Environment=PORT=27015
 Environment=BOTS=1
 DropCapability=ALL
 NoNewPrivileges=true
+Notify=healthy
 StopTimeout=50
 
 [Service]

@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: MIT
+name: Version Check
+
+on:
+  schedule:
+    # Every Monday at 08:00 UTC
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-versions:
+    name: Check upstream component versions
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check ReHLDS / ReGameDLL / Metamod-R / ReAPI / AMX Mod X versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          outdated=0
+
+          check_github_release() {
+            local label="$1" repo="$2" current="$3" latest
+            latest=$(gh release list --repo "$repo" --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+            if [ -z "$latest" ]; then
+              echo "⚠  ${label}: could not fetch latest release (current: ${current})"
+              return
+            fi
+            if [ "$latest" = "$current" ]; then
+              echo "✓  ${label}: ${current} (up to date)"
+            else
+              echo "✗  ${label}: ${current} → ${latest} (update available)"
+              outdated=$((outdated + 1))
+            fi
+          }
+
+          rehlds=$(    grep -m1 '^ARG REHLDS_VERSION='    Containerfile | cut -d= -f2)
+          regamedll=$( grep -m1 '^ARG REGAMEDLL_VERSION=' Containerfile | cut -d= -f2)
+          metamod=$(   grep -m1 '^ARG METAMOD_VERSION='   Containerfile | cut -d= -f2)
+          reapi=$(     grep -m1 '^ARG REAPI_VERSION='     Containerfile | cut -d= -f2)
+
+          check_github_release "ReHLDS"       "rehlds/ReHLDS"       "$rehlds"
+          check_github_release "ReGameDLL_CS" "rehlds/ReGameDLL_CS" "$regamedll"
+          check_github_release "Metamod-R"    "rehlds/Metamod-R"    "$metamod"
+          check_github_release "ReAPI"        "rehlds/ReAPI"        "$reapi"
+
+          # AMX Mod X — nightly builds at amxmodx.org; find the highest build number
+          amxx_current=$(grep -m1 '^ARG AMXMODX_BUILD=' Containerfile | cut -d= -f2)
+          amxx_latest=$(curl -fsSL "https://www.amxmodx.org/amxxdrop/1.10/" 2>/dev/null \
+            | grep -oP 'amxmodx-1\.10\.0-git\K[0-9]+(?=-base-linux\.tar\.gz)' \
+            | sort -n | tail -1 || echo "")
+          if [ -z "$amxx_latest" ]; then
+            echo "⚠  AMX Mod X: could not fetch latest build (current: ${amxx_current})"
+          elif [ "$amxx_latest" = "$amxx_current" ]; then
+            echo "✓  AMX Mod X: build ${amxx_current} (up to date)"
+          else
+            echo "✗  AMX Mod X: build ${amxx_current} → ${amxx_latest} (update available)"
+            outdated=$((outdated + 1))
+          fi
+
+          echo ""
+          if [ "$outdated" -gt 0 ]; then
+            echo "${outdated} component(s) have updates available — please update Containerfile."
+            exit 1
+          else
+            echo "All components are up to date."
+          fi

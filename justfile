@@ -42,7 +42,7 @@ lint:
 
 # Lint shell scripts with shellcheck
 shellcheck:
-    shellcheck entrypoint.sh
+    shellcheck entrypoint.sh install.sh
 
 # Run all checks
 check: lint shellcheck

@@ -23,8 +23,8 @@ jobs:
         with:
           dockerfile: Containerfile
 
-      - name: Lint entrypoint.sh with shellcheck
+      - name: Lint shell scripts with shellcheck
         uses: ludeeus/action-shellcheck@2.0.0
         with:
           scandir: .
-          additional_files: entrypoint.sh
+          additional_files: entrypoint.sh install.sh

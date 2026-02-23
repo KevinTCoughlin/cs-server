@@ -59,7 +59,7 @@ Custom gameplay is implemented via AMX Mod X plugins (Pawn language):
 To add a new plugin:
 
 1. Add the `.sma` source to `plugins/amxmodx/scripting/`
-2. Add a `COPY` + compile step to `Containerfile` (follow the existing `scoutzknivez.sma` pattern)
+2. Add the `.sma` filename to the compile loop in `Containerfile` (the wildcard `COPY` already picks it up)
 3. Register it in `plugins/amxmodx/plugins.ini`
 
 ## Submitting Changes
@@ -78,6 +78,7 @@ CI runs hadolint, shellcheck, container build, and Trivy security scan automatic
 - Containerfile must be hadolint-clean (`just lint`).
 - Add SPDX license headers to new source files.
 - Pin dependency versions as `ARG` in Containerfile — never use `latest` tags for upstream components.
+- New Pawn plugins must include `#pragma semicolon 1` at the top.
 - Keep configs minimal — only set values that differ from defaults.
 
 ## License

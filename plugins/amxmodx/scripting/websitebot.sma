@@ -4,6 +4,8 @@
 // Website Bot — Adds a spectator bot to the scoreboard displaying the server
 // website URL. Auto-kicks when the server is near capacity.
 
+#pragma semicolon 1
+
 #include <amxmodx>
 #include <fakemeta>
 
