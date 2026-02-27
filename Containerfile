@@ -16,7 +16,7 @@ ARG AMXMODX_BUILD=5474
 # ---------------------------------------------------------------------------
 # Stage 1: Builder — SteamCMD + HLDS + ReHLDS stack
 # ---------------------------------------------------------------------------
-FROM debian:trixie@sha256:2c91e484d93f0830a7e05a2b9d92a7b102be7cab562198b984a84fdbc7806d91 AS builder
+FROM debian:trixie AS builder
 
 ARG REHLDS_VERSION
 ARG REGAMEDLL_VERSION
@@ -151,17 +151,20 @@ RUN chmod +x hlds_linux hlds_run && \
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime — clean slim image, no build tools
 # ---------------------------------------------------------------------------
-FROM debian:trixie-slim@sha256:f6e2cfac5cf956ea044b4bd75e6397b4372ad88fe00908045e9a0d21712ae3ba AS runtime
+FROM debian:trixie-slim AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+# Prevent docs/man/locale from being installed (smaller image)
+RUN printf 'path-exclude=/usr/share/doc/*\npath-exclude=/usr/share/man/*\npath-exclude=/usr/share/locale/*\n' \
+        > /etc/dpkg/dpkg.cfg.d/excludes
+
 # hadolint ignore=DL3008
 RUN dpkg --add-architecture i386 && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-        ca-certificates \
         lib32gcc-s1 \
         lib32stdc++6 \
         lib32z1 \
@@ -169,9 +172,6 @@ RUN dpkg --add-architecture i386 && \
     && rm -rf /var/lib/apt/lists/* \
               /var/log/dpkg.log \
               /var/log/apt \
-    && (find /usr/share/doc -mindepth 1 -delete 2>/dev/null || true) \
-    && (find /usr/share/man -mindepth 1 -delete 2>/dev/null || true) \
-    && (find /usr/share/locale -mindepth 1 ! -name 'en*' -delete 2>/dev/null || true) \
     && (find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true)
 
 RUN useradd --no-log-init -r -s /usr/sbin/nologin hlds
