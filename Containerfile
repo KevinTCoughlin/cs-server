@@ -157,8 +157,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Prevent docs/man/locale from being installed (smaller image)
-RUN printf 'path-exclude=/usr/share/doc/*\npath-exclude=/usr/share/man/*\npath-exclude=/usr/share/locale/*\n' \
+# Prevent docs/man/locale from being installed (smaller image), but keep licenses
+RUN printf 'path-exclude=/usr/share/doc/*\npath-include=/usr/share/doc/*/copyright\npath-include=/usr/share/doc/*/changelog.Debian*\npath-exclude=/usr/share/man/*\npath-exclude=/usr/share/locale/*\n' \
         > /etc/dpkg/dpkg.cfg.d/excludes
 
 # hadolint ignore=DL3008
