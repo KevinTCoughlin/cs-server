@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
-set -e
+set -euo pipefail
 
 MAP="${MAP:-scoutzknivez}"
 MAXPLAYERS="${MAXPLAYERS:-20}"
@@ -9,7 +9,7 @@ PORT="${PORT:-27015}"
 BOTS="${BOTS:-1}"
 
 # hlds_linux needs libs from its own directory (normally set by hlds_run)
-export LD_LIBRARY_PATH=".:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH=".:${LD_LIBRARY_PATH:-}"
 
 FIFO=/tmp/hlds-input
 SCRIPT_PID=
