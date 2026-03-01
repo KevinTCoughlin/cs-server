@@ -267,11 +267,11 @@ Environment=PORT=27015
 Environment=BOTS=1
 DropCapability=ALL
 NoNewPrivileges=true
-StopTimeout=50
 
 [Service]
 Restart=on-failure
 RestartSec=10
+TimeoutStopSec=50
 MemoryMax=512M
 CPUQuota=200%
 
