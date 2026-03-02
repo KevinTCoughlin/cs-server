@@ -257,6 +257,32 @@ firewall-cmd --permanent --zone=FedoraWorkstation --add-port=27015/tcp
 firewall-cmd --reload
 ```
 
+## Performance Tuning
+
+The server is preconfigured with HLDS/ReHLDS network and tick-rate optimizations:
+
+- **Network buffer sysctls** (`net.core.rmem_max`, `net.core.wmem_max`) — applied automatically per-container via compose, Quadlet, and install.sh. No admin action required.
+- **Host kernel timer and CPU governor** — detected automatically by `install.sh` during installation. The script checks the current state and prints actionable commands if changes are recommended.
+
+### Host Kernel (optional)
+
+HLDS benefits from a 1000 Hz kernel timer. The installer checks `CONFIG_HZ` and warns if below 1000. On Debian/Ubuntu:
+
+```bash
+sudo apt install linux-image-lowlatency
+sudo reboot
+```
+
+Or set `CONFIG_HZ=1000` in a custom kernel config.
+
+### CPU Governor (optional)
+
+The installer checks the CPU frequency governor and warns if not set to `performance`. To apply:
+
+```bash
+sudo cpupower frequency-set -g performance
+```
+
 ## License
 
 [MIT](LICENSE)

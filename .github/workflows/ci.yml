@@ -26,5 +26,6 @@ jobs:
       - name: Lint shell scripts with shellcheck
         uses: ludeeus/action-shellcheck@2.0.0
         with:
+          version: v0.10.0
           scandir: .
           additional_files: entrypoint.sh install.sh
