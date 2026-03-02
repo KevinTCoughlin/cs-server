@@ -265,6 +265,8 @@ Environment=MAP=scoutzknivez
 Environment=MAXPLAYERS=20
 Environment=PORT=27015
 Environment=BOTS=1
+Sysctl=net.core.rmem_max=26214400
+Sysctl=net.core.wmem_max=26214400
 DropCapability=ALL
 NoNewPrivileges=true
 
@@ -335,6 +337,8 @@ install_docker() {
         -e MAXPLAYERS=20 \
         -e PORT=27015 \
         -e BOTS=1 \
+        --sysctl net.core.rmem_max=26214400 \
+        --sysctl net.core.wmem_max=26214400 \
         --cap-drop ALL \
         --security-opt no-new-privileges \
         --memory 512m \

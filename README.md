@@ -259,7 +259,9 @@ firewall-cmd --reload
 
 ## Performance Tuning
 
-The server is preconfigured with HLDS/ReHLDS network and tick-rate optimizations. For best results on the host machine, apply these additional OS-level settings.
+The server is preconfigured with HLDS/ReHLDS network and tick-rate optimizations. Network buffer sysctl tuning (`net.core.rmem_max`, `net.core.wmem_max`) is applied automatically per-container via compose, Quadlet, and install.sh — no admin action required.
+
+The following **host-level** settings are optional and must be applied manually by the admin:
 
 ### Host Kernel
 
@@ -270,17 +272,6 @@ apt install linux-image-lowlatency
 ```
 
 Reboot required after installation. Or set `CONFIG_HZ=1000` in a custom kernel config.
-
-### Host Sysctl (Network Buffers)
-
-Add to `/etc/sysctl.d/99-hlds.conf` to persist across reboots:
-
-```
-net.core.rmem_max=26214400
-net.core.wmem_max=26214400
-```
-
-Apply immediately with `sysctl --system`.
 
 ### CPU Governor
 
