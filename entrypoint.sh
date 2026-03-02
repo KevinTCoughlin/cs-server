@@ -7,6 +7,7 @@ MAP="${MAP:-scoutzknivez}"
 MAXPLAYERS="${MAXPLAYERS:-20}"
 PORT="${PORT:-27015}"
 BOTS="${BOTS:-1}"
+NOMASTER="${NOMASTER:-0}"
 
 # hlds_linux needs libs from its own directory (normally set by hlds_run)
 export LD_LIBRARY_PATH=".:${LD_LIBRARY_PATH:-}"
@@ -62,6 +63,12 @@ else
     BOT_QUOTA_ARGS="+bot_quota 0"
 fi
 
+if [ "$NOMASTER" = "1" ]; then
+    MASTER_ARGS="-nomaster -insecure"
+else
+    MASTER_ARGS=""
+fi
+
 # Use 'script' to give hlds a PTY — without a PTY, hlds_linux does
 # blocking reads on stdin which freezes the game loop.
 # hlds_run handles Steam API init (first crash + auto-restart creates
@@ -75,6 +82,7 @@ tail -f "$FIFO" | script -qfc "./hlds_run \
     -pingboost 2 \
     +sys_ticrate 1000 \
     +exec server.cfg \
+    $MASTER_ARGS \
     $BOT_QUOTA_ARGS" /dev/null &
 SCRIPT_PID=$!
 

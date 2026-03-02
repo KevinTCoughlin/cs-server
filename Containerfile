@@ -179,6 +179,11 @@ RUN useradd --no-log-init -r -s /usr/sbin/nologin hlds
 COPY --from=builder --chown=hlds:hlds /hlds /hlds
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 
+# Create Steam SDK symlink for steamclient.so (fixes Docker Desktop on Windows)
+RUN mkdir -p /home/hlds/.steam/sdk32 && \
+    ln -s /hlds/steamclient.so /home/hlds/.steam/sdk32/steamclient.so && \
+    chown -R hlds:hlds /home/hlds
+
 LABEL org.opencontainers.image.title="CS 1.6 ScoutzKnivez Server" \
       org.opencontainers.image.description="Containerized Counter-Strike 1.6 ScoutzKnivez server using the ReHLDS stack" \
       org.opencontainers.image.source="https://github.com/KevinTCoughlin/cs-server" \

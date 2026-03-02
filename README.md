@@ -66,6 +66,46 @@ The server starts on port **27015**. Connect with your CS 1.6 client:
 connect <your-lan-ip>:27015
 ```
 
+### Docker Desktop on Windows
+
+Docker Desktop for Windows (WSL2 backend) has limitations that affect game server UDP port forwarding. While the container builds and starts successfully, **clients may not be able to connect reliably** due to Docker Desktop's UDP forwarding between the Windows host and Linux VM.
+
+#### Recommended: WSL2-native workflow
+
+For best results, run the container **inside WSL2** using Podman or Docker CE (not Docker Desktop):
+
+```bash
+# Inside WSL2 (e.g., Ubuntu)
+sudo apt install podman-compose podman
+cd /mnt/c/Users/YourUsername/cs-server
+podman compose up --build -d
+```
+
+Clients connect to the WSL2 IP address from the Windows host. Find the IP with:
+
+```bash
+# Inside WSL2
+ip addr show eth0 | grep 'inet '
+```
+
+Then connect from Windows: `connect <wsl2-ip>:27015`
+
+#### Alternative: Docker Desktop with workarounds
+
+If you must use Docker Desktop, use the Windows-specific override:
+
+```bash
+docker compose -f compose.yml -f compose.windows.yml up -d
+```
+
+This override:
+- Removes `sysctls` (not available in Docker Desktop VM)
+- Removes `cap_drop` and `security_opt` (too restrictive for Docker Desktop)
+- Removes bind mounts (configs baked into image, avoids `:Z` SELinux flag issues)
+- Enables `-nomaster -insecure` flags (prevents `steamclient.so` hang)
+
+**Note:** Even with these workarounds, UDP port forwarding may be unreliable. The WSL2-native workflow is strongly recommended.
+
 ### Configuration
 
 Edit files in `config/` — they're bind-mounted into the container:
@@ -136,6 +176,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `MAXPLAYERS` | `20` | Max player slots |
 | `PORT` | `27015` | Server port |
 | `BOTS` | `1` | Enable bots (1=on, 0=off) |
+| `NOMASTER` | `0` | Disable master server (1=on, 0=off). Enable for Docker Desktop on Windows |
 
 ## Bots
 
