@@ -382,12 +382,12 @@ check_host_tuning() {
     # --- Kernel timer (CONFIG_HZ) ---
     local hz=""
     local config_file=""
-    if [[ -r /proc/config.gz ]]; then
+    if [[ -r /proc/config.gz ]] && command -v zcat >/dev/null 2>&1; then
         config_file="/proc/config.gz"
-        hz=$(zcat /proc/config.gz 2>/dev/null | grep -m1 '^CONFIG_HZ=' | cut -d= -f2)
+        hz=$(zcat "${config_file}" 2>/dev/null | grep -m1 '^CONFIG_HZ=' | cut -d= -f2 || true)
     elif [[ -r /boot/config-"$(uname -r)" ]]; then
         config_file="/boot/config-$(uname -r)"
-        hz=$({ grep -m1 '^CONFIG_HZ=' "${config_file}" 2>/dev/null | cut -d= -f2; } || true)
+        hz=$(grep -m1 '^CONFIG_HZ=' "${config_file}" 2>/dev/null | cut -d= -f2 || true)
     fi
 
     if [[ -n "${hz}" ]] && [[ "${hz}" =~ ^[0-9]+$ ]]; then
