@@ -269,14 +269,18 @@ HLDS benefits from a 1000 Hz kernel timer. On Debian/Ubuntu:
 apt install linux-image-lowlatency
 ```
 
-Or set `CONFIG_HZ=1000` in a custom kernel config.
+Reboot required after installation. Or set `CONFIG_HZ=1000` in a custom kernel config.
 
 ### Host Sysctl (Network Buffers)
 
-```bash
-sysctl -w net.core.rmem_max=26214400
-sysctl -w net.core.wmem_max=26214400
+Add to `/etc/sysctl.d/99-hlds.conf` to persist across reboots:
+
 ```
+net.core.rmem_max=26214400
+net.core.wmem_max=26214400
+```
+
+Apply immediately with `sysctl --system`.
 
 ### CPU Governor
 
