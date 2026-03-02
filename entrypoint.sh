@@ -73,6 +73,7 @@ tail -f "$FIFO" | script -qfc "./hlds_run \
     +port $PORT \
     +sv_lan 1 \
     -pingboost 2 \
+    +sys_ticrate 1000 \
     +exec server.cfg \
     $BOT_QUOTA_ARGS" /dev/null &
 SCRIPT_PID=$!

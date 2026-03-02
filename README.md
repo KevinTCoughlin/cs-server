@@ -257,6 +257,35 @@ firewall-cmd --permanent --zone=FedoraWorkstation --add-port=27015/tcp
 firewall-cmd --reload
 ```
 
+## Performance Tuning
+
+The server is preconfigured with HLDS/ReHLDS network and tick-rate optimizations. For best results on the host machine, apply these additional OS-level settings.
+
+### Host Kernel
+
+HLDS benefits from a 1000 Hz kernel timer. On Debian/Ubuntu:
+
+```bash
+apt install linux-image-lowlatency
+```
+
+Or set `CONFIG_HZ=1000` in a custom kernel config.
+
+### Host Sysctl (Network Buffers)
+
+```bash
+sysctl -w net.core.rmem_max=26214400
+sysctl -w net.core.wmem_max=26214400
+```
+
+### CPU Governor
+
+Disable power saving on the host to avoid frequency scaling during gameplay:
+
+```bash
+cpupower frequency-set -g performance
+```
+
 ## License
 
 [MIT](LICENSE)
