@@ -259,26 +259,28 @@ firewall-cmd --reload
 
 ## Performance Tuning
 
-The server is preconfigured with HLDS/ReHLDS network and tick-rate optimizations. Network buffer sysctl tuning (`net.core.rmem_max`, `net.core.wmem_max`) is applied automatically per-container via compose, Quadlet, and install.sh — no admin action required.
+The server is preconfigured with HLDS/ReHLDS network and tick-rate optimizations:
 
-The following **host-level** settings are optional and must be applied manually by the admin:
+- **Network buffer sysctls** (`net.core.rmem_max`, `net.core.wmem_max`) — applied automatically per-container via compose, Quadlet, and install.sh. No admin action required.
+- **Host kernel timer and CPU governor** — detected automatically by `install.sh` during installation. The script checks the current state and prints actionable commands if changes are recommended.
 
-### Host Kernel
+### Host Kernel (optional)
 
-HLDS benefits from a 1000 Hz kernel timer. On Debian/Ubuntu:
+HLDS benefits from a 1000 Hz kernel timer. The installer checks `CONFIG_HZ` and warns if below 1000. On Debian/Ubuntu:
 
 ```bash
-apt install linux-image-lowlatency
+sudo apt install linux-image-lowlatency
+sudo reboot
 ```
 
-Reboot required after installation. Or set `CONFIG_HZ=1000` in a custom kernel config.
+Or set `CONFIG_HZ=1000` in a custom kernel config.
 
-### CPU Governor
+### CPU Governor (optional)
 
-Disable power saving on the host to avoid frequency scaling during gameplay:
+The installer checks the CPU frequency governor and warns if not set to `performance`. To apply:
 
 ```bash
-cpupower frequency-set -g performance
+sudo cpupower frequency-set -g performance
 ```
 
 ## License

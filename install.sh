@@ -371,10 +371,65 @@ install_docker() {
     echo ""
 }
 
+# --- Host tuning checks -----------------------------------------------------
+
+check_host_tuning() {
+    echo ""
+    info "Checking host performance tuning..."
+
+    local issues=0
+
+    # --- Kernel timer (CONFIG_HZ) ---
+    local hz=""
+    if [[ -r /proc/config.gz ]]; then
+        hz=$(zcat /proc/config.gz 2>/dev/null | grep -m1 '^CONFIG_HZ=' | cut -d= -f2)
+    elif ls /boot/config-"$(uname -r)" &>/dev/null; then
+        hz=$(grep -m1 '^CONFIG_HZ=' /boot/config-"$(uname -r)" 2>/dev/null | cut -d= -f2)
+    fi
+
+    if [[ -n "${hz}" ]]; then
+        if [[ "${hz}" -ge 1000 ]] 2>/dev/null; then
+            ok "Kernel timer: ${hz} Hz"
+        else
+            warn "Kernel timer: ${hz} Hz (recommend 1000 Hz for HLDS)"
+            echo "      On Debian/Ubuntu: sudo apt install linux-image-lowlatency && sudo reboot"
+            echo "      Or set CONFIG_HZ=1000 in a custom kernel config"
+            issues=$((issues + 1))
+        fi
+    else
+        info "Kernel timer: could not detect CONFIG_HZ (skipping)"
+    fi
+
+    # --- CPU frequency governor ---
+    local gov_path="/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+    if [[ -r "${gov_path}" ]]; then
+        local gov
+        gov=$(cat "${gov_path}")
+        if [[ "${gov}" == "performance" ]]; then
+            ok "CPU governor: ${gov}"
+        else
+            warn "CPU governor: ${gov} (recommend 'performance' for HLDS)"
+            echo "      sudo cpupower frequency-set -g performance"
+            issues=$((issues + 1))
+        fi
+    else
+        info "CPU governor: not available (VM, container, or no cpufreq — skipping)"
+    fi
+
+    if [[ "${issues}" -eq 0 ]]; then
+        ok "Host tuning looks good"
+    else
+        echo ""
+        info "The above host tuning is optional but improves server tick accuracy."
+        info "Re-run after applying changes to verify."
+    fi
+}
+
 # --- Main -------------------------------------------------------------------
 
 if [[ "${ACTION}" == "uninstall" ]]; then
     do_uninstall
 else
     do_install
+    check_host_tuning
 fi
