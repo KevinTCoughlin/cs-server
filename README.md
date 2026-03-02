@@ -66,45 +66,53 @@ The server starts on port **27015**. Connect with your CS 1.6 client:
 connect <your-lan-ip>:27015
 ```
 
-### Docker Desktop on Windows
+### Windows (WSL2)
 
-Docker Desktop for Windows (WSL2 backend) has limitations that affect game server UDP port forwarding. While the container builds and starts successfully, **clients may not be able to connect reliably** due to Docker Desktop's UDP forwarding between the Windows host and Linux VM.
+Docker Desktop for Windows cannot reliably forward UDP game traffic to containers ([#18](https://github.com/KevinTCoughlin/cs-server/issues/18)). Run the server natively inside a WSL2 Debian distro instead.
 
-#### Recommended: WSL2-native workflow
+#### 1. Install WSL2 Debian
 
-For best results, run the container **inside WSL2** using Podman or Docker CE (not Docker Desktop):
-
-```bash
-# Inside WSL2 (e.g., Ubuntu)
-sudo apt install podman-compose podman
-cd /mnt/c/Users/YourUsername/cs-server
-podman compose up --build -d
+```powershell
+wsl --install Debian
 ```
 
-Clients connect to the WSL2 IP address from the Windows host. Find the IP with:
+#### 2. Install dependencies
 
 ```bash
-# Inside WSL2
-ip addr show eth0 | grep 'inet '
+wsl -d Debian
+sudo dpkg --add-architecture i386
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl lib32gcc-s1 lib32stdc++6 \
+    lib32z1 libc6-i386 patchelf unzip tar
 ```
 
-Then connect from Windows: `connect <wsl2-ip>:27015`
-
-#### Alternative: Docker Desktop with workarounds
-
-If you must use Docker Desktop, use the Windows-specific override:
+#### 3. Run the install script
 
 ```bash
-docker compose -f compose.yml -f compose.windows.yml up -d
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash
 ```
 
-This override:
-- Removes `sysctls` (not available in Docker Desktop VM)
-- Removes `cap_drop` and `security_opt` (too restrictive for Docker Desktop)
-- Removes bind mounts (configs baked into image, avoids `:Z` SELinux flag issues)
-- Enables `-nomaster -insecure` flags (prevents `steamclient.so` hang)
+Or build from source (from the repo root on the Windows filesystem):
 
-**Note:** Even with these workarounds, UDP port forwarding may be unreliable. The WSL2-native workflow is strongly recommended.
+```bash
+cd /mnt/c/path/to/cs-server
+# Follow the Containerfile steps manually or use the install script
+```
+
+#### 4. Connect
+
+From your Windows CS 1.6 client, open the console and connect using the WSL2 IP:
+
+```bash
+# Find your WSL2 IP
+wsl -d Debian -- ip addr show eth0 | grep "inet "
+```
+
+```
+connect <wsl2-ip>:27015
+```
+
+> **Note:** The WSL2 IP changes on reboot. `localhost:27015` may also work depending on your WSL2 networking mode.
 
 ### Configuration
 

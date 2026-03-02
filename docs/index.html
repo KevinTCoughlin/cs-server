@@ -360,6 +360,19 @@ footer{
 </section>
 
 <section>
+<h2>// Windows (WSL2)</h2>
+<p style="font-size:0.85rem;margin-bottom:1rem">Docker Desktop for Windows cannot reliably forward UDP game traffic. Run the server inside a WSL2 Debian distro instead.</p>
+<ol class="steps">
+  <li>Install Debian: <code style="color:#fff">wsl --install Debian</code></li>
+  <li>Install dependencies (i386 libs, curl, unzip)</li>
+  <li>Run the install script inside WSL2</li>
+  <li>Find WSL2 IP: <code style="color:#fff">ip addr show eth0</code></li>
+  <li>Connect from Windows: <code style="color:#fff">connect &lt;wsl2-ip&gt;:27015</code></li>
+</ol>
+<p style="font-size:0.85rem;margin-top:1rem">See <a href="https://github.com/KevinTCoughlin/cs-server#windows-wsl2">README</a> for full instructions. Related: <a href="https://github.com/KevinTCoughlin/cs-server/issues/18">#18</a></p>
+</section>
+
+<section>
 <h2>// Production (Quadlet)</h2>
 <p style="font-size:0.85rem;margin-bottom:1rem">Run as a rootless Podman Quadlet unit managed by systemd for auto-start, crash recovery, and graceful shutdown.</p>
 <pre><span class="prompt">$</span> <span class="cmd">podman compose up --build -d && podman compose down</span>
