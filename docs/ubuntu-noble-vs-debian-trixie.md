@@ -1,11 +1,16 @@
-# Ubuntu Noble 24.04 LTS vs Debian Trixie 13 Slim — Container Runtime Comparison
+# Container Base Image Comparison: Debian Trixie vs Ubuntu (Noble LTS & Oracular Interim)
 
 **Date:** March 2026
 **Context:** Counter-Strike 1.6 HLDS server containerization runtime choice
 
 ## Executive Summary
 
-Both Ubuntu Noble 24.04 LTS and Debian Trixie 13 are viable container base images for running 32-bit HLDS binaries in 2026. **Debian Trixie Slim remains the optimal choice** for this project due to its longer support window, newer kernel, and smaller slim variant size. However, Ubuntu Noble presents a compelling alternative with comparable features and slightly better mainstream support.
+This document compares three container base images for running 32-bit HLDS binaries:
+1. **Debian Trixie 13 Slim** ✅ — Optimal choice (5-year support, kernel 6.12, conservative)
+2. **Ubuntu Noble 24.04 LTS** ✅ — Viable alternative (5-year support, kernel 6.8, commercial backing)
+3. **Ubuntu 24.10 "Oracular"** ❌ — Unsuitable (9-month support, already EOL by March 2026)
+
+**Recommendation:** **Debian Trixie Slim remains the optimal choice** due to its newer kernel (6.12 vs 6.8), smaller slim variant, and conservative stability philosophy. Ubuntu Noble 24.04 LTS is a viable alternative with comparable features. **Ubuntu 24.10 should never be used** for production containers due to its short 9-month support window and current EOL status.
 
 ## Detailed Comparison
 
@@ -279,6 +284,75 @@ If you decide to switch to Ubuntu Noble, here's the minimal diff:
 
 ---
 
+## What About Ubuntu 24.10 (Oracular Oriole)?
+
+**TL;DR: ❌ Do NOT use Ubuntu 24.10 for this project.**
+
+Ubuntu 24.10 "Oracular Oriole" is an **interim (non-LTS) release** with critical limitations that make it unsuitable for production containers:
+
+### Why Ubuntu 24.10 is NOT Recommended
+
+| Aspect | Ubuntu 24.10 | Impact |
+|--------|--------------|--------|
+| **Release Date** | October 10, 2024 | |
+| **End of Life (EOL)** | **July 10, 2025** | ⚠️ **Already EOL by March 2026!** |
+| **Support Duration** | **9 months only** | ❌ Completely unsupported by now |
+| **Kernel Version** | 6.11 | Newer than Noble (6.8), older than Trixie (6.12) |
+| **glibc Version** | 2.39 (same as Noble) | No advantage over Noble |
+| **Image Size** | ~28-33 MB | Similar to Noble |
+| **Security Updates** | **None (past EOL)** | ❌ **Critical security risk** |
+
+### Critical Issues with Ubuntu 24.10
+
+1. **Already End-of-Life (EOL)**: As of March 2026, Ubuntu 24.10 reached EOL on July 10, 2025. This means:
+   - ❌ No more security updates
+   - ❌ No bug fixes
+   - ❌ No package updates
+   - ❌ Running 24.10 in production is a **security liability**
+
+2. **9-Month Support Window**: Even when it was supported, interim releases receive only 9 months of support compared to 5 years for LTS releases. This is completely unsuitable for long-lived containers.
+
+3. **Frequent Upgrade Requirement**: Interim releases require upgrading every 9 months through successive releases (24.10 → 25.04 → 25.10 → 26.04). This is operationally expensive and risky.
+
+4. **No Production Benefits**: While 24.10 shipped with a slightly newer kernel (6.11), it offers:
+   - ❌ No glibc advantage (same 2.39 as Noble)
+   - ❌ No image size advantage
+   - ❌ No i386 support advantage
+   - ✅ Kernel 6.11 (but Trixie has newer 6.12)
+
+### Comparison: 24.10 vs LTS vs Trixie
+
+| Feature | Ubuntu 24.10 ❌ | Ubuntu 24.04 LTS ✅ | Debian Trixie 13 ✅ |
+|---------|----------------|---------------------|---------------------|
+| **Support Duration** | 9 months | 5 years | 5 years |
+| **Status (March 2026)** | **EOL (unsupported)** | Fully supported | Fully supported |
+| **Kernel** | 6.11 | 6.8 (HWE: 6.17+) | 6.12 LTS |
+| **Production Ready** | ❌ No | ✅ Yes | ✅ Yes |
+| **Security Updates** | ❌ None | ✅ Active | ✅ Active |
+
+### When Would 24.10 Ever Be Appropriate?
+
+Ubuntu interim releases like 24.10 are designed for:
+- 🧪 **Development and testing** of bleeding-edge features
+- 💻 **Desktop enthusiasts** who want latest GNOME, drivers, etc.
+- 🔬 **Short-term experiments** (< 9 months)
+
+They are **explicitly NOT intended for**:
+- ❌ Production servers
+- ❌ Long-lived containers
+- ❌ Infrastructure requiring stability
+- ❌ Environments requiring predictable security updates
+
+### Verdict: Use LTS or Debian Stable
+
+For production containers (like this CS 1.6 server), **always use**:
+1. ✅ **Debian Trixie 13 Slim** (5-year support, kernel 6.12, conservative)
+2. ✅ **Ubuntu 24.04 LTS Noble** (5-year support, kernel 6.8, commercial backing)
+
+**Never use interim releases like 24.10 for production workloads.**
+
+---
+
 ## Conclusion
 
 **Debian Trixie Slim is the right choice for this project** based on:
@@ -289,16 +363,27 @@ If you decide to switch to Ubuntu Noble, here's the minimal diff:
 
 **Ubuntu Noble is a viable alternative** but offers no decisive advantages for this specific use case. The choice ultimately comes down to **kernel version** (Trixie's 6.12 vs Noble's 6.8) and **philosophy** (Debian's conservatism vs Ubuntu's mainstream appeal).
 
-**Bottom line:** Stay with Debian Trixie Slim unless you have a specific reason to prefer Ubuntu's ecosystem or commercial support model.
+**Ubuntu 24.10 is completely unsuitable** due to its 9-month support window and current EOL status (as of July 2025).
+
+**Bottom line:** Stay with Debian Trixie Slim unless you have a specific reason to prefer Ubuntu's ecosystem or commercial support model. Never use non-LTS Ubuntu releases for production containers.
 
 ---
 
 ## References
 
+### Official Documentation
 - Ubuntu 24.04 Release Notes: https://discourse.ubuntu.com/t/ubuntu-24-04-lts-noble-numbat-release-notes/39890
+- Ubuntu 24.10 EOL Notice: https://ubuntuhandbook.org/index.php/2025/07/ubuntu-24-10-end-of-life/
 - Debian Trixie Release Info: https://www.debian.org/releases/trixie/
 - Ubuntu Release Cycle: https://ubuntu.com/about/release-cycle
+- Ubuntu LTS vs Interim Releases: https://ubuntu.com/about/release-cycle
+
+### Technical Resources
 - Debian Security Tracker: https://security-tracker.debian.org/
 - glibc Version Comparison: https://gist.github.com/richardlau/6a01d7829cc33ddab35269dacc127680
+- Ubuntu End of Life Tracker: https://endoflife.date/ubuntu
+
+### Container Images
 - Ubuntu Noble Docker Hub: https://hub.docker.com/_/ubuntu/tags?name=noble
+- Ubuntu 24.10 Docker Hub: https://hub.docker.com/_/ubuntu/tags?name=oracular
 - Debian Trixie Docker Hub: https://hub.docker.com/_/debian/tags?name=trixie
