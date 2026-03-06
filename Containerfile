@@ -166,7 +166,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Prevent docs/man/locale from being installed (smaller image), but keep licenses
-RUN printf 'path-exclude=/usr/share/doc/*\npath-include=/usr/share/doc/*/copyright\npath-include=/usr/share/doc/*/changelog.Debian*\npath-exclude=/usr/share/man/*\npath-exclude=/usr/share/locale/*\n' \
+RUN printf 'path-exclude=/usr/share/doc/*\npath-include=/usr/share/doc/*/copyright\npath-include=/usr/share/doc/*/changelog.Debian*\npath-include=/usr/share/doc/*/LICENSE\npath-exclude=/usr/share/man/*\npath-exclude=/usr/share/locale/*\npath-exclude=/usr/share/bug/*\npath-exclude=/usr/share/lintian/*\npath-exclude=/usr/share/mime/*\npath-exclude=/usr/share/info/*\n' \
         > /etc/dpkg/dpkg.cfg.d/excludes
 
 # hadolint ignore=DL3008
@@ -178,8 +178,13 @@ RUN dpkg --add-architecture i386 && \
         lib32z1 \
         libc6-i386 \
     && rm -rf /var/lib/apt/lists/* \
+              /var/cache/apt/archives/* \
               /var/log/dpkg.log \
               /var/log/apt \
+              /var/log/bootstrap.log \
+              /var/log/alternatives.log \
+              /tmp/* \
+              /var/tmp/* \
     && (find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true)
 
 RUN useradd --no-log-init -r -s /usr/sbin/nologin hlds
