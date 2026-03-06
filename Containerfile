@@ -16,6 +16,13 @@ ARG AMXMODX_BUILD=5474
 # ---------------------------------------------------------------------------
 # Stage 1: Builder — SteamCMD + HLDS + ReHLDS stack
 # ---------------------------------------------------------------------------
+# Runtime choice: Debian 13 "Trixie" is optimal for CS 1.6 servers in 2026:
+# - 5-year security support (until ~2030) ensures long-term maintenance
+# - Latest kernel (6.12 LTS) provides improved performance and security
+# - Full i386/32-bit support required for HLDS binaries
+# - Minimal image size (~25-30MB for slim variant)
+# - glibc compatibility (Alpine's musl would require workarounds)
+# Alternatives rejected: Bookworm (shorter support), Ubuntu (larger), Alpine (glibc issues)
 FROM debian:trixie AS builder
 
 ARG REHLDS_VERSION
@@ -151,6 +158,7 @@ RUN chmod +x hlds_linux hlds_run && \
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime — clean slim image, no build tools
 # ---------------------------------------------------------------------------
+# Using trixie-slim for minimal attack surface and optimal security posture
 FROM debian:trixie-slim AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
