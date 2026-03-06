@@ -25,7 +25,7 @@ just check                          # both
 ## Project Layout
 
 ```
-Containerfile              Multi-stage Debian 12 build (builder + runtime)
+Containerfile              Multi-stage Debian 13 build (builder + runtime)
 compose.yml                Podman Compose service definition
 entrypoint.sh              Container startup: FIFO control, graceful shutdown, PTY
 config/
@@ -62,7 +62,14 @@ quadlet/
 
 ## Architecture
 
-- **Multi-stage container build**: Stage 1 (builder) downloads SteamCMD, HLDS, and the full ReHLDS stack, compiles all AMX Mod X plugins via a `for` loop, copies configs. Stage 2 (runtime) is a clean Debian 12-slim with only i386 runtime libs.
+- **Multi-stage container build**: Stage 1 (builder) downloads SteamCMD, HLDS, and the full ReHLDS stack, compiles all AMX Mod X plugins via a `for` loop, copies configs. Stage 2 (runtime) is a clean Debian 13-slim with only i386 runtime libs.
+- **Runtime base image**: Debian 13 "Trixie" chosen for optimal security and performance in 2026:
+  - 5-year security support (until ~2030) for long-term maintenance
+  - Latest kernel (6.12 LTS) with improved container performance
+  - Full i386/32-bit library support required for HLDS binaries
+  - Minimal image size (~25-30MB for slim variant)
+  - glibc compatibility (alternatives like Alpine's musl cause HLDS issues)
+  - Alternatives rejected: Bookworm (shorter support window), Ubuntu (larger footprint), Alpine (glibc incompatibility)
 - **FIFO-based server control**: `entrypoint.sh` creates a named pipe (`/tmp/hlds-input`) for sending commands to HLDS (say, quit, rcon). The `script` utility provides a PTY so HLDS doesn't block on stdin.
 - **Graceful shutdown**: Traps SIGTERM/SIGINT, announces countdown in-game (30s → 10s → 5s → 2s → 1s), then sends `quit` via FIFO.
 - **Quadlet for systemd**: `scoutzknivez.container` unit file enables auto-start, crash recovery (restart on-failure), and resource limits (512MB RAM, 2 CPUs).
