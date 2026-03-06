@@ -63,6 +63,7 @@ quadlet/
 ## Architecture
 
 - **Multi-stage container build**: Stage 1 (builder) downloads SteamCMD, HLDS, and the full ReHLDS stack, compiles all AMX Mod X plugins via a `for` loop, copies configs. Stage 2 (runtime) is a clean Debian 13-slim with only i386 runtime libs.
+- **Aggressive image optimization**: dpkg configured to exclude documentation, man pages, locales, bug templates, lintian overrides, MIME database, and info pages during package installation. Runtime cleanup removes all APT caches, logs, and temporary files. Combined with setuid/setgid bit removal for security hardening.
 - **Runtime base image**: Debian 13 "Trixie" chosen for optimal security and performance in 2026:
   - 5-year security support (until ~2030) for long-term maintenance
   - Latest kernel (6.12 LTS) with improved container performance
