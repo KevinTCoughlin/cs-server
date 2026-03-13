@@ -32,6 +32,7 @@ config/
   server.cfg               Game server settings (gravity, air control, rounds)
   mapcycle.txt             Map rotation (3 scoutzknivez variants)
   mapcycle-dust2.txt       Dust 2 rotation (classic de_dust2)
+  mapcycle-nipper.txt      Community map rotation (Nipper/community variants)
   autoexec.cfg             Auto-exec on server start
   game_init.cfg            Bot initialization
   liblist.gam              Points gamedll to Metamod
@@ -101,4 +102,4 @@ quadlet/
 | `MAXPLAYERS` | `20` | Max player slots |
 | `PORT` | `27015` | Server port |
 | `BOTS` | `1` | Enable ZBots (1=on, 0=off) |
-| `MAPCYCLE` | `mapcycle.txt` | Mapcycle file (e.g. `mapcycle-dust2.txt` for Friday Dust 2) |
+| `MAPCYCLE` | `mapcycle.txt` | Mapcycle file (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |

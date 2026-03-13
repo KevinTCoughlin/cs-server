@@ -10,6 +10,7 @@ PublishPort=27015:27015/tcp
 Volume=%h/.config/cs-server/config/server.cfg:/hlds/cstrike/server.cfg:ro,Z
 Volume=%h/.config/cs-server/config/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro,Z
 Volume=%h/.config/cs-server/config/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro,Z
+Volume=%h/.config/cs-server/config/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro,Z
 Environment=MAP=scoutzknivez
 Environment=MAXPLAYERS=20
 Environment=PORT=27015

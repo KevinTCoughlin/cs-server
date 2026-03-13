@@ -243,6 +243,21 @@ DUST2MAPCYCLE
         ok "mapcycle-dust2.txt already exists, skipping"
     fi
 
+    if [[ ! -f "${CONFIG_DIR}/mapcycle-nipper.txt" ]]; then
+        cat > "${CONFIG_DIR}/mapcycle-nipper.txt" << 'NIPPERMAPCYCLE'
+scoutzknivez
+scoutzknivez_2k
+scoutzknivez_bender
+scoutzknivez2
+scoutzknivez_pro
+scoutzknivez_winter
+scoutzknivez_x
+NIPPERMAPCYCLE
+        ok "Default mapcycle-nipper.txt created"
+    else
+        ok "mapcycle-nipper.txt already exists, skipping"
+    fi
+
     # --- Start server --------------------------------------------------------
 
     if [[ "${RUNTIME}" == "podman" ]]; then
@@ -271,6 +286,7 @@ PublishPort=27015:27015/tcp
 Volume=${CONFIG_DIR}/server.cfg:/hlds/cstrike/server.cfg:ro,Z
 Volume=${CONFIG_DIR}/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro,Z
 Volume=${CONFIG_DIR}/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro,Z
+Volume=${CONFIG_DIR}/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro,Z
 Environment=MAP=scoutzknivez
 Environment=MAXPLAYERS=20
 Environment=PORT=27015
@@ -345,6 +361,7 @@ install_docker() {
         -v "${CONFIG_DIR}/server.cfg:/hlds/cstrike/server.cfg:ro" \
         -v "${CONFIG_DIR}/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro" \
         -v "${CONFIG_DIR}/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro" \
+        -v "${CONFIG_DIR}/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro" \
         -e MAP=scoutzknivez \
         -e MAXPLAYERS=20 \
         -e PORT=27015 \

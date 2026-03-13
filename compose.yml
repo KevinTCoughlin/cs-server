@@ -12,6 +12,7 @@ services:
       - ./config/server.cfg:/hlds/cstrike/server.cfg:ro,Z
       - ./config/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro,Z
       - ./config/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro,Z
+      - ./config/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro,Z
     environment:
       - MAXPLAYERS=20
       - MAP=scoutzknivez
