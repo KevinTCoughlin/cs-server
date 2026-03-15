@@ -239,11 +239,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `PORT` | `27015` | Server port |
 | `BOTS` | `1` | Enable bots (1=on, 0=off) |
 | `NOMASTER` | `0` | Disable master server (1=on, 0=off). Enable for Docker Desktop on Windows |
-<<<<<<< HEAD
-| `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt` for Dust 2) |
-=======
-| `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-nipper.txt` for community maps) |
->>>>>>> 5c89b55 (feat: add MAPCYCLE env var and community map rotation support)
+| `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 
 ## Bots
 
