@@ -8,6 +8,7 @@ MAXPLAYERS="${MAXPLAYERS:-20}"
 PORT="${PORT:-27015}"
 BOTS="${BOTS:-1}"
 NOMASTER="${NOMASTER:-0}"
+MAPCYCLE="${MAPCYCLE:-mapcycle.txt}"
 
 # hlds_linux needs libs from its own directory (normally set by hlds_run)
 export LD_LIBRARY_PATH=".:${LD_LIBRARY_PATH:-}"
@@ -81,6 +82,7 @@ tail -f "$FIFO" | script -qfc "./hlds_run \
     +sv_lan 1 \
     -pingboost 2 \
     +sys_ticrate 1000 \
+    +mapcyclefile $MAPCYCLE \
     +exec server.cfg \
     $MASTER_ARGS \
     $BOT_QUOTA_ARGS" /dev/null &

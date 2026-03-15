@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: MIT
+name: Friday Dust 2
+
+# Runs every Friday at 00:00 PST (08:00 UTC)
+# PST is UTC-8, so 00:00 PST = 08:00 UTC
+# During PDT (Daylight Saving Time), 00:00 PDT = 07:00 UTC
+on:
+  schedule:
+    # Every Friday at 08:00 UTC (00:00 PST)
+    - cron: "0 8 * * 5"
+  workflow_dispatch:
+
+jobs:
+  dust2-announcement:
+    name: Friday Dust 2 Announcement
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create Dust 2 Friday Announcement
+        run: |
+          cat << 'EOF'
+          🎮 Friday Dust 2 24/7 is LIVE! 🎮
+
+          Every Friday, the server switches to de_dust2 classic gameplay.
+
+          To enable Dust 2 rotation on your server:
+
+          # Podman Compose
+          MAPCYCLE=mapcycle-dust2.txt MAP=de_dust2 podman compose up
+
+          # Quadlet systemd
+          systemctl --user edit scoutzknivez
+          # Add these lines:
+          # Environment=MAPCYCLE=mapcycle-dust2.txt
+          # Environment=MAP=de_dust2
+          systemctl --user restart scoutzknivez
+
+          # Docker
+          docker run -d \
+            -p 27015:27015/udp -p 27015:27015/tcp \
+            -e MAP=de_dust2 \
+            -e MAPCYCLE=mapcycle-dust2.txt \
+            ghcr.io/kevintcoughlin/cs-server:latest
+
+          Dust 2 Gameplay Rules:
+          - No cheating/hacking (wallhacks, aimbots, etc.)
+          - No team killing or excessive team flashing
+          - No abusive behavior, hate speech, or harassment
+          - Terrorists must attempt to plant the bomb
+          - Counter-Terrorists must defuse if bomb is planted
+          - No delaying the round (hiding/avoiding objective)
+          - Respect server admins and other players
+          - AFK players will be automatically kicked
+
+          Have fun and good luck!
+          EOF

@@ -31,6 +31,7 @@ entrypoint.sh              Container startup: FIFO control, graceful shutdown, P
 config/
   server.cfg               Game server settings (gravity, air control, rounds)
   mapcycle.txt             Map rotation (3 scoutzknivez variants)
+  mapcycle-dust2.txt       Dust 2 rotation (classic de_dust2)
   autoexec.cfg             Auto-exec on server start
   game_init.cfg            Bot initialization
   liblist.gam              Points gamedll to Metamod
@@ -58,6 +59,7 @@ quadlet/
   docker.yml               CI: build, Trivy scan, push to ghcr.io
   ci.yml                   CI: hadolint + shellcheck on every PR
   nightly.yml              Nightly: rebuild, scan, push nightly tag
+  friday-dust2.yml         Scheduled Friday PST Dust 2 announcements
 ```
 
 ## Architecture
@@ -89,6 +91,7 @@ quadlet/
 - **docker.yml**: Builds container image on push/PR (path-filtered), runs Trivy scan, pushes to ghcr.io with semantic tags, generates SBOM
 - **ci.yml**: Runs hadolint + shellcheck on every push/PR (no path filter) — fast lint gate
 - **nightly.yml**: Daily rebuild at midnight UTC, Trivy scan, pushes `nightly` tag to ghcr.io
+- **friday-dust2.yml**: Scheduled Friday at 00:00 PST (08:00 UTC), generates Dust 2 Friday announcements with gameplay rules
 
 ## Environment Variables
 
@@ -98,3 +101,4 @@ quadlet/
 | `MAXPLAYERS` | `20` | Max player slots |
 | `PORT` | `27015` | Server port |
 | `BOTS` | `1` | Enable ZBots (1=on, 0=off) |
+| `MAPCYCLE` | `mapcycle.txt` | Mapcycle file (e.g. `mapcycle-dust2.txt` for Friday Dust 2) |
