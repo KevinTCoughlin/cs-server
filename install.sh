@@ -234,6 +234,15 @@ MAPCYCLE
         ok "mapcycle.txt already exists, skipping"
     fi
 
+    if [[ ! -f "${CONFIG_DIR}/mapcycle-dust2.txt" ]]; then
+        cat > "${CONFIG_DIR}/mapcycle-dust2.txt" << 'DUST2MAPCYCLE'
+de_dust2
+DUST2MAPCYCLE
+        ok "Default mapcycle-dust2.txt created"
+    else
+        ok "mapcycle-dust2.txt already exists, skipping"
+    fi
+
     # --- Start server --------------------------------------------------------
 
     if [[ "${RUNTIME}" == "podman" ]]; then
@@ -261,10 +270,12 @@ PublishPort=27015:27015/udp
 PublishPort=27015:27015/tcp
 Volume=${CONFIG_DIR}/server.cfg:/hlds/cstrike/server.cfg:ro,Z
 Volume=${CONFIG_DIR}/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro,Z
+Volume=${CONFIG_DIR}/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro,Z
 Environment=MAP=scoutzknivez
 Environment=MAXPLAYERS=20
 Environment=PORT=27015
 Environment=BOTS=1
+Environment=MAPCYCLE=mapcycle.txt
 Sysctl=net.core.rmem_max=26214400
 Sysctl=net.core.wmem_max=26214400
 DropCapability=ALL
@@ -333,10 +344,12 @@ install_docker() {
         -p 27015:27015/tcp \
         -v "${CONFIG_DIR}/server.cfg:/hlds/cstrike/server.cfg:ro" \
         -v "${CONFIG_DIR}/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro" \
+        -v "${CONFIG_DIR}/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro" \
         -e MAP=scoutzknivez \
         -e MAXPLAYERS=20 \
         -e PORT=27015 \
         -e BOTS=1 \
+        -e MAPCYCLE=mapcycle.txt \
         --sysctl net.core.rmem_max=26214400 \
         --sysctl net.core.wmem_max=26214400 \
         --cap-drop ALL \

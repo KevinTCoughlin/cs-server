@@ -121,10 +121,46 @@ Edit files in `config/` — they're bind-mounted into the container:
 | File | Purpose |
 |------|---------|
 | `config/server.cfg` | Game settings (gravity, round time, etc.) |
-| `config/mapcycle.txt` | Map rotation |
+| `config/mapcycle.txt` | Map rotation (default scoutzknivez variants) |
+| `config/mapcycle-dust2.txt` | Dust 2 rotation (classic de_dust2) |
 | `config/autoexec.cfg` | Runs on server start |
 
 Changes to `server.cfg` take effect next round or via `rcon exec server.cfg`.
+
+### Friday Dust 2
+
+Every Friday, switch to the classic de_dust2 gameplay by setting the `MAPCYCLE` environment variable:
+
+```bash
+# Podman Compose
+MAPCYCLE=mapcycle-dust2.txt MAP=de_dust2 podman compose up
+
+# Quadlet systemd
+systemctl --user edit scoutzknivez
+# Add these lines:
+# Environment=MAPCYCLE=mapcycle-dust2.txt
+# Environment=MAP=de_dust2
+systemctl --user restart scoutzknivez
+
+# Docker
+docker run -d \
+  -p 27015:27015/udp -p 27015:27015/tcp \
+  -e MAP=de_dust2 \
+  -e MAPCYCLE=mapcycle-dust2.txt \
+  ghcr.io/kevintcoughlin/cs-server:latest
+```
+
+**Dust 2 Gameplay Rules:**
+- No cheating/hacking (wallhacks, aimbots, etc.)
+- No team killing or excessive team flashing
+- No abusive behavior, hate speech, or harassment
+- Terrorists must attempt to plant the bomb
+- Counter-Terrorists must defuse if bomb is planted
+- No delaying the round (hiding/avoiding objective)
+- Respect server admins and other players
+- AFK players will be automatically kicked
+
+To switch back to scoutzknivez, set `MAPCYCLE=mapcycle.txt` or remove the override.
 
 ## Game Settings
 
@@ -185,6 +221,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `PORT` | `27015` | Server port |
 | `BOTS` | `1` | Enable bots (1=on, 0=off) |
 | `NOMASTER` | `0` | Disable master server (1=on, 0=off). Enable for Docker Desktop on Windows |
+| `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt` for Dust 2) |
 
 ## Bots
 
