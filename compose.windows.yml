@@ -40,3 +40,4 @@ services:
       - PORT=27015
       - BOTS=1
       - NOMASTER=1
+      - MAPCYCLE=mapcycle.txt

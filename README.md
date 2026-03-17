@@ -123,6 +123,7 @@ Edit files in `config/` — they're bind-mounted into the container:
 | `config/server.cfg` | Game settings (gravity, round time, etc.) |
 | `config/mapcycle.txt` | Map rotation (default scoutzknivez variants) |
 | `config/mapcycle-dust2.txt` | Dust 2 rotation (classic de_dust2) |
+| `config/mapcycle-nipper.txt` | Community map rotation (Nipper/community variants) |
 | `config/autoexec.cfg` | Runs on server start |
 
 Changes to `server.cfg` take effect next round or via `rcon exec server.cfg`.
@@ -161,6 +162,23 @@ docker run -d \
 - AFK players will be automatically kicked
 
 To switch back to scoutzknivez, set `MAPCYCLE=mapcycle.txt` or remove the override.
+
+### Community Map Weekends
+
+Switch to the community map rotation by setting the `MAPCYCLE` environment variable:
+
+```bash
+# Podman Compose
+MAPCYCLE=mapcycle-nipper.txt podman compose up
+
+# Quadlet — edit the unit and restart
+systemctl --user edit scoutzknivez  # add Environment=MAPCYCLE=mapcycle-nipper.txt
+systemctl --user restart scoutzknivez
+```
+
+The `mapcycle-nipper.txt` file includes community scoutzknivez variants by Nipper and others. Add your own maps to this file and place the `.bsp` files in `maps/` before building.
+
+To switch back to the default rotation, set `MAPCYCLE=mapcycle.txt` or remove the override.
 
 ## Game Settings
 
@@ -221,7 +239,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `PORT` | `27015` | Server port |
 | `BOTS` | `1` | Enable bots (1=on, 0=off) |
 | `NOMASTER` | `0` | Disable master server (1=on, 0=off). Enable for Docker Desktop on Windows |
-| `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt` for Dust 2) |
+| `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 
 ## Bots
 
