@@ -7,11 +7,11 @@
 # =============================================================================
 
 # Pinned versions
-ARG REHLDS_VERSION=3.14.0.857
-ARG REGAMEDLL_VERSION=5.28.0.756
+ARG REHLDS_VERSION=3.15.0.896
+ARG REGAMEDLL_VERSION=5.30.0.814
 ARG METAMOD_VERSION=1.3.0.149
-ARG REAPI_VERSION=5.26.0.338
-ARG AMXMODX_BUILD=5474
+ARG REAPI_VERSION=5.29.0.358
+ARG AMXMODX_BUILD=5476
 
 # ---------------------------------------------------------------------------
 # Stage 1: Builder — SteamCMD + HLDS + ReHLDS stack
