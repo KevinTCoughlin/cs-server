@@ -50,12 +50,28 @@ jobs:
           check_github_release "ReAPI"        "rehlds/ReAPI"        "$reapi"
 
           # AMX Mod X — nightly builds at amxmodx.org; find the highest build number
+          amxx_build_available() {
+            local build="$1"
+            curl -fsI "https://www.amxmodx.org/amxxdrop/1.10/amxmodx-1.10.0-git${build}-base-linux.tar.gz" >/dev/null &&
+            curl -fsI "https://www.amxmodx.org/amxxdrop/1.10/amxmodx-1.10.0-git${build}-cstrike-linux.tar.gz" >/dev/null
+          }
+
           amxx_current=$(grep -m1 '^ARG AMXMODX_BUILD=' Containerfile | cut -d= -f2)
-          amxx_latest=$(curl -fsSL "https://www.amxmodx.org/amxxdrop/1.10/" 2>/dev/null \
-            | grep -oP 'amxmodx-1\.10\.0-git\K[0-9]+(?=-base-linux\.tar\.gz)' \
-            | sort -n | tail -1 || echo "")
+          amxx_latest=""
+          while read -r build; do
+            [ -n "$build" ] || continue
+            if amxx_build_available "$build"; then
+              amxx_latest="$build"
+              break
+            fi
+          done < <(
+            curl -fsSL "https://www.amxmodx.org/amxxdrop/1.10/" 2>/dev/null \
+              | grep -oP 'amxmodx-1\.10\.0-git\K[0-9]+(?=-base-linux\.tar\.gz)' \
+              | sort -nu \
+              | sort -r
+          )
           if [ -z "$amxx_latest" ]; then
-            echo "⚠  AMX Mod X: could not fetch latest build (current: ${amxx_current})"
+            echo "⚠  AMX Mod X: could not fetch latest downloadable build (current: ${amxx_current})"
           elif [ "$amxx_latest" = "$amxx_current" ]; then
             echo "✓  AMX Mod X: build ${amxx_current} (up to date)"
           else
