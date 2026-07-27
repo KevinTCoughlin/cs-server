@@ -3,9 +3,11 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped AMX Mod X pin from build 5478 to 5479
+- Bumped shellcheck pin in `ci.yml` from v0.10.0 to v0.11.0
+- README stack list resynced to the versions actually pinned in the Containerfile (ReHLDS 3.15.0.896, ReGameDLL_CS 5.30.0.814, ReAPI 5.29.0.358, AMX Mod X build 5479)
 - Migrated base images from Debian 12 (Bookworm) to Debian 13 (Trixie) in both builder and runtime stages
-- Pinned base image `FROM` lines to OCI manifest digests for fully reproducible builds
-- `amxxpc` now invoked with `-O2` optimisation flag; compile loop fails fast (`|| exit 1`) on any plugin error
+- AMX Mod X plugin compile loop fails fast (`|| exit 1`) on any plugin error
 - Quadlet `Volume` paths updated from hardcoded `~/Development/cs-server/` to `~/.config/cs-server/` to match `install.sh` behaviour
 
 ### Added
