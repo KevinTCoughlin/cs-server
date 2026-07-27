@@ -67,8 +67,7 @@ jobs:
           done < <(
             curl -fsSL "https://www.amxmodx.org/amxxdrop/1.10/" 2>/dev/null \
               | grep -oP 'amxmodx-1\.10\.0-git\K[0-9]+(?=-base-linux\.tar\.gz)' \
-              | sort -nu \
-              | sort -r
+              | sort -nru
           )
           if [ -z "$amxx_latest" ]; then
             echo "⚠  AMX Mod X: could not fetch latest downloadable build (current: ${amxx_current})"
