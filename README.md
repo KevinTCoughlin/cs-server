@@ -6,11 +6,11 @@ Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack.
 
 ## Stack
 
-- **ReHLDS** 3.14.0.857 — reverse-engineered engine
-- **ReGameDLL_CS** 5.28.0.756 — reverse-engineered game DLL
+- **ReHLDS** 3.15.0.896 — reverse-engineered engine
+- **ReGameDLL_CS** 5.30.0.814 — reverse-engineered game DLL
 - **Metamod-R** 1.3.0.149 — plugin loader
-- **AMX Mod X** 1.10 — scripting platform
-- **ReAPI** 5.26.0.338 — extended API
+- **AMX Mod X** 1.10.0 (build 5479) — scripting platform
+- **ReAPI** 5.29.0.358 — extended API
 
 ## Install
 
