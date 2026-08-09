@@ -20,7 +20,7 @@ Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack.
 curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash
 ```
 
-Requires [Podman](https://podman.io/getting-started/installation) (rootless) or [Docker](https://docs.docker.com/get-docker/). The script pulls the image from ghcr.io, creates config files, and starts the server on port 27015. With Podman it installs a systemd Quadlet unit for auto-start; with Docker it creates a container with restart policy.
+Requires [Podman](https://podman.io/getting-started/installation) (rootless) or [Docker](https://docs.docker.com/get-docker/). The script pulls the image from ghcr.io, creates config files, and starts the server on port 27015. With Podman it installs a systemd Quadlet unit for auto-start; with Docker it creates a container with restart policy. For production, set `CS_SERVER_IMAGE` to an immutable image digest instead of the mutable `latest` tag.
 
 To uninstall: `curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash -s -- --uninstall`
 
@@ -240,6 +240,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `BOTS` | `1` | Enable bots (1=on, 0=off) |
 | `NOMASTER` | `0` | Disable master server (1=on, 0=off). Enable for Docker Desktop on Windows |
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
+| `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
 
 ## Bots
 
@@ -279,6 +280,8 @@ Then in-game: `rcon_password your_password_here` followed by `rcon <command>`.
 ## Production Deployment (Quadlet)
 
 The server runs as a rootless Podman Quadlet unit managed by systemd.
+
+The default configuration is public (`LAN_MODE=0`). Set `LAN_MODE=1` only for a private LAN server. Keep the image reference pinned to a release digest in production and update it through a reviewed change so rollback remains possible.
 
 ### Setup
 
@@ -370,7 +373,7 @@ The server is preconfigured with HLDS/ReHLDS network and tick-rate optimizations
 
 ### Host Kernel (optional)
 
-HLDS benefits from a 1000 Hz kernel timer. The installer checks `CONFIG_HZ` and warns if below 1000. On Debian/Ubuntu:
+HLDS may benefit from a 1000 Hz host kernel timer. The installer checks `CONFIG_HZ` and reports the result, but host kernel and CPU-governor changes should be benchmarked and managed by the system administrator:
 
 ```bash
 sudo apt install linux-image-lowlatency
@@ -381,11 +384,19 @@ Or set `CONFIG_HZ=1000` in a custom kernel config.
 
 ### CPU Governor (optional)
 
-The installer checks the CPU frequency governor and warns if not set to `performance`. To apply:
+The installer reports the active CPU frequency governor without changing it. Prefer the host's normal power-management policy; use a performance profile only when measurements show it improves tick stability.
 
 ```bash
 sudo cpupower frequency-set -g performance
 ```
+
+### Operations
+
+- Keep `/etc/systemd/system` and user Quadlet units under configuration management.
+- Review image updates before deploying; retain the previous digest for rollback.
+- Back up `${HOME}/.config/cs-server/`, especially `server.cfg` and map cycles.
+- Configure host firewall rules for UDP/TCP `27015` and monitor the service with systemd/journald.
+- Set journald or Docker log retention limits appropriate for the host.
 
 ## License
 

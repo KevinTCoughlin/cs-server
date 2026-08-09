@@ -24,7 +24,7 @@ just check                          # both
 
 ## Project Layout
 
-- `Containerfile` — multi-stage Debian 12 build (builder downloads SteamCMD/HLDS/ReHLDS stack, runtime is clean slim image)
+- `Containerfile` — multi-stage Debian 13 build (builder downloads SteamCMD/HLDS/ReHLDS stack, runtime is clean slim image)
 - `compose.yml` — Podman Compose service (ports, volumes, security, resource limits)
 - `entrypoint.sh` — container startup: FIFO control pipe, graceful shutdown with in-game announcements, PTY via `script`
 - `config/` — server.cfg (gameplay), mapcycle.txt, autoexec.cfg, game_init.cfg, liblist.gam (Metamod)

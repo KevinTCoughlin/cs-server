@@ -14,11 +14,12 @@ services:
       - ./config/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro,Z
       - ./config/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro,Z
     environment:
-      - MAXPLAYERS=20
-      - MAP=scoutzknivez
-      - PORT=27015
-      - BOTS=1
-      - MAPCYCLE=mapcycle.txt
+      MAXPLAYERS: ${MAXPLAYERS:-20}
+      MAP: ${MAP:-scoutzknivez}
+      PORT: ${PORT:-27015}
+      BOTS: ${BOTS:-1}
+      MAPCYCLE: ${MAPCYCLE:-mapcycle.txt}
+      LAN_MODE: ${LAN_MODE:-0}
     sysctls:
       - net.core.rmem_max=26214400
       - net.core.wmem_max=26214400

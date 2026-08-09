@@ -23,6 +23,10 @@
 - Container smoke test in `docker.yml` — verifies `hlds_linux`, `hlds_run`, and `entrypoint.sh` are present and executable after build
 - `install.sh` added to shellcheck step in `ci.yml` and `just shellcheck`
 - `Notify=healthy` added to Quadlet unit so systemd waits for container health before marking the service started
+- Public server mode is now explicit via `LAN_MODE=0`; set `LAN_MODE=1` for LAN-only deployments
+- Installer, Compose, and Quadlet runtime settings are aligned
+- Installer accepts `CS_SERVER_IMAGE` for immutable digest-pinned production deployments
+- Host-tuning guidance now treats kernel and CPU-governor changes as benchmarked operator decisions
 - New `version-check.yml` workflow — runs weekly, checks ReHLDS / ReGameDLL_CS / Metamod-R / ReAPI / AMX Mod X against upstream releases and exits non-zero when any component is behind
 - justfile for composable build/run/deploy commands
 - GitHub Actions CI: container build, Trivy scan, SBOM, ghcr.io publish

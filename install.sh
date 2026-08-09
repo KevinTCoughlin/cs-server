@@ -20,6 +20,7 @@ set -euo pipefail
 REPO="KevinTCoughlin/cs-server"
 REGISTRY="ghcr.io"
 IMAGE="${REGISTRY}/${REPO}:latest"
+IMAGE="${CS_SERVER_IMAGE:-${IMAGE}}"
 SERVICE_NAME="scoutzknivez"
 CONFIG_DIR="${HOME}/.config/cs-server"
 QUADLET_DIR="${HOME}/.config/containers/systemd"
@@ -75,10 +76,14 @@ fi
 detect_runtime() {
     if command -v podman &>/dev/null; then
         RUNTIME="podman"
-        ok "Podman found: $(command -v podman)"
+        local runtime_path
+        runtime_path=$(command -v podman) || runtime_path="podman"
+        ok "Podman found: ${runtime_path}"
     elif command -v docker &>/dev/null; then
         RUNTIME="docker"
-        ok "Docker found: $(command -v docker)"
+        local runtime_path
+        runtime_path=$(command -v docker) || runtime_path="docker"
+        ok "Docker found: ${runtime_path}"
         warn "Podman not found — using Docker as fallback"
     else
         error "Neither podman nor docker found. Install one of:
@@ -134,7 +139,11 @@ do_uninstall() {
     # Prompt before removing config
     if [[ -d "${CONFIG_DIR}" ]]; then
         echo ""
-        if confirm "Remove config directory ${CONFIG_DIR}?"; then
+        local remove_config=false
+        # confirm intentionally returns false when the user declines.
+        # shellcheck disable=SC2310
+        confirm "Remove config directory ${CONFIG_DIR}?" && remove_config=true
+        if [[ "${remove_config}" == true ]]; then
             rm -rf "${CONFIG_DIR}"
             ok "Config directory removed"
         else
@@ -144,7 +153,11 @@ do_uninstall() {
 
     # Prompt before removing image
     if ${RUNTIME} image inspect "${IMAGE}" &>/dev/null; then
-        if confirm "Remove container image ${IMAGE}?"; then
+        local remove_image=false
+        # confirm intentionally returns false when the user declines.
+        # shellcheck disable=SC2310
+        confirm "Remove container image ${IMAGE}?" && remove_image=true
+        if [[ "${remove_image}" == true ]]; then
             ${RUNTIME} rmi "${IMAGE}"
             ok "Image removed"
         else
@@ -292,10 +305,12 @@ Environment=MAXPLAYERS=20
 Environment=PORT=27015
 Environment=BOTS=1
 Environment=MAPCYCLE=mapcycle.txt
+Environment=LAN_MODE=0
 Sysctl=net.core.rmem_max=26214400
 Sysctl=net.core.wmem_max=26214400
 DropCapability=ALL
 NoNewPrivileges=true
+Notify=healthy
 
 [Service]
 Restart=on-failure
@@ -326,7 +341,10 @@ QUADLET
     echo ""
     info "Installation complete!"
     echo ""
-    echo "  Server address:  $(hostname -I 2>/dev/null | awk '{print $1}' || echo 'your-ip'):27015"
+    local server_ip
+    server_ip=$(hostname -I 2>/dev/null | awk '{print $1}') || server_ip=""
+    server_ip="${server_ip:-your-ip}"
+    echo "  Server address:  ${server_ip}:27015"
     echo "  Config files:    ${CONFIG_DIR}/"
     echo "  Quadlet unit:    ${QUADLET_DIR}/${SERVICE_NAME}.container"
     echo ""
@@ -367,6 +385,7 @@ install_docker() {
         -e PORT=27015 \
         -e BOTS=1 \
         -e MAPCYCLE=mapcycle.txt \
+        -e LAN_MODE=0 \
         --sysctl net.core.rmem_max=26214400 \
         --sysctl net.core.wmem_max=26214400 \
         --cap-drop ALL \
@@ -387,7 +406,10 @@ install_docker() {
     echo ""
     info "Installation complete!"
     echo ""
-    echo "  Server address:  $(hostname -I 2>/dev/null | awk '{print $1}' || echo 'your-ip'):27015"
+    local server_ip
+    server_ip=$(hostname -I 2>/dev/null | awk '{print $1}') || server_ip=""
+    server_ip="${server_ip:-your-ip}"
+    echo "  Server address:  ${server_ip}:27015"
     echo "  Config files:    ${CONFIG_DIR}/"
     echo ""
     echo "  Useful commands:"
@@ -412,11 +434,13 @@ check_host_tuning() {
     # --- Kernel timer (CONFIG_HZ) ---
     local hz=""
     local config_file=""
+    local kernel_release=""
+    kernel_release=$(uname -r) || kernel_release=""
     if [[ -r /proc/config.gz ]] && command -v zcat >/dev/null 2>&1; then
         config_file="/proc/config.gz"
         hz=$(zcat "${config_file}" 2>/dev/null | grep -m1 '^CONFIG_HZ=' | cut -d= -f2 || true)
-    elif [[ -r /boot/config-"$(uname -r)" ]]; then
-        config_file="/boot/config-$(uname -r)"
+    elif [[ -n "${kernel_release}" && -r "/boot/config-${kernel_release}" ]]; then
+        config_file="/boot/config-${kernel_release}"
         hz=$(grep -m1 '^CONFIG_HZ=' "${config_file}" 2>/dev/null | cut -d= -f2 || true)
     fi
 
@@ -424,9 +448,8 @@ check_host_tuning() {
         if [[ "${hz}" -ge 1000 ]] 2>/dev/null; then
             ok "Kernel timer: ${hz} Hz"
         else
-            warn "Kernel timer: ${hz} Hz (recommend 1000 Hz for HLDS)"
-            echo "      On Debian/Ubuntu: sudo apt install linux-image-lowlatency && sudo reboot"
-            echo "      Or set CONFIG_HZ=1000 in a custom kernel config"
+            warn "Kernel timer: ${hz} Hz (1000 Hz may improve HLDS tick consistency)"
+            echo "      Treat host kernel changes as an operator decision and benchmark before/after."
             issues=$((issues + 1))
         fi
     else
@@ -441,9 +464,7 @@ check_host_tuning() {
         if [[ "${gov}" == "performance" ]]; then
             ok "CPU governor: ${gov}"
         else
-            warn "CPU governor: ${gov} (recommend 'performance' for HLDS)"
-            echo "      sudo cpupower frequency-set -g performance"
-            issues=$((issues + 1))
+            info "CPU governor: ${gov} (host-managed policy; no change recommended automatically)"
         fi
     else
         info "CPU governor: not available (VM, container, or no cpufreq — skipping)"

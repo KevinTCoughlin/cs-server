@@ -69,7 +69,7 @@ quadlet/
 - **Aggressive image optimization**: dpkg configured to exclude documentation, man pages, locales, bug templates, lintian overrides, MIME database, and info pages during package installation. Runtime cleanup removes all APT caches, logs, and temporary files. Combined with setuid/setgid bit removal for security hardening.
 - **Runtime base image**: Debian 13 "Trixie" chosen for optimal security and performance in 2026:
   - 5-year security support (until ~2030) for long-term maintenance
-  - Latest kernel (6.12 LTS) with improved container performance
+  - Uses the host kernel; the image supplies only user-space libraries
   - Full i386/32-bit library support required for HLDS binaries
   - Minimal image size (~25-30MB for slim variant)
   - glibc compatibility (alternatives like Alpine's musl cause HLDS issues)
