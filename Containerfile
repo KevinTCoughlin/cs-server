@@ -187,7 +187,9 @@ RUN dpkg --add-architecture i386 && \
               /var/tmp/* \
     && (find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true)
 
-RUN useradd --no-log-init -r -s /usr/sbin/nologin hlds
+# Fixed uid/gid so bind-mount ownership is deterministic under rootless Podman
+RUN groupadd --system --gid 10001 hlds && \
+    useradd --no-log-init --system --uid 10001 --gid 10001 -s /usr/sbin/nologin hlds
 
 COPY --from=builder --chown=hlds:hlds /hlds /hlds
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
@@ -203,12 +205,12 @@ LABEL org.opencontainers.image.title="CS 1.6 ScoutzKnivez Server" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.vendor="KevinTCoughlin"
 
-USER hlds
+USER 10001:10001
 WORKDIR /hlds
 
 EXPOSE 27015/udp 27015/tcp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD grep -qs hlds_linux /proc/[0-9]*/comm || exit 1
+    CMD ["/bin/sh", "-c", "grep -qs hlds_linux /proc/[0-9]*/comm || exit 1"]
 
 ENTRYPOINT ["/entrypoint.sh"]

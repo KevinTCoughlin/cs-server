@@ -1,3 +1,7 @@
+# Keep in sync with the hadolint version bundled by hadolint/hadolint-action
+# in .github/workflows/ci.yml, so `just lint` and CI agree on the ruleset.
+HADOLINT_IMAGE := "ghcr.io/hadolint/hadolint:v2.15.0-debian"
+
 default:
     @just --list
 
@@ -38,7 +42,7 @@ install:
 
 # Lint Containerfile with hadolint
 lint:
-    podman run --rm -i hadolint/hadolint < Containerfile
+    podman run --rm -i {{HADOLINT_IMAGE}} < Containerfile
 
 # Lint shell scripts with shellcheck
 shellcheck:
