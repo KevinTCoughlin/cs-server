@@ -1,0 +1,37 @@
+[
+  {
+    "label": "CS Server: Check",
+    "command": "just check",
+    "save": "all",
+    "reveal": "always"
+  },
+  {
+    "label": "CS Server: Build image",
+    "command": "just build",
+    "save": "all",
+    "reveal": "always"
+  },
+  {
+    "label": "CS Server: Start detached",
+    "command": "just up-d",
+    "use_new_terminal": true,
+    "reveal": "always"
+  },
+  {
+    "label": "CS Server: Stop",
+    "command": "just down",
+    "reveal": "always"
+  },
+  {
+    "label": "CS Server: Logs",
+    "command": "just logs",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "CS Server: Podman machine status",
+    "command": "podman machine list",
+    "reveal": "always"
+  }
+]

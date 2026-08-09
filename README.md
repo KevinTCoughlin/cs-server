@@ -24,6 +24,18 @@ Requires [Podman](https://podman.io/getting-started/installation) (rootless) or 
 
 To uninstall: `curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash -s -- --uninstall`
 
+## Zed
+
+The repository includes `.zed/tasks.json` with tasks for checking, building,
+starting, stopping, viewing logs, and checking the Podman machine. Open the
+repository in Zed, then use `task: spawn` to run them from the task picker.
+
+On macOS, start the rootless Podman VM before using the container tasks:
+
+```bash
+podman machine start
+```
+
 ## Quick Start
 
 ### Option 1: Pull from ghcr.io (fastest)
