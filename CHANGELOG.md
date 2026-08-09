@@ -27,6 +27,7 @@
 - Installer, Compose, and Quadlet runtime settings are aligned
 - Installer accepts `CS_SERVER_IMAGE` for immutable digest-pinned production deployments
 - Host-tuning guidance now treats kernel and CPU-governor changes as benchmarked operator decisions
+- Installer generates a random RCON password for new deployments and documents host/provider DDoS responsibilities
 - New `version-check.yml` workflow — runs weekly, checks ReHLDS / ReGameDLL_CS / Metamod-R / ReAPI / AMX Mod X against upstream releases and exits non-zero when any component is behind
 - justfile for composable build/run/deploy commands
 - GitHub Actions CI: container build, Trivy scan, SBOM, ghcr.io publish

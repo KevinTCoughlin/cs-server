@@ -196,12 +196,13 @@ do_install() {
     mkdir -p "${CONFIG_DIR}"
 
     if [[ ! -f "${CONFIG_DIR}/server.cfg" ]]; then
+        local rcon_password
+        rcon_password=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n') || error "Unable to generate an RCON password"
         cat > "${CONFIG_DIR}/server.cfg" << 'SERVER_CFG'
 // CS 1.6 ScoutzKnivez Server Configuration
 // Edit this file to customize your server
 
 hostname "ScoutzKnivez Server"
-rcon_password ""
 
 // Gameplay — ScoutzKnivez settings
 sv_gravity 240
@@ -228,9 +229,11 @@ bot_auto_vacate 1
 
 // Anti-abuse
 sv_max_queries_sec 3
+sv_max_queries_window 30
 sv_rcon_maxfailures 5
 sv_rcon_banpenalty 60
 SERVER_CFG
+        printf 'rcon_password "%s"\n' "${rcon_password}" >> "${CONFIG_DIR}/server.cfg"
         ok "Default server.cfg created"
     else
         ok "server.cfg already exists, skipping"

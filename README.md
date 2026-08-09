@@ -274,13 +274,17 @@ To disable bots, set `BOTS=0` in `compose.yml` or your environment.
 
 ## RCON
 
-Set an RCON password by adding to `config/server.cfg`:
+The installer generates a random RCON password in
+`${HOME}/.config/cs-server/server.cfg`. Treat that file as a secret and do not
+commit or publish it. For manual deployments, set a strong unique password:
 
 ```
 rcon_password "your_password_here"
 ```
 
 Then in-game: `rcon_password your_password_here` followed by `rcon <command>`.
+If remote administration is not needed, leave RCON disabled instead of using a
+blank or predictable password.
 
 ## Adding Plugins
 
@@ -367,7 +371,8 @@ Rate limiting and anti-abuse cvars in `server.cfg`:
 
 ### Firewall
 
-Only the required ports should be open:
+Only the required game ports should be open. Use the host firewall and, for a
+public server, a hosting provider with UDP DDoS protection:
 
 ```bash
 # CS 1.6 server
