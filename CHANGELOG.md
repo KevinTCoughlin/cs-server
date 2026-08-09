@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Changed
+- `hlds` user is now created with a fixed uid/gid (10001) and `USER` references it numerically, making bind-mount ownership deterministic under rootless Podman and resolving hadolint `DL3066`
+- `HEALTHCHECK` `CMD` converted to JSON/exec notation (`/bin/sh -c ...`), resolving hadolint `DL3025`
 - Bumped AMX Mod X pin from build 5478 to 5479
 - Bumped shellcheck pin in `ci.yml` from v0.10.0 to v0.11.0
 - README stack list resynced to the versions actually pinned in the Containerfile (ReHLDS 3.15.0.896, ReGameDLL_CS 5.30.0.814, ReAPI 5.29.0.358, AMX Mod X build 5479)
