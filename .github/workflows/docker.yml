@@ -6,19 +6,23 @@ on:
     branches: [main]
     paths:
       - 'Containerfile'
+      - '.containerignore'
       - 'entrypoint.sh'
       - 'config/**'
       - 'plugins/**'
       - 'maps/**'
+      - 'docs/cstrike/maps/**'
       - '.github/workflows/docker.yml'
   pull_request:
     branches: [main]
     paths:
       - 'Containerfile'
+      - '.containerignore'
       - 'entrypoint.sh'
       - 'config/**'
       - 'plugins/**'
       - 'maps/**'
+      - 'docs/cstrike/maps/**'
       - '.github/workflows/docker.yml'
   workflow_dispatch:
 

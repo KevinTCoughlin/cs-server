@@ -49,7 +49,12 @@ shellcheck:
     shellcheck entrypoint.sh install.sh
 
 # Run all checks
-check: lint shellcheck
+check: lint shellcheck test
+
+# Run entrypoint regression tests
+test:
+    bash tests/entrypoint_test.sh
+    bash tests/compose_test.sh
 
 # Exec into running container
 shell:
@@ -57,7 +62,7 @@ shell:
 
 # Send RCON command to server via FIFO
 rcon cmd:
-    podman exec scoutzknivez sh -c 'echo "{{cmd}}" > /tmp/hlds-input'
+    podman exec scoutzknivez sh -c 'printf "%s\n" "$1" > /hlds/.runtime/hlds-input' sh "{{cmd}}"
 
 # Restart Quadlet service
 restart:

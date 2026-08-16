@@ -31,7 +31,8 @@ just up-d        # build and start server (detached)
 just down        # stop server
 just logs        # follow server logs
 just shell       # exec into running container
-just check       # run all linters (hadolint + shellcheck)
+just test        # run entrypoint regression tests
+just check       # run all linters and tests
 just clean       # remove built images
 ```
 

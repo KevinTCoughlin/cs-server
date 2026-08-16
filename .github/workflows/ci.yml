@@ -29,3 +29,8 @@ jobs:
           version: v0.11.0
           scandir: .
           additional_files: entrypoint.sh install.sh
+
+      - name: Run entrypoint regression tests
+        run: |
+          bash tests/entrypoint_test.sh
+          bash tests/compose_test.sh

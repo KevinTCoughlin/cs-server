@@ -33,8 +33,6 @@ ARG AMXMODX_BUILD
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
 # hadolint ignore=DL3008
 RUN dpkg --add-architecture i386 && \
     apt-get update && \
@@ -53,7 +51,9 @@ RUN dpkg --add-architecture i386 && \
 # Install SteamCMD
 RUN mkdir -p /opt/steamcmd && \
     curl -fsSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
-        | tar -xz -C /opt/steamcmd
+        -o /opt/steamcmd/steamcmd_linux.tar.gz && \
+    tar -xzf /opt/steamcmd/steamcmd_linux.tar.gz -C /opt/steamcmd && \
+    rm -f /opt/steamcmd/steamcmd_linux.tar.gz
 
 # Download HLDS (app 90, steam_legacy beta)
 # Run app_update multiple times — app 90 has a known bug where it doesn't
@@ -118,9 +118,9 @@ RUN curl -fsSL "https://github.com/rehlds/ReAPI/releases/download/${REAPI_VERSIO
        cstrike/addons/amxmodx/scripting/include/ 2>/dev/null || true && \
     rm -rf /tmp/reapi /tmp/reapi.zip
 
-# Copy custom maps
-COPY maps/*.bsp cstrike/maps/
-COPY maps/*.nav cstrike/maps/
+# Copy bundled default maps, then overlay any local custom maps.
+COPY docs/cstrike/maps/*.bsp docs/cstrike/maps/*.nav cstrike/maps/
+COPY maps/ cstrike/maps/
 
 # Compile custom AMX Mod X plugins
 COPY plugins/amxmodx/scripting/*.sma cstrike/addons/amxmodx/scripting/
@@ -137,7 +137,7 @@ COPY plugins/amxmodx/AQS.ini cstrike/addons/amxmodx/configs/AQS.ini
 COPY sound/quake/ cstrike/sound/quake/
 
 # --- CZ Bots (ZBot profiles + sounds from ReGameDLL_CS) ---
-RUN curl -fsSL "https://raw.githubusercontent.com/rehlds/ReGameDLL_CS/refs/heads/master/regamedll/extra/zBot/bot_profiles.zip" \
+RUN curl -fsSL "https://raw.githubusercontent.com/rehlds/ReGameDLL_CS/${REGAMEDLL_VERSION}/regamedll/extra/zBot/bot_profiles.zip" \
         -o /tmp/bot_profiles.zip && \
     unzip -o /tmp/bot_profiles.zip -d . && \
     rm -f /tmp/bot_profiles.zip
@@ -162,8 +162,6 @@ RUN chmod +x hlds_linux hlds_run && \
 FROM debian:trixie-slim@sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
-
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Prevent docs/man/locale from being installed (smaller image), but keep licenses
 RUN printf 'path-exclude=/usr/share/doc/*\npath-include=/usr/share/doc/*/copyright\npath-include=/usr/share/doc/*/changelog.Debian*\npath-include=/usr/share/doc/*/LICENSE\npath-exclude=/usr/share/man/*\npath-exclude=/usr/share/locale/*\npath-exclude=/usr/share/bug/*\npath-exclude=/usr/share/lintian/*\npath-exclude=/usr/share/mime/*\npath-exclude=/usr/share/info/*\n' \

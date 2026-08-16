@@ -16,6 +16,7 @@
 #   5. Starts the server
 #
 set -euo pipefail
+umask 077
 
 REPO="KevinTCoughlin/cs-server"
 REGISTRY="ghcr.io"
@@ -25,6 +26,11 @@ SERVICE_NAME="scoutzknivez"
 CONFIG_DIR="${HOME}/.config/cs-server"
 QUADLET_DIR="${HOME}/.config/containers/systemd"
 RUNTIME=""
+
+if [[ -z "${IMAGE}" || "${IMAGE}" =~ [[:space:]] ]]; then
+    printf '[error] Invalid CS_SERVER_IMAGE: %s\n' "${IMAGE}" >&2
+    exit 1
+fi
 
 # --- Helpers ----------------------------------------------------------------
 
@@ -194,6 +200,7 @@ do_install() {
 
     info "Creating config directory: ${CONFIG_DIR}"
     mkdir -p "${CONFIG_DIR}"
+    chmod 700 "${CONFIG_DIR}"
 
     if [[ ! -f "${CONFIG_DIR}/server.cfg" ]]; then
         local rcon_password
@@ -273,6 +280,7 @@ NIPPERMAPCYCLE
     else
         ok "mapcycle-nipper.txt already exists, skipping"
     fi
+    chmod 600 "${CONFIG_DIR}"/*.cfg "${CONFIG_DIR}"/*.txt
 
     # --- Start server --------------------------------------------------------
 
@@ -292,6 +300,7 @@ install_podman() {
     cat > "${QUADLET_DIR}/${SERVICE_NAME}.container" << QUADLET
 [Unit]
 Description=CS 1.6 ScoutzKnivez Server
+Wants=network-online.target
 After=network-online.target
 
 [Container]
@@ -313,6 +322,11 @@ Sysctl=net.core.rmem_max=26214400
 Sysctl=net.core.wmem_max=26214400
 DropCapability=ALL
 NoNewPrivileges=true
+HealthCmd=grep -qs hlds_linux /proc/[0-9]*/comm
+HealthInterval=30s
+HealthTimeout=5s
+HealthStartPeriod=60s
+HealthRetries=3
 Notify=healthy
 
 [Service]
