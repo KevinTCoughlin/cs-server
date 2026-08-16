@@ -18,6 +18,7 @@ services:
       MAP: ${MAP:-scoutzknivez}
       PORT: ${PORT:-27015}
       BOTS: ${BOTS:-1}
+      NOMASTER: ${NOMASTER:-0}
       MAPCYCLE: ${MAPCYCLE:-mapcycle.txt}
       LAN_MODE: ${LAN_MODE:-0}
     sysctls:
@@ -31,3 +32,9 @@ services:
     cpus: 2.0
     stop_grace_period: 50s
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qs hlds_linux /proc/[0-9]*/comm || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3

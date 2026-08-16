@@ -10,6 +10,9 @@ on:
     - cron: "0 8 * * 5"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   dust2-announcement:
     name: Friday Dust 2 Announcement

@@ -1,5 +1,6 @@
 [Unit]
 Description=CS 1.6 ScoutzKnivez Server
+Wants=network-online.target
 After=network-online.target
 
 [Container]
@@ -21,6 +22,11 @@ Sysctl=net.core.rmem_max=26214400
 Sysctl=net.core.wmem_max=26214400
 DropCapability=ALL
 NoNewPrivileges=true
+HealthCmd=grep -qs hlds_linux /proc/[0-9]*/comm
+HealthInterval=30s
+HealthTimeout=5s
+HealthStartPeriod=60s
+HealthRetries=3
 Notify=healthy
 
 [Service]

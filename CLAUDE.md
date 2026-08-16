@@ -74,7 +74,7 @@ quadlet/
   - Minimal image size (~25-30MB for slim variant)
   - glibc compatibility (alternatives like Alpine's musl cause HLDS issues)
   - Alternatives rejected: Bookworm (shorter support window), Ubuntu (larger footprint), Alpine (glibc incompatibility)
-- **FIFO-based server control**: `entrypoint.sh` creates a named pipe (`/tmp/hlds-input`) for sending commands to HLDS (say, quit, rcon). The `script` utility provides a PTY so HLDS doesn't block on stdin.
+- **FIFO-based server control**: `entrypoint.sh` creates a private named pipe (`/hlds/.runtime/hlds-input`) for sending commands to HLDS (say, quit, rcon). The `script` utility provides a PTY so HLDS doesn't block on stdin.
 - **Graceful shutdown**: Traps SIGTERM/SIGINT, announces countdown in-game (30s → 10s → 5s → 2s → 1s), then sends `quit` via FIFO.
 - **Quadlet for systemd**: `scoutzknivez.container` unit file enables auto-start, crash recovery (restart on-failure), and resource limits (512MB RAM, 2 CPUs).
 

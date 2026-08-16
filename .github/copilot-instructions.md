@@ -36,7 +36,7 @@ just check                          # both
 ## Architecture & Conventions
 
 - **Multi-stage build**: builder stage downloads and assembles everything, runtime stage has only i386 libs
-- **FIFO control**: entrypoint.sh creates `/tmp/hlds-input` named pipe for sending commands to HLDS
+- **FIFO control**: entrypoint.sh creates `/hlds/.runtime/hlds-input` named pipe for sending commands to HLDS
 - **Graceful shutdown**: traps SIGTERM/SIGINT, announces countdown, sends `quit` via FIFO
 - **Quadlet**: `scoutzknivez.container` for systemd integration (auto-start, restart on-failure)
 - **Pinned versions**: all component versions are `ARG` in Containerfile

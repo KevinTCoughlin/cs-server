@@ -64,7 +64,8 @@ If you need custom maps or configurations:
 
 Place `.bsp` files into the `maps/` directory. They get baked into the image at build time.
 
-Maps are not included in the repo due to file size. You can find them on sites like [GameBanana](https://gamebanana.com/mods/cats/5568) or [17buddies](https://www.17buddies.rocks/).
+The default ScoutzKnivez maps are bundled from `docs/cstrike/maps/`. Add custom
+maps to `maps/`; they overlay the bundled maps during the image build.
 
 #### 2. Build and run
 
@@ -254,6 +255,9 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
 
+Startup rejects invalid booleans, out-of-range ports/player counts, and unsafe
+map or mapcycle filenames instead of passing unchecked values to HLDS.
+
 ## Bots
 
 Bots are enabled by default using ReGameDLL_CS's built-in ZBot support — no additional plugins or downloads required.
@@ -357,6 +361,8 @@ The Quadlet is configured with `WantedBy=default.target`, so the server starts a
 - **System user with nologin shell** — HLDS runs as a system user (`-r`) with `/usr/sbin/nologin`, preventing interactive login
 - **Setuid/setgid bits stripped** — all setuid/setgid bits removed from the runtime image
 - **Resource limits** — `MemoryMax=512M`, `CPUQuota=200%` (2 cores max)
+- **Runtime health check** — Compose and Quadlet verify that `hlds_linux` is
+  running, independent of image-format health-check metadata
 
 ### HLDS Anti-Abuse
 
@@ -412,6 +418,9 @@ sudo cpupower frequency-set -g performance
 - Keep `/etc/systemd/system` and user Quadlet units under configuration management.
 - Review image updates before deploying; retain the previous digest for rollback.
 - Back up `${HOME}/.config/cs-server/`, especially `server.cfg` and map cycles.
+- Restore by stopping the service, replacing that directory from backup with
+  owner-only permissions (`chmod 700` on the directory and `chmod 600` on its
+  files), then restarting the service.
 - Configure host firewall rules for UDP/TCP `27015` and monitor the service with systemd/journald.
 - Set journald or Docker log retention limits appropriate for the host.
 
