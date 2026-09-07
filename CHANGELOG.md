@@ -8,9 +8,9 @@
 - Bumped `hadolint/hadolint-action` in `ci.yml` from v3.3.0 to v3.4.0 (hadolint 2.14.0 → 2.15.0)
 - `just lint` pins `ghcr.io/hadolint/hadolint:v2.15.0-debian` instead of tracking `:latest`, so local linting and CI run the same ruleset
 - Dependabot no longer opens minor/patch PRs for `actions/*`, `docker/*` and `github/codeql-action`, which are pinned at the major tag on purpose
-- Bumped AMX Mod X pin from build 5478 to 5479
+- Bumped AMX Mod X pin from build 5478 to 5481
 - Bumped shellcheck pin in `ci.yml` from v0.10.0 to v0.11.0
-- README stack list resynced to the versions actually pinned in the Containerfile (ReHLDS 3.15.0.896, ReGameDLL_CS 5.30.0.814, ReAPI 5.29.0.358, AMX Mod X build 5479)
+- README stack list resynced to the versions actually pinned in the Containerfile (ReHLDS 3.15.0.896, ReGameDLL_CS 5.30.0.814, ReAPI 5.29.0.358, AMX Mod X build 5481)
 - Migrated base images from Debian 12 (Bookworm) to Debian 13 (Trixie) in both builder and runtime stages
 - AMX Mod X plugin compile loop fails fast (`|| exit 1`) on any plugin error
 - Quadlet `Volume` paths updated from hardcoded `~/Development/cs-server/` to `~/.config/cs-server/` to match `install.sh` behaviour
