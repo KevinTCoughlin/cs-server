@@ -23,7 +23,7 @@ ARG AMXMODX_BUILD=5486
 # - Minimal image size (~25-30MB for slim variant)
 # - glibc compatibility (Alpine's musl would require workarounds)
 # Alternatives rejected: Bookworm (shorter support), Ubuntu (larger), Alpine (glibc issues)
-FROM debian:trixie@sha256:f324c7ff54321e8d9c588493a20244965938ce0aa50bbd1022d38010e9ffc4b1 AS builder
+FROM debian:trixie@sha256:9cc080028c43b27d2074d63a5f9caf7166d731494965616c1a6d2827a004585c AS builder
 
 ARG REHLDS_VERSION
 ARG REGAMEDLL_VERSION
@@ -159,7 +159,7 @@ RUN chmod +x hlds_linux hlds_run && \
 # Stage 2: Runtime — clean slim image, no build tools
 # ---------------------------------------------------------------------------
 # Using trixie-slim for minimal attack surface and optimal security posture
-FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS runtime
+FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
