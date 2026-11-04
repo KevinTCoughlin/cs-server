@@ -26,6 +26,11 @@ updates:
         update-types:
           - "version-update:semver-minor"
           - "version-update:semver-patch"
+    groups:
+      github-actions:
+        patterns: ["*"]
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "docker"
     directory: "/"
@@ -36,3 +41,8 @@ updates:
     labels:
       - "dependencies"
       - "docker"
+    groups:
+      docker:
+        patterns: ["*"]
+    cooldown:
+      default-days: 7
