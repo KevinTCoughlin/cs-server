@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: MIT
-name: Nightly
+name: Weekly
 
 on:
   schedule:
-    # Every day at midnight UTC
-    - cron: "0 0 * * *"
+    # Weekly, Monday 00:00 UTC (nothing consumes a daily image; the tag stays `nightly`)
+    - cron: "0 0 * * 1"
   workflow_dispatch:
 
 env:
@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   nightly:
-    name: Nightly Build
+    name: Weekly Build
     runs-on: ubuntu-latest
 
     steps:
