@@ -59,7 +59,7 @@ quadlet/
 .github/workflows/
   docker.yml               CI: build, Trivy scan, push to ghcr.io
   ci.yml                   CI: hadolint + shellcheck on every PR
-  nightly.yml              Nightly: rebuild, scan, push nightly tag
+  nightly.yml              Weekly: rebuild, scan, push nightly tag
   friday-dust2.yml         Scheduled Friday PST Dust 2 announcements
 ```
 
@@ -91,7 +91,7 @@ quadlet/
 
 - **docker.yml**: Builds container image on push/PR (path-filtered), runs Trivy scan, pushes to ghcr.io with semantic tags, generates SBOM
 - **ci.yml**: Runs hadolint + shellcheck on every push/PR (no path filter) — fast lint gate
-- **nightly.yml**: Daily rebuild at midnight UTC, Trivy scan, pushes `nightly` tag to ghcr.io
+- **nightly.yml**: Weekly rebuild (Monday 00:00 UTC), Trivy scan, pushes `nightly` tag to ghcr.io
 - **friday-dust2.yml**: Scheduled Friday at 00:00 PST (08:00 UTC), generates Dust 2 Friday announcements with gameplay rules
 
 ## Environment Variables

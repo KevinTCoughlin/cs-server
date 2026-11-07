@@ -58,4 +58,4 @@ just check                          # both
 
 - `docker.yml` — build, Trivy scan, push to ghcr.io (path-filtered)
 - `ci.yml` — hadolint + shellcheck on every push/PR (no path filter)
-- `nightly.yml` — daily rebuild, Trivy scan, push nightly tag
+- `nightly.yml` — weekly rebuild, Trivy scan, push nightly tag
