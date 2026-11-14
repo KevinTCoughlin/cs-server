@@ -145,6 +145,13 @@ HLDS_ARGS=(
     "${MASTER_ARGS[@]}"
     "${BOT_QUOTA_ARGS[@]}"
 )
+# On non-x86 images (arm64), scripts/i386-compat.sh installs a launcher that
+# runs the i386 hlds_linux under qemu-i386; hand it to hlds_run as the binary.
+HLDS_EMULATOR="${HLDS_EMULATOR:-/usr/local/libexec/cs-server/hlds_linux}"
+if [[ -x "${HLDS_EMULATOR}" ]]; then
+    echo "[entrypoint] Running hlds_linux under i386 emulation (${HLDS_EMULATOR})"
+    HLDS_ARGS+=(-binary "${HLDS_EMULATOR}")
+fi
 printf -v HLDS_COMMAND '%q ' "${HLDS_ARGS[@]}"
 
 script -eqfc "${HLDS_COMMAND}" /dev/null < "${FIFO}" &
