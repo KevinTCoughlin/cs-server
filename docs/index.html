@@ -456,7 +456,7 @@ code{overflow-wrap:anywhere}
 <p style="font-size:0.85rem;margin-top:1rem">See <a href="https://github.com/KevinTCoughlin/cs-server#windows-wsl2">README</a> for full instructions. Related: <a href="https://github.com/KevinTCoughlin/cs-server/issues/18">#18</a></p>
 </section>
 
-<section>
+<section id="macos">
 <h2>// macOS / Apple silicon</h2>
 <p style="font-size:0.85rem;margin-bottom:1rem">Runs under Apple <code style="color:#fff">container</code>. Rosetta only translates x86_64 and HLDS is 32-bit i386, so the Mac image is arm64 and runs the server under <code style="color:#fff">qemu-i386</code> user-mode emulation (~250 server FPS with 10 bots on an M-series Mac).</p>
 <ol class="steps">
