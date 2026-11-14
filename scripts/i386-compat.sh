@@ -26,8 +26,11 @@
 #          bundles every target, ~460 MB) and the package is purged, so the
 #          image only carries the ~14 MB static i386 emulator. Also builds
 #          i386-qemu-shim.so (see i386-qemu-shim.c; the cross compiler is
-#          purged again) and adds ca-certificates, without which steamclient
-#          can't reach Steam ("disconnected from Steam3").
+#          purged again).
+#
+# All architectures also get ca-certificates: without a CA bundle,
+# steamclient.so logs "unable to load trusted SSL root certificates" and the
+# server stays "disconnected from Steam3".
 #
 # Emulated launcher (non-x86 only), passed to hlds_run as `-binary` by
 # entrypoint.sh:
@@ -54,10 +57,11 @@ case "${ARCH}" in
         EMULATE=0
         ;;
     *)
-        PACKAGES=(libgcc-s1:i386 libstdc++6:i386 zlib1g:i386 libc6:i386 ca-certificates)
+        PACKAGES=(libgcc-s1:i386 libstdc++6:i386 zlib1g:i386 libc6:i386)
         EMULATE=1
         ;;
 esac
+PACKAGES+=(ca-certificates)
 
 install_runner() {
     local exec_line='exec "$@"'

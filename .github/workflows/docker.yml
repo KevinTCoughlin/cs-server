@@ -98,7 +98,7 @@ jobs:
             --platform linux/amd64 \
             --entrypoint /bin/sh \
             "${{ fromJSON(steps.meta.outputs.json).tags[0] }}" \
-            -c "test -x /hlds/hlds_linux && test -x /hlds/hlds_run && test -x /entrypoint.sh"
+            -c "test -x /hlds/hlds_linux && test -x /hlds/hlds_run && test -x /entrypoint.sh && test -s /etc/ssl/certs/ca-certificates.crt"
 
       - name: Run Trivy vulnerability scanner
         id: trivy
