@@ -36,8 +36,8 @@ On macOS, start the rootless Podman VM before using the container tasks:
 podman machine start
 ```
 
-The justfile defaults to Apple `container` on macOS (`CONTAINER_ENGINE` overrides it); see
-[macOS / Apple silicon](#macos--apple-silicon) for why the server itself can't run there.
+The justfile defaults to Apple `container` on macOS (`CONTAINER_ENGINE=podman` overrides it);
+see [macOS / Apple silicon](#macos--apple-silicon).
 
 ## Quick Start
 
@@ -132,9 +132,28 @@ connect <wsl2-ip>:27015
 
 ### macOS / Apple silicon
 
-Not supported as a host. The HLDS payload is 32-bit i386 (`hlds_linux`, `engine_i486.so`), and Apple's [`container`](https://github.com/apple/container) CLI only offers Rosetta translation for x86_64 — i386 binaries fail with `Exec format error` even with `--platform linux/amd64 --rosetta`. `install.sh` also depends on systemd/Quadlet, so it exits early on macOS.
+Runs under Apple's [`container`](https://github.com/apple/container) CLI (tested with 1.7.1 on an M-series Mac). Rosetta for Linux only translates x86_64, and HLDS is 32-bit i386, so the macOS image is **arm64 and runs the server under `qemu-i386` user-mode emulation** instead. The same `Containerfile` builds it; `scripts/i386-compat.sh` picks the per-architecture pieces:
 
-On a Mac you can still edit and lint: `just lint` (hadolint) and `just shellcheck` work with the default `container` engine. `just build`, `up`, `up-d`, `down` and `deploy` stop with an explanation unless you opt into Podman with `CONTAINER_ENGINE=podman` and `podman machine start` (QEMU emulation inside the VM; untested and slow). Run the actual server on a Linux host.
+| | linux/amd64 (CI, ghcr.io, Linux hosts) | linux/arm64 (Apple silicon) |
+|---|---|---|
+| i386 libraries | `lib32*` biarch packages | Debian multiarch `:i386` packages |
+| Running i386 code | native | static `qemu-i386` (~14 MB) |
+| Steam libraries | as-is | `LD_PRELOAD` shim (`scripts/i386-qemu-shim.c`) for two qemu gaps: robust futex lists and `/proc/cpuinfo` |
+
+```bash
+brew install container && container system start
+just build          # ~10 min: SteamCMD downloads HLDS under emulation
+just up             # attached, config from ./config (like compose)
+just install        # or: run as a launchd agent (ops/cs-server), config in ~/.config/cs-server
+just status         # agent + container state and the address to connect to
+just logs           # follow output; `just rcon "status"` sends console commands
+```
+
+`just install` uses `ops/cs-server`, the macOS counterpart of the Quadlet unit: a launchd agent (`ops/launchd/com.kevintcoughlin.cs-server.plist`) that starts at login, restarts on crashes, and stops gracefully with the in-game countdown. `ops/cs-server` also has `update`, `restart`, `stop`, `start` and `uninstall`. Put `MAP=…`, `BOTS=…` etc. in `~/.config/cs-server/env`.
+
+**Performance** (M-series, 2 vCPUs, 20 slots, 10 bots, `sys_ticrate 1000`, `pingboost 2`): ~250 server FPS, ~80% of the VM's CPU, ~340 MiB RAM. That is plenty for a LAN or friends server; for a busy public server, use a Linux x86 host. `CS_MEMORY` / `CS_CPUS` change the VM size (default 1 GB / 2 CPUs).
+
+`install.sh` (systemd/Quadlet, amd64 image from ghcr.io) does not support macOS and points you here instead.
 
 ### Configuration
 

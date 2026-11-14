@@ -63,4 +63,33 @@ if [[ "${status}" -ne 17 ]]; then
     exit 1
 fi
 
+# arm64 images ship an emulated hlds_linux launcher; entrypoint.sh must hand
+# it to hlds_run as -binary, and leave the arguments alone when it's absent.
+cat > "${WORK_DIR}/hlds_run" <<'EOF'
+#!/bin/sh
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "-binary" ] && [ "$2" = "${EXPECTED_BINARY}" ]; then
+        exit 18
+    fi
+    shift
+done
+exit 17
+EOF
+cat > "${WORK_DIR}/emulated_hlds_linux" <<'EOF'
+#!/bin/sh
+EOF
+chmod +x "${WORK_DIR}/hlds_run" "${WORK_DIR}/emulated_hlds_linux"
+
+run_stub HLDS_EMULATOR="${WORK_DIR}/emulated_hlds_linux" EXPECTED_BINARY="${WORK_DIR}/emulated_hlds_linux"
+if [[ "${status}" -ne 18 ]]; then
+    printf 'Expected the emulated launcher to be passed as -binary, got %d\n' "${status}" >&2
+    exit 1
+fi
+
+run_stub HLDS_EMULATOR="${WORK_DIR}/missing" EXPECTED_BINARY="${WORK_DIR}/missing"
+if [[ "${status}" -ne 17 ]]; then
+    printf 'Expected no -binary without an emulated launcher, got %d\n' "${status}" >&2
+    exit 1
+fi
+
 printf 'entrypoint tests passed\n'

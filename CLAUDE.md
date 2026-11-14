@@ -14,7 +14,9 @@ podman compose down                 # stop
 
 Or via justfile: `just build`, `just up`, `just up-d`, `just down`, `just deploy`.
 
-The justfile picks its engine via `ENGINE := env("CONTAINER_ENGINE", ...)`: Apple `container` on macOS, `podman` elsewhere. On `container`, `lint`, `logs` and `shell` work, but `build`/`up`/`up-d`/`down`/`deploy` fail fast via `_require-podman`. HLDS is 32-bit i386 and Rosetta for Linux only translates x86_64 (probed with container 1.7.1: `Exec format error`), so there is no macOS run path. `install.sh` `detect_runtime` errors on Darwin for the same reason. Keep Linux/Podman/Quadlet behaviour unchanged when editing these.
+The justfile picks its engine via `ENGINE := env("CONTAINER_ENGINE", ...)`: Apple `container` on macOS, `podman` elsewhere. Every recipe has a `container` branch next to the unchanged Podman command; service recipes (`install`, `status`, `restart`, `deploy`, `journal`) delegate to `ops/cs-server`, a launchd wrapper (`ops/launchd/com.kevintcoughlin.cs-server.plist`).
+
+**Apple silicon:** HLDS is 32-bit i386 and Rosetta for Linux only translates x86_64 (`Exec format error`). The arm64 image runs it under `qemu-i386` user-mode emulation instead. All arch-specific logic lives in `scripts/i386-compat.sh`: amd64 keeps the lib32* packages, while non-x86 gets multiarch `:i386` libs, `ca-certificates`, a static `qemu-i386`, `scripts/i386-qemu-shim.c` (LD_PRELOAD: fakes `get_robust_list` and `/proc/cpuinfo`, the qemu-user gaps that crash steamclient/SteamCMD), `run-i386` for build-time tools (SteamCMD via `DEBUGGER=run-i386`, `amxxpc`), and an `hlds_linux` launcher that `entrypoint.sh` passes to `hlds_run -binary`. On x86, `run-i386` is a plain `exec`. Apple's builder does not set `TARGETARCH`, so don't branch stages on it. Keep the x86 and Podman/Quadlet behaviour unchanged when editing these.
 
 ## Lint & Check
 
@@ -30,6 +32,10 @@ just check                          # both
 Containerfile              Multi-stage Debian 13 build (builder + runtime)
 compose.yml                Podman Compose service definition
 entrypoint.sh              Container startup: FIFO control, graceful shutdown, PTY
+scripts/i386-compat.sh     Per-arch i386 libs + qemu-i386 emulation (arm64)
+scripts/i386-qemu-shim.c   LD_PRELOAD shim for Steam libs under qemu-i386
+ops/cs-server              macOS launchd service wrapper (Apple container)
+ops/launchd/               launchd agent template
 config/
   server.cfg               Game server settings (gravity, air control, rounds)
   mapcycle.txt             Map rotation (3 scoutzknivez variants)

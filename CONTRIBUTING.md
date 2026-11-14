@@ -12,7 +12,7 @@ PRs welcome! This is a community Counter-Strike 1.6 server project. Keep changes
 | [shellcheck](https://github.com/koalaman/shellcheck#installing) | latest | Shell script linter |
 | [hadolint](https://github.com/hadolint/hadolint#install) | latest | Containerfile linter (optional) |
 
-**macOS:** the justfile defaults to Apple [`container`](https://github.com/apple/container) (override with `CONTAINER_ENGINE`). `just check`, `just logs` and `just shell` work with it, but the server image is 32-bit i386 and Rosetta only translates x86_64, so `just build`/`up`/`up-d`/`down`/`deploy` refuse to run on `container`. Build and test the server on Linux (or set `CONTAINER_ENGINE=podman` with `podman machine`, untested).
+**macOS (Apple silicon):** the justfile defaults to Apple [`container`](https://github.com/apple/container) (override with `CONTAINER_ENGINE`). `just build` / `just up` produce an arm64 image that runs the i386 server under `qemu-i386` (see `scripts/i386-compat.sh`); `just install` sets it up as a launchd agent via `ops/cs-server`. The amd64 image can't be built under `container` (Rosetta has no i386), so x86 changes are verified by the `docker.yml` workflow. `just test` needs util-linux `script`, so run it on Linux.
 
 ## Setup
 

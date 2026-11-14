@@ -458,11 +458,12 @@ code{overflow-wrap:anywhere}
 
 <section>
 <h2>// macOS / Apple silicon</h2>
-<p style="font-size:0.85rem;margin-bottom:1rem">Not supported as a host. HLDS is a 32-bit i386 binary, and Apple <code style="color:#fff">container</code> with Rosetta only translates x86_64, so it fails with <code style="color:#fff">Exec format error</code>. The installer also needs systemd/Quadlet and exits early on macOS.</p>
+<p style="font-size:0.85rem;margin-bottom:1rem">Runs under Apple <code style="color:#fff">container</code>. Rosetta only translates x86_64 and HLDS is 32-bit i386, so the Mac image is arm64 and runs the server under <code style="color:#fff">qemu-i386</code> user-mode emulation (~250 server FPS with 10 bots on an M-series Mac).</p>
 <ol class="steps">
-  <li>Lint on a Mac: <code style="color:#fff">just lint</code> and <code style="color:#fff">just shellcheck</code> work with Apple <code style="color:#fff">container</code></li>
-  <li>Build/run recipes stop with an explanation unless <code style="color:#fff">CONTAINER_ENGINE=podman</code> (untested QEMU emulation in <code style="color:#fff">podman machine</code>)</li>
-  <li>Run the server itself on a Linux host</li>
+  <li>Install: <code style="color:#fff">brew install container &amp;&amp; container system start</code></li>
+  <li>Build (~10 min, from source): <code style="color:#fff">just build</code></li>
+  <li>Run: <code style="color:#fff">just up</code>, or as a launchd agent: <code style="color:#fff">just install</code></li>
+  <li>Connect: <code style="color:#fff">connect &lt;mac-ip&gt;:27015</code></li>
 </ol>
 <p style="font-size:0.85rem;margin-top:1rem">See <a href="https://github.com/KevinTCoughlin/cs-server#macos--apple-silicon">README</a> for details.</p>
 </section>

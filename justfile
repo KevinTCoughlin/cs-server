@@ -6,54 +6,50 @@ HADOLINT_IMAGE := "ghcr.io/hadolint/hadolint:v2.15.0-debian"
 # with CONTAINER_ENGINE=podman (e.g. `podman machine`) or docker.
 ENGINE := env("CONTAINER_ENGINE", if os() == "macos" { "container" } else { "podman" })
 
-# Apple `container` + Rosetta only translates x86_64; the HLDS payload is
-# 32-bit i386 (hlds_linux, engine_i486.so), so it cannot build or run there.
-[private]
-_require-podman:
-    #!/usr/bin/env bash
-    if [ "{{ENGINE}}" = "container" ]; then
-        echo "error: this recipe needs Podman (compose + Quadlet); Apple 'container' cannot run the 32-bit i386 HLDS payload (Rosetta translates x86_64 only)." >&2
-        echo "       Use a Linux host, or CONTAINER_ENGINE=podman with 'podman machine start'. See README: macOS / Apple silicon." >&2
-        exit 1
-    fi
+# Apple `container` (no compose, no Quadlet): the image is built as linux/arm64
+# and the i386 HLDS payload runs under qemu-i386 (scripts/i386-compat.sh).
+# Run flags mirror compose.yml; the launchd service lives in ops/cs-server.
+IMAGE := "localhost/cs-server:latest"
+CTR_MEMORY := env("CS_MEMORY", "1G")
+CTR_CPUS := env("CS_CPUS", "2")
+CTR_BUILD := "container build --platform linux/arm64 -t " + IMAGE + " -f Containerfile ."
+CTR_ENV_FILE := if path_exists(justfile_directory() / ".env") == "true" { "--env-file " + justfile_directory() / ".env" } else { "" }
+CTR_RUN := "container run --name scoutzknivez --rm -p 27015:27015/udp -p 27015:27015/tcp -m " + CTR_MEMORY + " -c " + CTR_CPUS + " --cap-drop ALL " + CTR_ENV_FILE + " -v " + justfile_directory() / "config/server.cfg" + ":/hlds/cstrike/server.cfg:ro -v " + justfile_directory() / "config/mapcycle.txt" + ":/hlds/cstrike/mapcycle.txt:ro -v " + justfile_directory() / "config/mapcycle-dust2.txt" + ":/hlds/cstrike/mapcycle-dust2.txt:ro -v " + justfile_directory() / "config/mapcycle-nipper.txt" + ":/hlds/cstrike/mapcycle-nipper.txt:ro"
 
 default:
     @just --list
 
 # Build container image
-build: _require-podman
-    podman compose build
+build:
+    {{ if ENGINE == "container" { CTR_BUILD } else { "podman compose build" } }}
 
 # Build and start server
-up: _require-podman
-    podman compose up --build
+up:
+    {{ if ENGINE == "container" { CTR_BUILD + " && " + CTR_RUN + " " + IMAGE } else { "podman compose up --build" } }}
 
 # Start server (detached)
-up-d: _require-podman
-    podman compose up --build -d
+up-d:
+    {{ if ENGINE == "container" { CTR_BUILD + " && " + CTR_RUN + " -d " + IMAGE } else { "podman compose up --build -d" } }}
 
 # Stop server
-down: _require-podman
-    podman compose down
+down:
+    {{ if ENGINE == "container" { "container stop -t 50 scoutzknivez" } else { "podman compose down" } }}
 
 # Follow server logs
 logs:
     {{ENGINE}} logs -f scoutzknivez
 
-# Rebuild image and restart Quadlet service
-deploy: _require-podman
-    podman compose up --build -d && podman compose down
-    systemctl --user restart scoutzknivez
+# Rebuild image and restart Quadlet service (launchd agent on Apple container)
+deploy:
+    {{ if ENGINE == "container" { "ops/cs-server update" } else { "podman compose up --build -d && podman compose down && systemctl --user restart scoutzknivez" } }}
 
-# Show Quadlet service status
+# Show Quadlet service status (launchd agent on Apple container)
 status:
-    systemctl --user status scoutzknivez
+    {{ if ENGINE == "container" { "ops/cs-server status" } else { "systemctl --user status scoutzknivez" } }}
 
-# Install Quadlet unit file
+# Install Quadlet unit file (launchd agent on Apple container)
 install:
-    mkdir -p ~/.config/containers/systemd
-    cp quadlet/scoutzknivez.container ~/.config/containers/systemd/
-    systemctl --user daemon-reload
+    {{ if ENGINE == "container" { "ops/cs-server install" } else { "mkdir -p ~/.config/containers/systemd && cp quadlet/scoutzknivez.container ~/.config/containers/systemd/ && systemctl --user daemon-reload" } }}
 
 # Lint Containerfile with hadolint
 lint:
@@ -61,15 +57,16 @@ lint:
 
 # Lint shell scripts with shellcheck
 shellcheck:
-    shellcheck entrypoint.sh install.sh
+    shellcheck entrypoint.sh install.sh scripts/i386-compat.sh ops/cs-server
 
 # Run all checks
 check: lint shellcheck test
 
-# Run entrypoint regression tests
+# Run entrypoint regression tests (in a Debian container on Apple container:
+# they need util-linux `script`; compose.yml isn't used there)
 test:
-    bash tests/entrypoint_test.sh
-    bash tests/compose_test.sh
+    {{ if ENGINE == "container" { "container run --rm -m 512M -v " + justfile_directory() + ":/repo -w /repo debian:trixie-slim bash tests/entrypoint_test.sh" } else { "bash tests/entrypoint_test.sh" } }}
+    {{ if ENGINE == "container" { "echo 'compose tests skipped: Apple container has no compose'" } else { "bash tests/compose_test.sh" } }}
 
 # Exec into running container
 shell:
@@ -77,15 +74,15 @@ shell:
 
 # Send RCON command to server via FIFO
 rcon cmd:
-    podman exec scoutzknivez sh -c 'printf "%s\n" "$1" > /hlds/.runtime/hlds-input' sh "{{cmd}}"
+    {{ENGINE}} exec scoutzknivez sh -c 'printf "%s\n" "$1" > /hlds/.runtime/hlds-input' sh "{{cmd}}"
 
-# Restart Quadlet service
+# Restart Quadlet service (launchd agent on Apple container)
 restart:
-    systemctl --user restart scoutzknivez
+    {{ if ENGINE == "container" { "ops/cs-server restart" } else { "systemctl --user restart scoutzknivez" } }}
 
-# View Quadlet service journal logs
+# View Quadlet service journal logs (launchd log file on Apple container)
 journal:
-    journalctl --user -u scoutzknivez -f
+    {{ if ENGINE == "container" { "ops/cs-server logs -f" } else { "journalctl --user -u scoutzknivez -f" } }}
 
 # Sync custom content to docs/cstrike/ for FastDL via GitHub Pages
 fastdl:
@@ -108,4 +105,4 @@ fastdl:
 
 # Remove built images
 clean:
-    podman rmi localhost/cs-server:latest 2>/dev/null || true
+    {{ if ENGINE == "container" { "container image delete " + IMAGE } else { "podman rmi " + IMAGE } }} 2>/dev/null || true

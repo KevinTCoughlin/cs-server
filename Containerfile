@@ -33,16 +33,13 @@ ARG AMXMODX_BUILD
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# hadolint ignore=DL3008
-RUN dpkg --add-architecture i386 && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
+# i386 libraries are arch-specific. --runner adds run-i386, which executes
+# build-time i386 tools (SteamCMD, amxxpc): a plain exec on x86, qemu-i386
+# with the Steam compatibility shim on arm64 (see scripts/i386-compat.sh)
+RUN --mount=type=bind,source=scripts,target=/usr/local/src/cs-server \
+    bash /usr/local/src/cs-server/i386-compat.sh install --runner \
         ca-certificates \
         curl \
-        lib32gcc-s1 \
-        lib32stdc++6 \
-        lib32z1 \
-        libc6-i386 \
         patchelf \
         unzip \
         tar \
@@ -58,7 +55,10 @@ RUN mkdir -p /opt/steamcmd && \
 # Download HLDS (app 90, steam_legacy beta)
 # Run app_update multiple times — app 90 has a known bug where it doesn't
 # download all files in a single pass
-RUN /opt/steamcmd/steamcmd.sh \
+# steamcmd.sh launches the binary through $DEBUGGER (run-i386: a no-op exec
+# on x86) and would pick the absent linuxarm64 build on arm64 without
+# STEAM_PLATFORM=linux32 (the x86 default anyway).
+RUN DEBUGGER=run-i386 STEAM_PLATFORM=linux32 /opt/steamcmd/steamcmd.sh \
         +force_install_dir /hlds \
         +login anonymous \
         +app_set_config 90 mod cstrike \
@@ -127,7 +127,7 @@ COPY plugins/amxmodx/scripting/*.sma cstrike/addons/amxmodx/scripting/
 WORKDIR /hlds/cstrike/addons/amxmodx/scripting
 RUN chmod +x amxxpc compile.sh && \
     for sma in scoutzknivez.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma; do \
-        ./amxxpc "$sma" || exit 1; \
+        run-i386 ./amxxpc "$sma" || exit 1; \
         mv "${sma%.sma}.amxx" ../plugins/ || exit 1; \
     done
 WORKDIR /hlds
@@ -167,14 +167,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN printf 'path-exclude=/usr/share/doc/*\npath-include=/usr/share/doc/*/copyright\npath-include=/usr/share/doc/*/changelog.Debian*\npath-include=/usr/share/doc/*/LICENSE\npath-exclude=/usr/share/man/*\npath-exclude=/usr/share/locale/*\npath-exclude=/usr/share/bug/*\npath-exclude=/usr/share/lintian/*\npath-exclude=/usr/share/mime/*\npath-exclude=/usr/share/info/*\n' \
         > /etc/dpkg/dpkg.cfg.d/excludes
 
-# hadolint ignore=DL3008
-RUN dpkg --add-architecture i386 && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        lib32gcc-s1 \
-        lib32stdc++6 \
-        lib32z1 \
-        libc6-i386 \
+# i386 runtime libraries for this architecture; on non-x86 (arm64) also a
+# static qemu-i386 + hlds_linux launcher (see scripts/i386-compat.sh)
+RUN --mount=type=bind,source=scripts,target=/usr/local/src/cs-server \
+    bash /usr/local/src/cs-server/i386-compat.sh install \
     && rm -rf /var/lib/apt/lists/* \
               /var/cache/apt/archives/* \
               /var/log/dpkg.log \

@@ -1,0 +1,222 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# cs-server — run the CS 1.6 server on macOS with Apple `container`, as a
+# launchd agent (the macOS counterpart of the Quadlet unit).
+#
+# The image is arm64 and runs the i386 HLDS payload under qemu-i386 user-mode
+# emulation (see scripts/i386-compat.sh). It is built locally from this
+# checkout; ghcr.io only publishes linux/amd64.
+#
+#   cs-server install        build image if missing, seed config, install + start the agent
+#   cs-server build          (re)build the image from this checkout
+#   cs-server update         rebuild the image and restart
+#   cs-server status         agent + container state
+#   cs-server logs [-f]      server log (~/Library/Logs/cs-server/server.log)
+#   cs-server restart        graceful restart (in-game countdown, ~35s)
+#   cs-server stop           graceful stop and unload the agent
+#   cs-server start          load the agent again after `stop`
+#   cs-server rcon <cmd...>  send a console command via the server FIFO
+#   cs-server uninstall      remove agent, container and image (config kept)
+#   cs-server serve          foreground run; what the launchd agent executes
+#
+# Config lives in ~/.config/cs-server (same as install.sh on Linux). Optional
+# ~/.config/cs-server/env holds KEY=VALUE overrides (MAP, MAXPLAYERS, BOTS,
+# MAPCYCLE, LAN_MODE, NOMASTER). CS_MEMORY / CS_CPUS override the VM size.
+# Predicates (is_running, image_exists) are meant to be used in conditions.
+# shellcheck disable=SC2310
+set -euo pipefail
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
+REPO=$(cd "${SCRIPT_PATH%/*}/.." && pwd)
+NAME="scoutzknivez"
+IMAGE="localhost/cs-server:latest"
+PORT=27015
+MEMORY="${CS_MEMORY:-1G}"
+CPUS="${CS_CPUS:-2}"
+CONFIG_DIR="${HOME}/.config/cs-server"
+LOGS="${HOME}/Library/Logs/cs-server"
+LA_DIR="${HOME}/Library/LaunchAgents"
+LABEL="com.kevintcoughlin.cs-server"
+GUI="gui/$(id -u)"
+CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt)
+
+log() {
+    local ts
+    ts=$(date '+%Y-%m-%dT%H:%M:%S%z')
+    printf '%s %s\n' "${ts}" "$*"
+}
+die() { echo "error: $*" >&2; exit 1; }
+
+ensure_runtime() {
+    command -v container >/dev/null 2>&1 || die "Apple 'container' not found (brew install container)"
+    if ! container system status >/dev/null 2>&1; then
+        log "starting container system"
+        container system start >/dev/null 2>&1 || container system start --enable-kernel-install
+    fi
+}
+
+is_running() {
+    container list 2>/dev/null | awk -v n="${NAME}" '$1==n && /running/ {f=1} END {exit !f}'
+}
+
+image_exists() { container image inspect "${IMAGE}" >/dev/null 2>&1; }
+
+build_image() {
+    ensure_runtime
+    log "building ${IMAGE} (linux/arm64, i386 payload via qemu) from ${REPO}"
+    (cd "${REPO}" && container build --platform linux/arm64 -t "${IMAGE}" -f Containerfile .)
+}
+
+seed_config() {
+    mkdir -p "${CONFIG_DIR}" "${LOGS}"
+    chmod 700 "${CONFIG_DIR}"
+    local f
+    for f in "${CONFIG_FILES[@]}"; do
+        if [[ ! -f "${CONFIG_DIR}/${f}" ]]; then
+            cp "${REPO}/config/${f}" "${CONFIG_DIR}/${f}"
+            log "seeded ${CONFIG_DIR}/${f}"
+        fi
+    done
+    if ! grep -q '^rcon_password' "${CONFIG_DIR}/server.cfg"; then
+        local pw
+        pw=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
+        printf 'rcon_password "%s"\n' "${pw}" >> "${CONFIG_DIR}/server.cfg"
+        log "generated rcon_password in ${CONFIG_DIR}/server.cfg"
+    fi
+    chmod 600 "${CONFIG_DIR}"/*
+}
+
+# Foreground server process, run by the launchd agent. KeepAlive restarts it
+# only on a non-zero exit, so a graceful `container stop` stays stopped.
+cmd_serve() {
+    ensure_runtime
+    seed_config
+    image_exists || die "image ${IMAGE} missing; run: cs-server build"
+    container rm -f "${NAME}" >/dev/null 2>&1 || true
+
+    local args=(
+        --name "${NAME}" --rm
+        -p "${PORT}:${PORT}/udp" -p "${PORT}:${PORT}/tcp"
+        -m "${MEMORY}" -c "${CPUS}"
+        --cap-drop ALL
+    )
+    local f
+    for f in "${CONFIG_FILES[@]}"; do
+        args+=(-v "${CONFIG_DIR}/${f}:/hlds/cstrike/${f}:ro")
+    done
+    if [[ -f "${CONFIG_DIR}/env" ]]; then
+        args+=(--env-file "${CONFIG_DIR}/env")
+    fi
+
+    log "starting ${NAME} on :${PORT} (${MEMORY}, ${CPUS} CPUs, i386 via qemu)"
+    exec container run "${args[@]}" "${IMAGE}"
+}
+
+render_plist() {
+    mkdir -p "${LA_DIR}" "${LOGS}"
+    sed -e "s#__REPO__#${REPO}#g" -e "s#__HOME__#${HOME}#g" \
+        "${REPO}/ops/launchd/${LABEL}.plist" > "${LA_DIR}/${LABEL}.plist"
+    plutil -lint "${LA_DIR}/${LABEL}.plist" >/dev/null
+}
+
+load_agent() {
+    launchctl bootout "${GUI}/${LABEL}" 2>/dev/null || true
+    launchctl bootstrap "${GUI}" "${LA_DIR}/${LABEL}.plist"
+    launchctl enable "${GUI}/${LABEL}"
+}
+
+graceful_stop() {
+    if is_running; then
+        log "stopping ${NAME} (in-game countdown, up to 50s)"
+        container stop -t 50 "${NAME}" >/dev/null 2>&1 || true
+    fi
+}
+
+cmd_install() {
+    ensure_runtime
+    seed_config
+    image_exists || build_image
+    mkdir -p "${HOME}/.local/bin"
+    ln -sf "${REPO}/ops/cs-server" "${HOME}/.local/bin/cs-server"
+    render_plist
+    load_agent
+    log "installed ${LABEL}; logs: ${LOGS}/server.log"
+}
+
+cmd_stop() {
+    graceful_stop
+    launchctl bootout "${GUI}/${LABEL}" 2>/dev/null || true
+    log "stopped (agent unloaded until 'cs-server start')"
+}
+
+cmd_restart() {
+    graceful_stop
+    launchctl kickstart -k "${GUI}/${LABEL}"
+    log "restarted"
+}
+
+cmd_status() {
+    printf 'agent:      '
+    { launchctl print "${GUI}/${LABEL}" 2>/dev/null || true; } |
+        awk -F'= ' '/^\tstate =/ {s=$2} /last exit code =/ {e=$2} END {printf "%s (last exit %s)\n", s ? s : "not loaded", e ? e : "-"}'
+    printf 'container:  '
+    if is_running; then echo running; else echo "not running"; fi
+    printf 'image:      '
+    if image_exists; then echo "${IMAGE}"; else echo "missing"; fi
+    local ip
+    ip=$(ipconfig getifaddr en0 2>/dev/null || true)
+    echo "connect:    ${ip:-<mac-ip>}:${PORT}"
+}
+
+cmd_rcon() {
+    [[ "$#" -gt 0 ]] || die "usage: cs-server rcon <command...>"
+    is_running || die "${NAME} is not running"
+    # shellcheck disable=SC2016 # $1 expands inside the container's sh
+    container exec "${NAME}" sh -c 'printf "%s\n" "$1" > /hlds/.runtime/hlds-input' sh "$*"
+}
+
+cmd_uninstall() {
+    graceful_stop
+    launchctl bootout "${GUI}/${LABEL}" 2>/dev/null || true
+    rm -f "${LA_DIR}/${LABEL}.plist" "${HOME}/.local/bin/cs-server"
+    container rm -f "${NAME}" >/dev/null 2>&1 || true
+    container image delete "${IMAGE}" >/dev/null 2>&1 || true
+    log "uninstalled (config kept in ${CONFIG_DIR})"
+}
+
+cmd="${1:-}"
+if [[ "$#" -gt 0 ]]; then
+    shift
+fi
+case "${cmd}" in
+    install) cmd_install ;;
+    build) build_image ;;
+    update)
+        build_image
+        cmd_restart
+        ;;
+    serve) cmd_serve ;;
+    status) cmd_status ;;
+    logs)
+        if [[ "${1:-}" == "-f" ]]; then
+            tail -f "${LOGS}/server.log"
+        else
+            tail -n 100 "${LOGS}/server.log"
+        fi
+        ;;
+    restart) cmd_restart ;;
+    stop) cmd_stop ;;
+    start)
+        render_plist
+        load_agent
+        ;;
+    rcon) cmd_rcon "$@" ;;
+    uninstall) cmd_uninstall ;;
+    *)
+        sed -n '5,28p' "$0" | sed 's/^# \{0,1\}//'
+        exit 2
+        ;;
+esac

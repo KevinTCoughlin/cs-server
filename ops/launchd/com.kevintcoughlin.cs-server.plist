@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent for the CS 1.6 server under Apple `container` (macOS
+  counterpart of quadlet/scoutzknivez.container). Rendered into
+  ~/Library/LaunchAgents by `ops/cs-server install`; __REPO__ and __HOME__
+  are substituted there.
+
+  KeepAlive restarts only on a non-zero exit (crash, killed VM), so a
+  graceful `cs-server stop` / `container stop` stays stopped.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.kevintcoughlin.cs-server</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/ops/cs-server</string>
+    <string>serve</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>ExitTimeOut</key>
+  <integer>60</integer>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/cs-server/server.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/cs-server/server.log</string>
+</dict>
+</plist>
