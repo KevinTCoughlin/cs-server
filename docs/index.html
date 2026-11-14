@@ -457,6 +457,17 @@ code{overflow-wrap:anywhere}
 </section>
 
 <section>
+<h2>// macOS / Apple silicon</h2>
+<p style="font-size:0.85rem;margin-bottom:1rem">Not supported as a host. HLDS is a 32-bit i386 binary, and Apple <code style="color:#fff">container</code> with Rosetta only translates x86_64, so it fails with <code style="color:#fff">Exec format error</code>. The installer also needs systemd/Quadlet and exits early on macOS.</p>
+<ol class="steps">
+  <li>Lint on a Mac: <code style="color:#fff">just lint</code> and <code style="color:#fff">just shellcheck</code> work with Apple <code style="color:#fff">container</code></li>
+  <li>Build/run recipes stop with an explanation unless <code style="color:#fff">CONTAINER_ENGINE=podman</code> (untested QEMU emulation in <code style="color:#fff">podman machine</code>)</li>
+  <li>Run the server itself on a Linux host</li>
+</ol>
+<p style="font-size:0.85rem;margin-top:1rem">See <a href="https://github.com/KevinTCoughlin/cs-server#macos--apple-silicon">README</a> for details.</p>
+</section>
+
+<section>
 <h2>// Production (Quadlet)</h2>
 <p style="font-size:0.85rem;margin-bottom:1rem">Run as a rootless Podman Quadlet unit managed by systemd for auto-start, crash recovery, and graceful shutdown. The one-line installer sets this up with the prebuilt image. From a clone, with a locally built image:</p>
 <pre><span class="prompt">$</span> <span class="cmd">podman compose up --build -d &amp;&amp; podman compose down</span>

@@ -80,6 +80,19 @@ fi
 # --- Runtime detection ------------------------------------------------------
 
 detect_runtime() {
+    # macOS has no systemd/Quadlet, and Apple `container` + Rosetta only
+    # translates x86_64 — the HLDS payload is 32-bit i386 (hlds_linux,
+    # engine_i486.so), so it cannot run there. Fail before touching anything.
+    local host_os
+    host_os=$(uname -s) || host_os=""
+    if [[ "${host_os}" == "Darwin" ]]; then
+        error "macOS is not a supported install target.
+  The server is a 32-bit i386 binary (hlds_linux). Apple 'container' with
+  Rosetta only translates x86_64, and this installer relies on systemd/Quadlet,
+  which macOS does not have. Install on a Linux host (or WSL2 on Windows)
+  instead. See README: 'macOS / Apple silicon'."
+    fi
+
     if command -v podman &>/dev/null; then
         RUNTIME="podman"
         local runtime_path
