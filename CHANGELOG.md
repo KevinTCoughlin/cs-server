@@ -24,7 +24,7 @@
 ### Added
 - Apple silicon support via Apple `container`: an arm64 image that runs the i386 HLDS payload under `qemu-i386` user-mode emulation (Rosetta for Linux only translates x86_64). `scripts/i386-compat.sh` installs per-arch i386 libraries plus, on non-x86, a static `qemu-i386`, a `run-i386` build helper (also used as SteamCMD's `$DEBUGGER`) and an `hlds_linux` launcher that `entrypoint.sh` hands to `hlds_run -binary`
 - `scripts/i386-qemu-shim.c`: `LD_PRELOAD` shim (arm64 only) that answers `get_robust_list` and redirects `/proc/cpuinfo`, the two qemu-user gaps that crash `steamclient.so` and SteamCMD. With it, arm64 builds run SteamCMD and `amxxpc` under emulation and need nothing from ghcr.io
-- arm64 runtime includes `ca-certificates`; without them `steamclient.so` can't reach Steam (`disconnected from Steam3`)
+- Runtime image (all architectures) includes `ca-certificates`; without a CA bundle `steamclient.so` can't reach Steam and the server reports `disconnected from Steam3`
 - `ops/cs-server` + `ops/launchd/com.kevintcoughlin.cs-server.plist`: launchd service for macOS (install/status/logs/restart/stop/rcon/update/uninstall), the counterpart of the Quadlet unit
 - "macOS / Apple silicon" docs in README, docs site, CONTRIBUTING and CLAUDE.md
 - `#pragma semicolon 1` added to all six first-party AMX Mod X plugins for forward-compatibility enforcement
