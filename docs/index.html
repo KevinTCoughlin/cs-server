@@ -299,7 +299,7 @@ code{overflow-wrap:anywhere}
 </head>
 <body>
 <!-- Holiday promo: hidden automatically after the date in data-until (see script at the end). -->
-<div class="promo-bar" id="promoBar" data-until="2027-01-07"><span aria-hidden="true">&#127876;</span> Family and friends home for the holidays? Host a ScoutzKnivez LAN night. <a href="#holiday">Holiday setup &rarr;</a></div>
+<div class="promo-bar" id="promoBar" data-until="2027-01-07"><span aria-hidden="true">&#127876;</span> Family and friends home for the holidays? Host a ScoutzKnivez LAN night, now from a Linux box or an Apple silicon Mac. <a href="#holiday">Holiday setup &rarr;</a></div>
 <div class="container">
 
 <header>
@@ -338,6 +338,7 @@ code{overflow-wrap:anywhere}
 <div class="holiday">
 <ol class="steps">
   <li><strong>Install it on a spare Linux machine</strong>Run the install command above on any box with Podman or Docker. The three ScoutzKnivez maps are in the image, so there is nothing else to download.</li>
+  <li><strong>No spare Linux box? Use your Mac</strong>Apple silicon Macs run it with Apple's <code style="color:#fff">container</code> CLI: <code style="color:#fff">just build &amp;&amp; just up</code> from a checkout. See <a href="#macos">macOS / Apple silicon</a>.</li>
   <li><strong>Everyone connects from the CS 1.6 console</strong>Open the console and type <code style="color:#fff">connect &lt;server-lan-ip&gt;:27015</code>. The installer prints the address when it finishes.</li>
   <li><strong>Keep it to the house</strong>For a LAN-only night with the Podman install, change <code style="color:#fff">Environment=LAN_MODE=0</code> to <code style="color:#fff">1</code> in <code style="color:#fff">~/.config/containers/systemd/scoutzknivez.container</code>, then run <code style="color:#fff">systemctl --user daemon-reload &amp;&amp; systemctl --user restart scoutzknivez</code>.</li>
   <li><strong>Or let friends join from their houses</strong>Leave <code style="color:#fff">LAN_MODE=0</code> (the default), allow 27015 UDP and TCP through the host firewall, forward it on your router, and share your public IP.</li>
