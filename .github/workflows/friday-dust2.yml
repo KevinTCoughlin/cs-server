@@ -39,7 +39,7 @@ jobs:
           systemctl --user restart scoutzknivez
 
           # Docker
-          docker run -d \
+          docker run -d --security-opt seccomp=unconfined \
             -p 27015:27015/udp -p 27015:27015/tcp \
             -e MAP=de_dust2 \
             -e MAPCYCLE=mapcycle-dust2.txt \

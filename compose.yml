@@ -28,6 +28,9 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+      # Docker's default seccomp profile answers HLDS's 32-bit socket() with
+      # ENOSYS (server can't open its port). Podman's default allows it.
+      - seccomp:unconfined
     mem_limit: 512m
     cpus: 2.0
     stop_grace_period: 50s

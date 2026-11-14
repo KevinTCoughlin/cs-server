@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- The amd64 image crash-looped under Docker on x86_64 hosts (`UDP_OpenSocket … Function not implemented`, then `NET_OpenIP` fatal): Docker's default seccomp profile (Docker 29) answers the i386 binary's 32-bit `socket()` with `ENOSYS`. `compose.yml` and `install.sh` now run it with `seccomp=unconfined` (capabilities stay dropped, `no-new-privileges` stays on); the README and Friday Dust 2 `docker run` examples pass the flag. Podman, Quadlet and Apple `container` were unaffected
+- `docker.yml` now starts the image and fails unless HLDS reports a Steam connection
+
 ### Changed
 - `nightly.yml` image rebuild and Trivy scan now run weekly (Monday 00:00 UTC) instead of daily; the `nightly` tag name is unchanged
 - `ci.yml` and `docker.yml` cancel superseded pull request runs
