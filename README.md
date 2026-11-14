@@ -57,7 +57,13 @@ The server starts on port **27015**. Connect with your CS 1.6 client:
 connect <your-lan-ip>:27015
 ```
 
-> **Docker users:** replace `podman` with `docker` in the commands below.
+> **Docker users:** replace `podman` with `docker` in the commands below, and
+> add `--security-opt seccomp=unconfined` on x86_64 hosts. Docker's default
+> seccomp profile (seen with Docker 29) rejects HLDS's 32-bit `socket()` call
+> with `ENOSYS`, so the server can't open its port and crash-loops
+> (`UDP_OpenSocket … Function not implemented`). Podman's default profile and
+> Apple `container` are unaffected; `compose.yml` and `install.sh` already set
+> it. See [Container Hardening](#container-hardening).
 
 ### Option 2: Build from source
 
@@ -185,7 +191,7 @@ systemctl --user edit scoutzknivez
 systemctl --user restart scoutzknivez
 
 # Docker
-docker run -d \
+docker run -d --security-opt seccomp=unconfined \
   -p 27015:27015/udp -p 27015:27015/tcp \
   -e MAP=de_dust2 \
   -e MAPCYCLE=mapcycle-dust2.txt \
@@ -386,6 +392,12 @@ The Quadlet is configured with `WantedBy=default.target`, so the server starts a
 
 - **No Linux capabilities** — all capabilities dropped via `DropCapability=ALL`
 - **No privilege escalation** — `NoNewPrivileges=true` prevents gaining new privileges via setuid/setgid binaries
+- **Seccomp (Docker only)** — Docker's default seccomp profile blocks the
+  32-bit `socket()` syscall the i386 HLDS binary needs, so `compose.yml` and
+  `install.sh` run it with `seccomp=unconfined` (`compose.yml` is shared, so
+  this also applies under `podman compose`). Every capability is still
+  dropped and `no-new-privileges` still applies. The Quadlet unit keeps
+  Podman's default profile, which allows the call
 - **System user with nologin shell** — HLDS runs as a system user (`-r`) with `/usr/sbin/nologin`, preventing interactive login
 - **Setuid/setgid bits stripped** — all setuid/setgid bits removed from the runtime image
 - **Resource limits** — `MemoryMax=512M`, `CPUQuota=200%` (2 cores max)

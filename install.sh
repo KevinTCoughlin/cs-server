@@ -401,9 +401,12 @@ install_docker() {
     fi
 
     info "Creating and starting container"
+    # seccomp=unconfined: Docker's default profile answers the i386 HLDS
+    # binary's 32-bit socket() with ENOSYS, so it can't open its port.
     docker run -d \
         --name "${SERVICE_NAME}" \
         --restart on-failure:10 \
+        --security-opt seccomp=unconfined \
         -p 27015:27015/udp \
         -p 27015:27015/tcp \
         -v "${CONFIG_DIR}/server.cfg:/hlds/cstrike/server.cfg:ro" \
