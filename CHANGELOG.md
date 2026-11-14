@@ -5,6 +5,8 @@
 ### Changed
 - `nightly.yml` image rebuild and Trivy scan now run weekly (Monday 00:00 UTC) instead of daily; the `nightly` tag name is unchanged
 - `ci.yml` and `docker.yml` cancel superseded pull request runs
+- justfile selects its engine via `CONTAINER_ENGINE` (default: Apple `container` on macOS, `podman` elsewhere); `lint`, `logs` and `shell` use it, while `build`/`up`/`up-d`/`down`/`deploy` fail fast on `container` because HLDS is 32-bit i386 and Rosetta for Linux only translates x86_64. Linux behaviour is unchanged
+- `install.sh` exits early with a clear error on macOS (no systemd/Quadlet, no i386 emulation in Apple `container`)
 - `hlds` user is now created with a fixed uid/gid (10001) and `USER` references it numerically, making bind-mount ownership deterministic under rootless Podman and resolving hadolint `DL3066`
 - `HEALTHCHECK` `CMD` converted to JSON/exec notation (`/bin/sh -c ...`), resolving hadolint `DL3025`
 - Bumped `hadolint/hadolint-action` in `ci.yml` from v3.3.0 to v3.4.0 (hadolint 2.14.0 → 2.15.0)
@@ -18,6 +20,7 @@
 - Quadlet `Volume` paths updated from hardcoded `~/Development/cs-server/` to `~/.config/cs-server/` to match `install.sh` behaviour
 
 ### Added
+- "macOS / Apple silicon" notes in README, docs site, CONTRIBUTING and CLAUDE.md
 - `#pragma semicolon 1` added to all six first-party AMX Mod X plugins for forward-compatibility enforcement
 - `autobhop.sma`: replaced per-frame `get_pcvar_num` call with `bind_pcvar_num`-bound integer to eliminate cvar-handle overhead in the hot physics loop
 - `scoutzknivez.sma`: explicit `HAM_IGNORED` return values; all statements now carry semicolons

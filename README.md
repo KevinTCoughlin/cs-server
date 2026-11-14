@@ -36,6 +36,9 @@ On macOS, start the rootless Podman VM before using the container tasks:
 podman machine start
 ```
 
+The justfile defaults to Apple `container` on macOS (`CONTAINER_ENGINE` overrides it); see
+[macOS / Apple silicon](#macos--apple-silicon) for why the server itself can't run there.
+
 ## Quick Start
 
 ### Option 1: Pull from ghcr.io (fastest)
@@ -126,6 +129,12 @@ connect <wsl2-ip>:27015
 ```
 
 > **Note:** The WSL2 IP changes on reboot. `localhost:27015` may also work depending on your WSL2 networking mode.
+
+### macOS / Apple silicon
+
+Not supported as a host. The HLDS payload is 32-bit i386 (`hlds_linux`, `engine_i486.so`), and Apple's [`container`](https://github.com/apple/container) CLI only offers Rosetta translation for x86_64 — i386 binaries fail with `Exec format error` even with `--platform linux/amd64 --rosetta`. `install.sh` also depends on systemd/Quadlet, so it exits early on macOS.
+
+On a Mac you can still edit and lint: `just lint` (hadolint) and `just shellcheck` work with the default `container` engine. `just build`, `up`, `up-d`, `down` and `deploy` stop with an explanation unless you opt into Podman with `CONTAINER_ENGINE=podman` and `podman machine start` (QEMU emulation inside the VM; untested and slow). Run the actual server on a Linux host.
 
 ### Configuration
 

@@ -14,6 +14,8 @@ podman compose down                 # stop
 
 Or via justfile: `just build`, `just up`, `just up-d`, `just down`, `just deploy`.
 
+The justfile picks its engine via `ENGINE := env("CONTAINER_ENGINE", ...)`: Apple `container` on macOS, `podman` elsewhere. On `container`, `lint`, `logs` and `shell` work, but `build`/`up`/`up-d`/`down`/`deploy` fail fast via `_require-podman`. HLDS is 32-bit i386 and Rosetta for Linux only translates x86_64 (probed with container 1.7.1: `Exec format error`), so there is no macOS run path. `install.sh` `detect_runtime` errors on Darwin for the same reason. Keep Linux/Podman/Quadlet behaviour unchanged when editing these.
+
 ## Lint & Check
 
 ```bash

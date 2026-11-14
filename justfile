@@ -2,31 +2,46 @@
 # in .github/workflows/ci.yml, so `just lint` and CI agree on the ruleset.
 HADOLINT_IMAGE := "ghcr.io/hadolint/hadolint:v2.15.0-debian"
 
+# Container engine. Apple `container` on macOS, Podman elsewhere; override
+# with CONTAINER_ENGINE=podman (e.g. `podman machine`) or docker.
+ENGINE := env("CONTAINER_ENGINE", if os() == "macos" { "container" } else { "podman" })
+
+# Apple `container` + Rosetta only translates x86_64; the HLDS payload is
+# 32-bit i386 (hlds_linux, engine_i486.so), so it cannot build or run there.
+[private]
+_require-podman:
+    #!/usr/bin/env bash
+    if [ "{{ENGINE}}" = "container" ]; then
+        echo "error: this recipe needs Podman (compose + Quadlet); Apple 'container' cannot run the 32-bit i386 HLDS payload (Rosetta translates x86_64 only)." >&2
+        echo "       Use a Linux host, or CONTAINER_ENGINE=podman with 'podman machine start'. See README: macOS / Apple silicon." >&2
+        exit 1
+    fi
+
 default:
     @just --list
 
 # Build container image
-build:
+build: _require-podman
     podman compose build
 
 # Build and start server
-up:
+up: _require-podman
     podman compose up --build
 
 # Start server (detached)
-up-d:
+up-d: _require-podman
     podman compose up --build -d
 
 # Stop server
-down:
+down: _require-podman
     podman compose down
 
 # Follow server logs
 logs:
-    podman logs -f scoutzknivez
+    {{ENGINE}} logs -f scoutzknivez
 
 # Rebuild image and restart Quadlet service
-deploy:
+deploy: _require-podman
     podman compose up --build -d && podman compose down
     systemctl --user restart scoutzknivez
 
@@ -42,7 +57,7 @@ install:
 
 # Lint Containerfile with hadolint
 lint:
-    podman run --rm -i {{HADOLINT_IMAGE}} < Containerfile
+    {{ENGINE}} run --rm -i {{HADOLINT_IMAGE}} < Containerfile
 
 # Lint shell scripts with shellcheck
 shellcheck:
@@ -58,7 +73,7 @@ test:
 
 # Exec into running container
 shell:
-    podman exec -it scoutzknivez bash || podman exec -it scoutzknivez sh
+    {{ENGINE}} exec -it scoutzknivez bash || {{ENGINE}} exec -it scoutzknivez sh
 
 # Send RCON command to server via FIFO
 rcon cmd:
