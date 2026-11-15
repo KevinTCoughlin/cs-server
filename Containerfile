@@ -134,7 +134,7 @@ WORKDIR /hlds
 
 # Copy AQS config and quake sound files
 COPY plugins/amxmodx/AQS.ini cstrike/addons/amxmodx/configs/AQS.ini
-COPY sound/quake/ cstrike/sound/quake/
+COPY sound/ cstrike/sound/
 
 # --- CZ Bots (ZBot profiles + sounds from ReGameDLL_CS) ---
 RUN curl -fsSL "https://raw.githubusercontent.com/rehlds/ReGameDLL_CS/${REGAMEDLL_VERSION}/regamedll/extra/zBot/bot_profiles.zip" \
@@ -145,6 +145,7 @@ RUN curl -fsSL "https://raw.githubusercontent.com/rehlds/ReGameDLL_CS/${REGAMEDL
 # Copy config files into image
 COPY config/server.cfg     cstrike/server.cfg
 COPY config/mapcycle*.txt  cstrike/
+COPY config/modes/         cstrike/modes/
 COPY config/autoexec.cfg   cstrike/autoexec.cfg
 COPY config/game_init.cfg  cstrike/game_init.cfg
 COPY config/liblist.gam    cstrike/liblist.gam

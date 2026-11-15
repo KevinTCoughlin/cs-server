@@ -170,7 +170,8 @@ Edit files in `config/` — they're bind-mounted into the container:
 | `config/server.cfg` | Game settings (gravity, round time, etc.) |
 | `config/mapcycle.txt` | Map rotation (default scoutzknivez variants) |
 | `config/mapcycle-dust2.txt` | Dust 2 rotation (classic de_dust2) |
-| `config/mapcycle-nipper.txt` | Community map rotation (Nipper/community variants) |
+| `config/mapcycle-nipper.txt` | Nipper Friday (knife mode) rotation |
+| `config/modes/*.cfg` | Per-mode settings, run after `server.cfg` (`knife.cfg` = Nipper Friday) |
 | `config/autoexec.cfg` | Runs on server start |
 
 Changes to `server.cfg` take effect next round or via `rcon exec server.cfg`.
@@ -210,22 +211,56 @@ docker run -d --security-opt seccomp=unconfined \
 
 To switch back to scoutzknivez, set `MAPCYCLE=mapcycle.txt` or remove the override.
 
-### Community Map Weekends
+### Nipper Friday (knives only)
 
-Switch to the community map rotation by setting the `MAPCYCLE` environment variable:
+Knife-only mode: no scout, no buying, no picking up weapons, normal gravity,
+and bots on knives. It switches **at the next round end, with a chat
+announcement, and without restarting the server**:
 
 ```bash
-# Podman Compose
-MAPCYCLE=mapcycle-nipper.txt podman compose up
-
-# Quadlet — edit the unit and restart
-systemctl --user edit scoutzknivez  # add Environment=MAPCYCLE=mapcycle-nipper.txt
-systemctl --user restart scoutzknivez
+just mode nipper          # knife mode on mapcycle-nipper.txt
+just mode scoutz          # back to ScoutzKnivez on mapcycle.txt
+just friday-enable        # opt-in schedule: knives Fri 17:00 to Sat 04:00 local
+just friday-disable
 ```
 
-The `mapcycle-nipper.txt` file includes community scoutzknivez variants by Nipper and others. Add your own maps to this file and place the `.bsp` files in `maps/` before building.
+On macOS, `cs-server mode …` and `cs-server friday enable|disable` work the same
+way (a second launchd agent). On Linux, `just friday-enable` installs a systemd
+user timer (`ops/systemd/`). The scheduled job does nothing while the server is
+stopped and never restarts it. To start in knife mode instead, set `MODE=knife`
+(with `MAPCYCLE=mapcycle-nipper.txt`).
 
-To switch back to the default rotation, set `MAPCYCLE=mapcycle.txt` or remove the override.
+Mode settings live in `config/modes/<mode>.cfg`. On every map the plugin runs
+`server.cfg` and then the mode cfg. Mode switches happen at runtime, so a container restart goes back to `MODE`.
+
+#### NIPPER's maps
+
+The Nipper Friday rotation (`config/mapcycle-nipper.txt`) is `nipperhouse`,
+`ka_beams`, `nippers100`, `hamsters` and `de_westwood`. They come from NIPPER's
+own [complete CS 1.6 map pack](https://gamebanana.com/mods/467088) on GameBanana.
+The maps aren't in git; fetch them before building:
+
+```bash
+just fetch-maps     # one 242 MB download, sha256-pinned, cached in .cache/maps/
+just build
+```
+
+`maps/manifest.tsv` pins the URL, SHA-256 and license for each map, plus any
+custom sounds it needs. The script extracts only those files; nothing in the pack
+runs. To add another map, add a row and put its name in the mapcycle.
+`tests/mapcycle_test.sh` fails CI if a mapcycle names a map that isn't bundled,
+stock, or pinned. Bots need the map's `.nav`. Most of NIPPER's maps include one;
+`ka_monkeybars` doesn't, so it's left out (ZBot would generate one at map load,
+which is very slow under qemu).
+
+**License:** CC BY-NC-ND 4.0, maps by Nathaniel Miller (NIPPER). Credit NIPPER, no
+commercial use, and don't modify the BSPs. GameBanana's checklist asks for the
+author's permission before re-hosting on other sites. Until NIPPER agrees, the maps
+stay off FastDL (`docs/cstrike/maps/`), and clients download them from the game
+server itself. That's slower, but these maps are 0.4 to 5 MB.
+For the same reason, the published ghcr.io images don't include them. Build
+locally after `just fetch-maps` to play Nipper Friday on NIPPER's maps. On an
+image without them, `mode nipper` refuses with "no playable map".
 
 ## Game Settings
 
@@ -288,6 +323,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `NOMASTER` | `0` | Disable master server (1=on, 0=off). Enable for Docker Desktop on Windows |
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
+| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife) or `knife` (Nipper Friday) |
 
 Startup rejects invalid booleans, out-of-range ports/player counts, and unsafe
 map or mapcycle filenames instead of passing unchecked values to HLDS.

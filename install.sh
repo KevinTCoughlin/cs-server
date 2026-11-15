@@ -284,10 +284,6 @@ DUST2MAPCYCLE
 scoutzknivez
 scoutzknivez_2k
 scoutzknivez_bender
-scoutzknivez2
-scoutzknivez_pro
-scoutzknivez_winter
-scoutzknivez_x
 NIPPERMAPCYCLE
         ok "Default mapcycle-nipper.txt created"
     else
@@ -331,6 +327,7 @@ Environment=PORT=27015
 Environment=BOTS=1
 Environment=MAPCYCLE=mapcycle.txt
 Environment=LAN_MODE=0
+Environment=MODE=scoutz
 Sysctl=net.core.rmem_max=26214400
 Sysctl=net.core.wmem_max=26214400
 DropCapability=ALL

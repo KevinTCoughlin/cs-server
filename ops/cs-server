@@ -18,12 +18,14 @@
 #   cs-server stop           graceful stop and unload the agent
 #   cs-server start          load the agent again after `stop`
 #   cs-server rcon <cmd...>  send a console command via the server FIFO
+#   cs-server mode <m>       nipper | scoutz | auto; switches at round end, no restart
+#   cs-server friday <x>     enable | disable the Nipper Friday schedule (launchd)
 #   cs-server uninstall      remove agent, container and image (config kept)
 #   cs-server serve          foreground run; what the launchd agent executes
 #
 # Config lives in ~/.config/cs-server (same as install.sh on Linux). Optional
 # ~/.config/cs-server/env holds KEY=VALUE overrides (MAP, MAXPLAYERS, BOTS,
-# MAPCYCLE, LAN_MODE, NOMASTER). CS_MEMORY / CS_CPUS override the VM size.
+# MAPCYCLE, MODE, LAN_MODE, NOMASTER). CS_MEMORY / CS_CPUS override the VM size.
 # Predicates (is_running, image_exists) are meant to be used in conditions.
 # shellcheck disable=SC2310
 set -euo pipefail
@@ -40,6 +42,7 @@ CONFIG_DIR="${HOME}/.config/cs-server"
 LOGS="${HOME}/Library/Logs/cs-server"
 LA_DIR="${HOME}/Library/LaunchAgents"
 LABEL="com.kevintcoughlin.cs-server"
+FRIDAY_LABEL="${LABEL}.friday"
 GUI="gui/$(id -u)"
 CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt)
 
@@ -116,16 +119,18 @@ cmd_serve() {
 }
 
 render_plist() {
+    local label="${1:-${LABEL}}"
     mkdir -p "${LA_DIR}" "${LOGS}"
     sed -e "s#__REPO__#${REPO}#g" -e "s#__HOME__#${HOME}#g" \
-        "${REPO}/ops/launchd/${LABEL}.plist" > "${LA_DIR}/${LABEL}.plist"
-    plutil -lint "${LA_DIR}/${LABEL}.plist" >/dev/null
+        "${REPO}/ops/launchd/${label}.plist" > "${LA_DIR}/${label}.plist"
+    plutil -lint "${LA_DIR}/${label}.plist" >/dev/null
 }
 
 load_agent() {
-    launchctl bootout "${GUI}/${LABEL}" 2>/dev/null || true
-    launchctl bootstrap "${GUI}" "${LA_DIR}/${LABEL}.plist"
-    launchctl enable "${GUI}/${LABEL}"
+    local label="${1:-${LABEL}}"
+    launchctl bootout "${GUI}/${label}" 2>/dev/null || true
+    launchctl bootstrap "${GUI}" "${LA_DIR}/${label}.plist"
+    launchctl enable "${GUI}/${label}"
 }
 
 graceful_stop() {
@@ -178,10 +183,32 @@ cmd_rcon() {
     container exec "${NAME}" sh -c 'printf "%s\n" "$1" > /hlds/.runtime/hlds-input' sh "$*"
 }
 
+cmd_mode() {
+    [[ "$#" -eq 1 ]] || die "usage: cs-server mode <nipper|scoutz|auto>"
+    "${REPO}/scripts/mode.sh" container "$1"
+}
+
+cmd_friday() {
+    case "${1:-}" in
+        enable)
+            render_plist "${FRIDAY_LABEL}"
+            load_agent "${FRIDAY_LABEL}"
+            log "Nipper Friday enabled: knife mode Fri 17:00 to Sat 04:00; log ${LOGS}/friday.log"
+            ;;
+        disable)
+            launchctl bootout "${GUI}/${FRIDAY_LABEL}" 2>/dev/null || true
+            rm -f "${LA_DIR}/${FRIDAY_LABEL}.plist"
+            log "Nipper Friday disabled (current mode left as is; 'cs-server mode scoutz' to switch back)"
+            ;;
+        *) die "usage: cs-server friday <enable|disable>" ;;
+    esac
+}
+
 cmd_uninstall() {
     graceful_stop
     launchctl bootout "${GUI}/${LABEL}" 2>/dev/null || true
-    rm -f "${LA_DIR}/${LABEL}.plist" "${HOME}/.local/bin/cs-server"
+    launchctl bootout "${GUI}/${FRIDAY_LABEL}" 2>/dev/null || true
+    rm -f "${LA_DIR}/${LABEL}.plist" "${LA_DIR}/${FRIDAY_LABEL}.plist" "${HOME}/.local/bin/cs-server"
     container rm -f "${NAME}" >/dev/null 2>&1 || true
     container image delete "${IMAGE}" >/dev/null 2>&1 || true
     log "uninstalled (config kept in ${CONFIG_DIR})"
@@ -214,9 +241,11 @@ case "${cmd}" in
         load_agent
         ;;
     rcon) cmd_rcon "$@" ;;
+    mode) cmd_mode "$@" ;;
+    friday) cmd_friday "$@" ;;
     uninstall) cmd_uninstall ;;
     *)
-        sed -n '5,28p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '5,30p' "$0" | sed 's/^# \{0,1\}//'
         exit 2
         ;;
 esac

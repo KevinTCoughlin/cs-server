@@ -33,6 +33,8 @@ expect_invalid "PORT must be an integer from 1 to 65535" PORT=0
 expect_invalid "PORT must be an integer from 1 to 65535" PORT=18446744073709551616
 expect_invalid "MAP must be a filename" "MAP=scoutzknivez;quit"
 expect_invalid "MAPCYCLE must be a filename" MAPCYCLE=../server.cfg
+expect_invalid "MODE must be scoutz or knife" MODE=nipper
+expect_invalid "MODE must be scoutz or knife" "MODE=knife;quit"
 
 cat > "${WORK_DIR}/hlds_run" <<'EOF'
 #!/bin/sh
@@ -53,6 +55,12 @@ run_stub() {
 run_stub MAXPLAYERS=00020 PORT=027015
 if [[ "${status}" -ne 17 ]]; then
     printf 'Expected leading-zero values to reach HLDS, got %d\n' "${status}" >&2
+    exit 1
+fi
+
+run_stub MODE=knife
+if [[ "${status}" -ne 17 ]]; then
+    printf 'Expected MODE=knife to reach HLDS, got %d\n' "${status}" >&2
     exit 1
 fi
 
