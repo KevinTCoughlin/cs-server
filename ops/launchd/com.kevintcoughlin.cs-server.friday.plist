@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Nipper Friday schedule for the Apple `container` server: runs
+  `scripts/mode.sh container auto` on Friday 17:00 and Saturday 04:00 local
+  time. Rendered into ~/Library/LaunchAgents by `cs-server friday enable`.
+
+  launchd runs a missed calendar job once on wake; that's safe because `auto`
+  picks the mode from the current time and the plugin ignores a switch to the
+  mode it's already in. Keep the hours in step with scripts/mode.sh.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.kevintcoughlin.cs-server.friday</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/scripts/mode.sh</string>
+    <string>container</string>
+    <string>auto</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Weekday</key>
+      <integer>5</integer>
+      <key>Hour</key>
+      <integer>17</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key>
+      <integer>6</integer>
+      <key>Hour</key>
+      <integer>4</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+  </array>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/cs-server/friday.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/cs-server/friday.log</string>
+</dict>
+</plist>

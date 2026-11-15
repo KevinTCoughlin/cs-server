@@ -33,9 +33,10 @@ jobs:
         with:
           version: v0.11.0
           scandir: .
-          additional_files: entrypoint.sh install.sh
+          additional_files: entrypoint.sh install.sh ops/cs-server
 
       - name: Run entrypoint regression tests
         run: |
           bash tests/entrypoint_test.sh
+          bash tests/mapcycle_test.sh
           bash tests/compose_test.sh

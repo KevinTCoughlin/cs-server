@@ -13,6 +13,7 @@ services:
       - ./config/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro,Z
       - ./config/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro,Z
       - ./config/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro,Z
+      - ./config/modes:/hlds/cstrike/modes:ro,Z
     environment:
       MAXPLAYERS: ${MAXPLAYERS:-20}
       MAP: ${MAP:-scoutzknivez}
@@ -21,6 +22,7 @@ services:
       NOMASTER: ${NOMASTER:-0}
       MAPCYCLE: ${MAPCYCLE:-mapcycle.txt}
       LAN_MODE: ${LAN_MODE:-0}
+      MODE: ${MODE:-scoutz}
     sysctls:
       - net.core.rmem_max=26214400
       - net.core.wmem_max=26214400

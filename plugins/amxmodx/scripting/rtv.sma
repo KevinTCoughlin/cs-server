@@ -74,19 +74,26 @@ load_mapcycle() {
     new szFile[128];
     get_configsdir(szFile, charsmax(szFile));
 
-    // Try AMX Mod X configs dir first, then fall back to mapcycle.txt in cstrike/
+    // Follow the server's active rotation (MAPCYCLE env / sk_switchmode set
+    // mapcyclefile). Try the AMX Mod X configs dir first, then cstrike/.
+    new szCycleName[64];
+    get_cvar_string("mapcyclefile", szCycleName, charsmax(szCycleName));
+    if (szCycleName[0] == 0 || contain(szCycleName, "..") != -1) {
+        copy(szCycleName, charsmax(szCycleName), "mapcycle.txt");
+    }
+
     new szMapcycle[128];
-    formatex(szMapcycle, charsmax(szMapcycle), "%s/mapcycle.txt", szFile);
+    formatex(szMapcycle, charsmax(szMapcycle), "%s/%s", szFile, szCycleName);
 
     new f;
     if (file_exists(szMapcycle)) {
         f = fopen(szMapcycle, "r");
     } else {
-        f = fopen("mapcycle.txt", "r");
+        f = fopen(szCycleName, "r");
     }
 
     if (!f) {
-        log_amx("[RTV] Could not open mapcycle.txt");
+        log_amx("[RTV] Could not open %s", szCycleName);
         return;
     }
 

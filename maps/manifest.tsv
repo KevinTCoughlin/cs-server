@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: MIT
+# Pinned third-party maps, fetched into maps/ by scripts/fetch-maps.sh (the
+# .bsp files are gitignored; the Containerfile overlays maps/ at build time).
+# Tab-separated; one row per map. Every row needs a license/permission note:
+# record the author's redistribution terms before adding a map to FastDL
+# (docs/cstrike/maps/). Use `unknown-no-fastdl` when terms are unclear; the
+# server can still offer it through its slow built-in download.
+#
+# extras (optional): comma-separated custom files from the same zip, under
+# sound/ only, that the map needs; `-` for none.
+#
+# NIPPER's maps: author-uploaded "NIPPER maps - Complete pack" (one 242 MB zip,
+# downloaded once and cached). CC BY-NC-ND 4.0: credit NIPPER, no commercial
+# use, no modified BSPs. GameBanana's checklist asks that we get permission
+# before re-hosting elsewhere, so these stay off FastDL until NIPPER agrees.
+#
+# Not pinned yet: ka_monkeybars (knife arena) ships without a bot .nav, and
+# ZBot would generate one at map load (very slow under qemu). Generate it once
+# on an x86 host (`bot_nav_generate`), then add a row and a mapcycle entry.
+#
+# name	url	sha256	license	attribution	extras
+nipperhouse	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	-
+ka_beams	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	-
+nippers100	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	sound/eattherich.wav,sound/n100.wav,sound/partytillyapuke.wav
+hamsters	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	-
+de_westwood	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	sound/nm_goodbadugly.wav
+he_dodgeball2	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	-
+xmas_nipperhouse	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	sound/snl_xmas.wav
+x-mas_tree	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	-
+xmas_lodge	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	sound/nm_wonderfulxmastime.wav
+xmas_crazytank	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	-

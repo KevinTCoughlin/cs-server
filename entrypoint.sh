@@ -11,6 +11,7 @@ BOTS="${BOTS:-1}"
 NOMASTER="${NOMASTER:-0}"
 MAPCYCLE="${MAPCYCLE:-mapcycle.txt}"
 LAN_MODE="${LAN_MODE:-0}"
+MODE="${MODE:-scoutz}"
 
 validate_boolean() {
     local name="$1" value="$2"
@@ -57,6 +58,13 @@ validate_integer "MAXPLAYERS" "${MAXPLAYERS}" 1 32
 validate_integer "PORT" "${PORT}" 1 65535
 validate_filename "MAP" "${MAP}"
 validate_filename "MAPCYCLE" "${MAPCYCLE}"
+case "${MODE}" in
+    scoutz | knife) ;;
+    *)
+        echo "[entrypoint] MODE must be scoutz or knife" >&2
+        exit 1
+        ;;
+esac
 
 # hlds_linux needs libs from its own directory (normally set by hlds_run)
 export LD_LIBRARY_PATH=".:${LD_LIBRARY_PATH:-}"
@@ -141,6 +149,7 @@ HLDS_ARGS=(
     -pingboost 2
     +sys_ticrate 1000
     +mapcyclefile "${MAPCYCLE}"
+    +localinfo sk_mode "${MODE}"
     +exec server.cfg
     "${MASTER_ARGS[@]}"
     "${BOT_QUOTA_ARGS[@]}"

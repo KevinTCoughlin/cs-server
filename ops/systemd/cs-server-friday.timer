@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT
+# Keep in step with NIPPER_START_HOUR / NIPPER_END_HOUR in scripts/mode.sh.
+# Persistent=false: a host that was off at 17:00 doesn't fire late.
+[Unit]
+Description=CS 1.6 Nipper Friday schedule
+
+[Timer]
+OnCalendar=Fri *-*-* 17:00:00
+OnCalendar=Sat *-*-* 04:00:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

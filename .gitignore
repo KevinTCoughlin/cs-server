@@ -2,6 +2,7 @@
 maps/*.bsp
 maps/*.nav
 maps/*.res
+maps/*.txt
 !maps/.gitkeep
 
 # Compiled plugins (built in container)
@@ -9,6 +10,10 @@ maps/*.res
 
 # Sound files (copyrighted, not redistributable)
 sound/quake/*.wav
+sound/*.wav
+
+# Verified third-party downloads (scripts/fetch-maps.sh)
+.cache/
 
 # Environment variables
 .env

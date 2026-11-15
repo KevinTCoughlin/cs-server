@@ -14,7 +14,7 @@ CTR_MEMORY := env("CS_MEMORY", "1G")
 CTR_CPUS := env("CS_CPUS", "2")
 CTR_BUILD := "container build --platform linux/arm64 -t " + IMAGE + " -f Containerfile ."
 CTR_ENV_FILE := if path_exists(justfile_directory() / ".env") == "true" { "--env-file " + justfile_directory() / ".env" } else { "" }
-CTR_RUN := "container run --name scoutzknivez --rm -p 27015:27015/udp -p 27015:27015/tcp -m " + CTR_MEMORY + " -c " + CTR_CPUS + " --cap-drop ALL " + CTR_ENV_FILE + " -v " + justfile_directory() / "config/server.cfg" + ":/hlds/cstrike/server.cfg:ro -v " + justfile_directory() / "config/mapcycle.txt" + ":/hlds/cstrike/mapcycle.txt:ro -v " + justfile_directory() / "config/mapcycle-dust2.txt" + ":/hlds/cstrike/mapcycle-dust2.txt:ro -v " + justfile_directory() / "config/mapcycle-nipper.txt" + ":/hlds/cstrike/mapcycle-nipper.txt:ro"
+CTR_RUN := "container run --name scoutzknivez --rm -p 27015:27015/udp -p 27015:27015/tcp -m " + CTR_MEMORY + " -c " + CTR_CPUS + " --cap-drop ALL " + CTR_ENV_FILE + " -v " + justfile_directory() / "config/server.cfg" + ":/hlds/cstrike/server.cfg:ro -v " + justfile_directory() / "config/mapcycle.txt" + ":/hlds/cstrike/mapcycle.txt:ro -v " + justfile_directory() / "config/mapcycle-dust2.txt" + ":/hlds/cstrike/mapcycle-dust2.txt:ro -v " + justfile_directory() / "config/mapcycle-nipper.txt" + ":/hlds/cstrike/mapcycle-nipper.txt:ro -v " + justfile_directory() / "config/modes" + ":/hlds/cstrike/modes:ro"
 
 default:
     @just --list
@@ -57,7 +57,7 @@ lint:
 
 # Lint shell scripts with shellcheck
 shellcheck:
-    shellcheck entrypoint.sh install.sh scripts/i386-compat.sh ops/cs-server
+    shellcheck entrypoint.sh install.sh scripts/i386-compat.sh scripts/mode.sh scripts/fetch-maps.sh ops/cs-server tests/*.sh
 
 # Run all checks
 check: lint shellcheck test
@@ -66,6 +66,7 @@ check: lint shellcheck test
 # they need util-linux `script`; compose.yml isn't used there)
 test:
     {{ if ENGINE == "container" { "container run --rm -m 512M -v " + justfile_directory() + ":/repo -w /repo debian:trixie-slim bash tests/entrypoint_test.sh" } else { "bash tests/entrypoint_test.sh" } }}
+    bash tests/mapcycle_test.sh
     {{ if ENGINE == "container" { "echo 'compose tests skipped: Apple container has no compose'" } else { "bash tests/compose_test.sh" } }}
 
 # Exec into running container
@@ -75,6 +76,18 @@ shell:
 # Send RCON command to server via FIFO
 rcon cmd:
     {{ENGINE}} exec scoutzknivez sh -c 'printf "%s\n" "$1" > /hlds/.runtime/hlds-input' sh "{{cmd}}"
+
+# Switch game mode at the next round end, no restart: nipper | scoutz | auto
+mode name:
+    scripts/mode.sh {{ENGINE}} {{name}}
+
+# Enable the Nipper Friday schedule (knife mode Fri 17:00 to Sat 04:00)
+friday-enable:
+    {{ if ENGINE == "container" { "ops/cs-server friday enable" } else { "install -Dm755 scripts/mode.sh ~/.local/bin/cs-server-mode && mkdir -p ~/.config/systemd/user && cp ops/systemd/cs-server-friday.service ops/systemd/cs-server-friday.timer ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now cs-server-friday.timer" } }}
+
+# Disable the Nipper Friday schedule (leaves the current mode as is)
+friday-disable:
+    {{ if ENGINE == "container" { "ops/cs-server friday disable" } else { "systemctl --user disable --now cs-server-friday.timer; rm -f ~/.config/systemd/user/cs-server-friday.service ~/.config/systemd/user/cs-server-friday.timer ~/.local/bin/cs-server-mode; systemctl --user daemon-reload" } }}
 
 # Restart Quadlet service (launchd agent on Apple container)
 restart:
@@ -102,6 +115,10 @@ fastdl:
     done
     echo "[fastdl] Synced $count file(s) to docs/cstrike/"
     echo "[fastdl] Commit and push to deploy via GitHub Pages"
+
+# Fetch third-party maps pinned in maps/manifest.tsv (sha256-checked)
+fetch-maps *names:
+    scripts/fetch-maps.sh {{names}}
 
 # Remove built images
 clean:

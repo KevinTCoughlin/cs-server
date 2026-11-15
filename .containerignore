@@ -15,3 +15,4 @@ docs/cstrike/maps/*
 !docs/cstrike/maps/*.bsp
 !docs/cstrike/maps/*.nav
 ops
+.cache

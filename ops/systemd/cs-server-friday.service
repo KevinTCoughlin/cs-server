@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: MIT
+# Nipper Friday: switch the running server to knife mode on Friday evening and
+# back on Saturday morning (scripts/mode.sh auto). Installed by
+# `just friday-enable`; does nothing if the server isn't running.
+[Unit]
+Description=CS 1.6 Nipper Friday mode switch
+After=scoutzknivez.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cs-server-mode podman auto
