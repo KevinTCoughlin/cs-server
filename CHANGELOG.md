@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- `rtv.sma` read `mapcycle.txt` regardless of `MAPCYCLE`, so votes offered the wrong maps in the Dust 2 and community rotations; it now follows the `mapcyclefile` cvar
+- `mapcycle-nipper.txt` (repo and `install.sh`) named four maps that don't ship (`scoutzknivez2`, `_pro`, `_winter`, `_x`), so the map change at map end failed
 - The amd64 image crash-looped under Docker on x86_64 hosts (`UDP_OpenSocket … Function not implemented`, then `NET_OpenIP` fatal): Docker's default seccomp profile (Docker 29) answers the i386 binary's 32-bit `socket()` with `ENOSYS`. `compose.yml` and `install.sh` now run it with `seccomp=unconfined` (capabilities stay dropped, `no-new-privileges` stays on); the README and Friday Dust 2 `docker run` examples pass the flag. Podman, Quadlet and Apple `container` were unaffected
 - `docker.yml` now starts the image and fails unless HLDS reports a Steam connection
 
@@ -26,6 +28,13 @@
 - Quadlet `Volume` paths updated from hardcoded `~/Development/cs-server/` to `~/.config/cs-server/` to match `install.sh` behaviour
 
 ### Added
+- **Nipper Friday:** a knife-only mode on NIPPER's classic CS 1.6 maps, a tribute to the Friday knife nights his maps were made for. `scoutzknivez.sma` gains modes (`scoutz` | `knife`, kept in `localinfo sk_mode`) and `sk_switchmode`, which queues a mode or rotation change for the next round end with a chat announcement and no container restart. Knife mode blocks the scout, buying and weapon pickups; on `he_*` grenade maps the map's HE grenades can be picked up (`config/modes/knife_he.cfg`)
+- `config/modes/<mode>.cfg` and `<mode>_<prefix>.cfg` exec'd after `server.cfg` on every map; `MODE` env (default `scoutz`)
+- `scripts/mode.sh` (`just mode`, `cs-server mode`): `nipper` | `scoutz` | `auto`; uses `mapcycle-nipper-xmas.txt` (`xmas_nipperhouse`, `x-mas_tree`, `xmas_lodge`, `xmas_crazytank`) from Dec 1 to Jan 6
+- Opt-in Friday schedule (Fri 17:00 to Sat 04:00 local): launchd agent (`cs-server friday enable`) on macOS, systemd user timer (`just friday-enable`) on Linux. Does nothing while the server is stopped
+- `maps/manifest.tsv` + `scripts/fetch-maps.sh` (`just fetch-maps`): third-party maps pinned by SHA-256 with a license note, downloaded once into `.cache/maps/`; only each map's files and listed sounds are extracted. NIPPER's maps come from his own GameBanana upload (CC BY-NC-ND 4.0) and are not committed, baked into published images or put on FastDL
+- `tests/mapcycle_test.sh` (in `just test` and `ci.yml`): fails when a mapcycle names a map that isn't bundled, stock or pinned
+- Docs site, README and CHANGELOG credit NIPPER for the Nipper Friday maps, and the switch announcement and knife-mode hostname credit him in-game
 - Apple silicon support via Apple `container`: an arm64 image that runs the i386 HLDS payload under `qemu-i386` user-mode emulation (Rosetta for Linux only translates x86_64). `scripts/i386-compat.sh` installs per-arch i386 libraries plus, on non-x86, a static `qemu-i386`, a `run-i386` build helper (also used as SteamCMD's `$DEBUGGER`) and an `hlds_linux` launcher that `entrypoint.sh` hands to `hlds_run -binary`
 - `scripts/i386-qemu-shim.c`: `LD_PRELOAD` shim (arm64 only) that answers `get_robust_list` and redirects `/proc/cpuinfo`, the two qemu-user gaps that crash `steamclient.so` and SteamCMD. With it, arm64 builds run SteamCMD and `amxxpc` under emulation and need nothing from ghcr.io
 - Runtime image (all architectures) includes `ca-certificates`; without a CA bundle `steamclient.so` can't reach Steam and the server reports `disconnected from Steam3`

@@ -4,12 +4,15 @@
 // Spawn loadout and game modes.
 //
 //   scoutz  scout + knife (default)
-//   knife   knife only; buying and weapon pickups blocked ("Nipper Friday")
+//   knife   knife only; buying and weapon pickups blocked ("Nipper Friday").
+//           On grenade-fight maps (he_*, e.g. he_dodgeball2) HE grenades
+//           placed by the map can be picked up; everything else stays blocked.
 //
 // The mode lives in `localinfo sk_mode`, which survives map changes. On each
-// map the plugin execs server.cfg and then modes/<mode>.cfg: the engine does
-// not re-run server.cfg on changelevel here, so without the first exec the
-// knife settings would leak into scoutz after a switch back.
+// map the plugin execs server.cfg, modes/<mode>.cfg and, if present,
+// modes/<mode>_<prefix>.cfg (prefix = map name up to the first `_`, e.g.
+// modes/knife_he.cfg). The engine does not re-run server.cfg on changelevel
+// here, so without the first exec mode settings would leak across switches.
 //
 // sk_switchmode <scoutz|knife> <mapcyclefile> [map]
 //   Server command (console/FIFO only). Announces the switch and changes level
@@ -33,6 +36,8 @@ const Float:SWITCH_DEADLINE = 180.0;
 
 new g_szMode[MODE_LEN];
 new bool:g_bKnifeOnly;
+new g_szMapPrefix[32];
+new bool:g_bGrenadeMap;
 
 new g_szPendingMode[MODE_LEN];
 new g_szPendingCycle[64];
@@ -40,13 +45,13 @@ new g_szPendingMap[64];
 new bool:g_bSwitchPending;
 
 public plugin_init() {
-    register_plugin("ScoutzKnivez", "1.1", "cs-server");
+    register_plugin("ScoutzKnivez", "1.2", "cs-server");
 
     load_mode();
 
     RegisterHam(Ham_Spawn, "player", "on_spawn", 1);
-    RegisterHam(Ham_Touch, "armoury_entity", "on_weapon_touch");
-    RegisterHam(Ham_Touch, "weaponbox", "on_weapon_touch");
+    RegisterHam(Ham_Touch, "armoury_entity", "on_armoury_touch");
+    RegisterHam(Ham_Touch, "weaponbox", "on_weaponbox_touch");
 
     register_logevent("on_round_end", 2, "1=Round_End");
     register_srvcmd("sk_switchmode", "cmd_switchmode");
@@ -63,6 +68,14 @@ load_mode() {
         copy(g_szMode, charsmax(g_szMode), "scoutz");
     }
     g_bKnifeOnly = bool:equal(g_szMode, "knife");
+
+    new szMap[64];
+    get_mapname(szMap, charsmax(szMap));
+    new iSep = contain(szMap, "_");
+    if (iSep > 0) {
+        copy(g_szMapPrefix, min(iSep, charsmax(g_szMapPrefix)), szMap);
+    }
+    g_bGrenadeMap = g_bKnifeOnly && bool:equal(g_szMapPrefix, "he");
 }
 
 bool:is_valid_mode(const mode[]) {
@@ -78,7 +91,13 @@ public exec_mode_cfg() {
     if (file_exists(szCfg)) {
         server_cmd("exec %s", szCfg);
     }
-    log_amx("[SK] mode: %s", g_szMode);
+    if (g_szMapPrefix[0]) {
+        formatex(szCfg, charsmax(szCfg), "modes/%s_%s.cfg", g_szMode, g_szMapPrefix);
+        if (file_exists(szCfg)) {
+            server_cmd("exec %s", szCfg);
+        }
+    }
+    log_amx("[SK] mode: %s%s", g_szMode, g_bGrenadeMap ? " (grenade pickups on)" : "");
 }
 
 public on_spawn(id) {
@@ -96,11 +115,25 @@ public on_spawn(id) {
     return HAM_IGNORED;
 }
 
-// Knife mode: no picking up map-placed or dropped weapons.
-public on_weapon_touch(ent, id) {
-    if (g_bKnifeOnly && is_user_alive(id))
-        return HAM_SUPERCEDE;
-    return HAM_IGNORED;
+// Knife mode: no picking up map-placed or dropped weapons, except HE
+// grenades on grenade-fight maps.
+public on_armoury_touch(ent, id) {
+    if (!g_bKnifeOnly || !is_user_alive(id))
+        return HAM_IGNORED;
+    if (g_bGrenadeMap && cs_get_armoury_type(ent) == CSW_HEGRENADE)
+        return HAM_IGNORED;
+    return HAM_SUPERCEDE;
+}
+
+public on_weaponbox_touch(ent, id) {
+    if (!g_bKnifeOnly || !is_user_alive(id))
+        return HAM_IGNORED;
+    if (g_bGrenadeMap) {
+        new weapon = cs_get_weaponbox_item(ent);
+        if (weapon > 0 && cs_get_weapon_id(weapon) == CSW_HEGRENADE)
+            return HAM_IGNORED;
+    }
+    return HAM_SUPERCEDE;
 }
 
 // Knife mode: no buying, whatever mp_buytime says (buy-zone exploits exist

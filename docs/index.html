@@ -343,6 +343,7 @@ code{overflow-wrap:anywhere}
   <li><strong>Keep it to the house</strong>For a LAN-only night with the Podman install, change <code style="color:#fff">Environment=LAN_MODE=0</code> to <code style="color:#fff">1</code> in <code style="color:#fff">~/.config/containers/systemd/scoutzknivez.container</code>, then run <code style="color:#fff">systemctl --user daemon-reload &amp;&amp; systemctl --user restart scoutzknivez</code>.</li>
   <li><strong>Or let friends join from their houses</strong>Leave <code style="color:#fff">LAN_MODE=0</code> (the default), allow 27015 UDP and TCP through the host firewall, forward it on your router, and share your public IP.</li>
   <li><strong>Only two of you? Bots fill in</strong>ZBots fill the server up to 10 players and leave as people join, so even a small group gets a full round. Set <code style="color:#fff">BOTS=0</code> to turn them off.</li>
+  <li><strong>Make Friday a Nipper Friday</strong>Knives only on NIPPER's classic CS maps, with his Christmas maps through Jan 6. <code style="color:#fff">just mode nipper</code> switches at the end of the round, no restart. See <a href="#nipper">Nipper Friday</a>.</li>
   <li><strong>Switch it up</strong>Type <code style="color:#fff">rtv</code> in chat to vote for a new map. For classic Dust 2, set <code style="color:#fff">MAP=de_dust2</code> and <code style="color:#fff">MAPCYCLE=mapcycle-dust2.txt</code> in the same unit file and restart.</li>
 </ol>
 </div>
@@ -380,7 +381,7 @@ code{overflow-wrap:anywhere}
 <section>
 <h2>// Plugins</h2>
 <ul class="stack-list">
-  <li><span class="name">ScoutzKnivez</span><span class="desc">Auto-strips weapons, gives scout + knife on spawn</span></li>
+  <li><span class="name">ScoutzKnivez</span><span class="desc">Auto-strips weapons, gives scout + knife on spawn. Also runs knife mode for <a href="#nipper">Nipper Friday</a> and switches modes at round end</span></li>
   <li><span class="name">Auto Bhop</span><span class="desc">Hold jump to bunny hop — essential for low-gravity</span></li>
   <li><span class="name">Quake Sounds</span><span class="desc"><a href="https://github.com/ClaudiuHKS/AdvancedQuakeSounds">AQS v8.0</a> — kill streaks, headshots, knife kills with HUD messages. Toggle: <code style="color:#fff">!sounds</code>. Sound files are not included (copyright); see the README to add them</span></li>
   <li><span class="name">Rock the Vote</span><span class="desc">Type <code style="color:#fff">rtv</code> to start a map vote, <code style="color:#fff">nominate &lt;map&gt;</code> to add maps</span></li>
@@ -422,6 +423,7 @@ code{overflow-wrap:anywhere}
     <tr><td><code>BOTS</code></td><td><code>1</code></td><td>Enable bots (1=on, 0=off)</td></tr>
     <tr><td><code>LAN_MODE</code></td><td><code>0</code></td><td>LAN-only server (1) or public (0)</td></tr>
     <tr><td><code>MAPCYCLE</code></td><td><code>mapcycle.txt</code></td><td>Map rotation file, e.g. <code>mapcycle-dust2.txt</code></td></tr>
+    <tr><td><code>MODE</code></td><td><code>scoutz</code></td><td>Startup game mode: <code>scoutz</code> or <code>knife</code> (Nipper Friday)</td></tr>
     <tr><td><code>NOMASTER</code></td><td><code>0</code></td><td>Skip the master server (1=on). For Docker Desktop on Windows</td></tr>
   </tbody>
 </table>
@@ -455,6 +457,19 @@ code{overflow-wrap:anywhere}
   <li>Connect from Windows: <code style="color:#fff">connect &lt;wsl2-ip&gt;:27015</code></li>
 </ol>
 <p style="font-size:0.85rem;margin-top:1rem">See <a href="https://github.com/KevinTCoughlin/cs-server#windows-wsl2">README</a> for full instructions. Related: <a href="https://github.com/KevinTCoughlin/cs-server/issues/18">#18</a></p>
+</section>
+
+<section id="nipper">
+<h2>// Nipper Friday</h2>
+<p style="font-size:0.85rem;margin-bottom:1rem">Back in the day, Friday nights meant knife fights on NIPPER's custom maps: a house you could actually explore, grenade dodgeball in a gym, a hamster cage floating in space. Nipper Friday brings that back as a knife-only mode on <a href="https://gamebanana.com/mods/467088">NIPPER's own map pack</a>, without touching the everyday ScoutzKnivez setup.</p>
+<ol class="steps">
+  <li><strong>Knives only</strong>No scout, no buying, no picking up weapons, normal gravity. On grenade maps like <code style="color:#fff">he_dodgeball2</code>, you can pick up the HE grenades the map lays out.</li>
+  <li><strong>The rotation</strong><code style="color:#fff">nipperhouse</code>, <code style="color:#fff">ka_beams</code>, <code style="color:#fff">nippers100</code>, <code style="color:#fff">he_dodgeball2</code>, <code style="color:#fff">hamsters</code> and <code style="color:#fff">de_westwood</code>. From Dec 1 to Jan 6: <code style="color:#fff">xmas_nipperhouse</code>, <code style="color:#fff">x-mas_tree</code>, <code style="color:#fff">xmas_lodge</code> and <code style="color:#fff">xmas_crazytank</code>.</li>
+  <li><strong>No restart</strong><code style="color:#fff">just mode nipper</code> (or <code style="color:#fff">scoutz</code>) announces the switch in chat and changes map at the end of the round, so nobody gets cut off mid-fight.</li>
+  <li><strong>Every Friday, if you want</strong><code style="color:#fff">just friday-enable</code> turns it on Friday at 17:00 and off Saturday at 04:00, local time. It does nothing while the server is off and never restarts it.</li>
+  <li><strong>Get the maps</strong><code style="color:#fff">just fetch-maps &amp;&amp; just build</code> downloads NIPPER's pack once from GameBanana, checks its SHA-256, and builds in only the maps it uses.</li>
+</ol>
+<p style="font-size:0.85rem;margin-top:1rem"><strong>Credit:</strong> maps by Nathaniel Miller (<a href="https://steamcommunity.com/id/nipper">NIPPER</a>), released under <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/">CC BY-NC-ND 4.0</a>. This project doesn't re-host them: they aren't in the repository, the published images or the FastDL below. Each server downloads them from NIPPER's own upload, and players get them from that game server. They're played unmodified, free and non-commercially, with NIPPER credited in-game.</p>
 </section>
 
 <section id="macos">
@@ -494,7 +509,7 @@ code{overflow-wrap:anywhere}
 
 <section>
 <h2>// FastDL</h2>
-<p style="font-size:0.85rem;margin-bottom:1rem">Custom maps (and Quake sounds, if you add them) are served from this site via HTTP for fast client downloads. The repository's <code style="color:#fff">config/server.cfg</code>, which is also baked into the image, sets <code style="color:#fff">sv_downloadurl</code> to this URL. The one-line installer writes its own <code style="color:#fff">server.cfg</code> without it, so add the line there if you want FastDL.</p>
+<p style="font-size:0.85rem;margin-bottom:1rem">Custom maps (and Quake sounds, if you add them) are served from this site via HTTP for fast client downloads. The repository's <code style="color:#fff">config/server.cfg</code>, which is also baked into the image, sets <code style="color:#fff">sv_downloadurl</code> to this URL. The one-line installer writes its own <code style="color:#fff">server.cfg</code> without it, so add the line there if you want FastDL. NIPPER's maps aren't served here (see <a href="#nipper">Nipper Friday</a>).</p>
 <div class="connect-box">
   <div class="label">FastDL URL</div>
   <code>https://kevintcoughlin.com/cs-server/cstrike/</code>
@@ -510,7 +525,7 @@ code{overflow-wrap:anywhere}
 </main>
 
 <footer>
-  <p>Released under the MIT License.</p>
+  <p>Released under the MIT License. NIPPER's maps are &copy; Nathaniel Miller (NIPPER), CC BY-NC-ND 4.0, and aren't distributed by this project.</p>
   <p style="margin-top:0.3rem">CS 1.6 ScoutzKnivez Server &mdash; <a href="https://github.com/KevinTCoughlin/cs-server">github.com/KevinTCoughlin/cs-server</a></p>
 </footer>
 

@@ -44,3 +44,7 @@ Commit and push to `main` — GitHub Pages auto-deploys from `docs/`.
 - These files are NOT affected by the root `.gitignore` (those patterns match `maps/*.bsp` and `sound/quake/*.wav` relative to root, not `docs/cstrike/`)
 - Sound files may be copyrighted — your call what to commit
 - Community maps (scoutzknivez variants) are generally freely redistributable
+- NIPPER's maps (Nipper Friday) are **not** hosted here. They're CC BY-NC-ND 4.0, and
+  GameBanana's terms ask for the author's permission before re-hosting, so clients
+  download them from the game server until NIPPER agrees. Don't run `just fastdl`
+  with them in `maps/`: it copies everything there into this directory

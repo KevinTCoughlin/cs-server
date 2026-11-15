@@ -6,7 +6,9 @@
 # queued in-game (scoutzknivez.amxx `sk_switchmode`) and happens at the next
 # round end, after a chat announcement.
 #
-#   mode.sh <engine> nipper   knife only, mapcycle-nipper.txt ("Nipper Friday")
+#   mode.sh <engine> nipper   knife only on NIPPER's maps ("Nipper Friday"):
+#                             mapcycle-nipper.txt, or mapcycle-nipper-xmas.txt
+#                             from Dec 1 to Jan 6 (the Christmas rotation)
 #   mode.sh <engine> scoutz   scout + knife, mapcycle.txt (default)
 #   mode.sh <engine> auto     nipper from Fri 17:00 to Sat 04:00 local time,
 #                             scoutz otherwise; what the Friday schedule runs
@@ -14,6 +16,7 @@
 # <engine> is `container` (Apple), `podman` or `docker`. Does nothing (exit 0)
 # when the server isn't running, so scheduled runs never start or restart it.
 # NIPPER_START_HOUR / NIPPER_END_HOUR / CS_CONTAINER_NAME override defaults;
+# NIPPER_SEASON=xmas|none forces the seasonal rotation on or off;
 # keep the hours in step with ops/systemd/cs-server-friday.timer and
 # ops/launchd/com.kevintcoughlin.cs-server.friday.plist.
 set -euo pipefail
@@ -23,6 +26,7 @@ MODE="${2:-}"
 NAME="${CS_CONTAINER_NAME:-scoutzknivez}"
 START_HOUR="${NIPPER_START_HOUR:-17}"
 END_HOUR="${NIPPER_END_HOUR:-4}"
+SEASON="${NIPPER_SEASON:-}"
 
 usage() {
     echo "usage: ${0##*/} <container|podman|docker> <nipper|scoutz|auto>" >&2
@@ -53,12 +57,34 @@ friday_window() {
     fi
 }
 
+# Seasonal rotation: Christmas from Dec 1 through Jan 6 (Twelfth Night).
+season() {
+    local month day
+    if [[ -n "${SEASON}" ]]; then
+        echo "${SEASON}"
+        return
+    fi
+    month=$((10#$(date +%m)))
+    day=$((10#$(date +%d)))
+    if [[ "${month}" -eq 12 ]] || [[ "${month}" -eq 1 && "${day}" -le 6 ]]; then
+        echo xmas
+    else
+        echo none
+    fi
+}
+
 if [[ "${MODE}" == "auto" ]]; then
     MODE=$(friday_window)
 fi
 
 case "${MODE}" in
-    nipper) COMMAND="sk_switchmode knife mapcycle-nipper.txt" ;;
+    nipper)
+        case "$(season)" in
+            xmas) COMMAND="sk_switchmode knife mapcycle-nipper-xmas.txt" ;;
+            none) COMMAND="sk_switchmode knife mapcycle-nipper.txt" ;;
+            *) echo "NIPPER_SEASON must be xmas or none" >&2; exit 2 ;;
+        esac
+        ;;
     scoutz) COMMAND="sk_switchmode scoutz mapcycle.txt" ;;
     *) usage ;;
 esac

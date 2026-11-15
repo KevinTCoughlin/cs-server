@@ -171,7 +171,8 @@ Edit files in `config/` — they're bind-mounted into the container:
 | `config/mapcycle.txt` | Map rotation (default scoutzknivez variants) |
 | `config/mapcycle-dust2.txt` | Dust 2 rotation (classic de_dust2) |
 | `config/mapcycle-nipper.txt` | Nipper Friday (knife mode) rotation |
-| `config/modes/*.cfg` | Per-mode settings, run after `server.cfg` (`knife.cfg` = Nipper Friday) |
+| `config/mapcycle-nipper-xmas.txt` | Nipper Friday Christmas rotation (Dec 1 to Jan 6) |
+| `config/modes/*.cfg` | Per-mode settings, run after `server.cfg` (`knife.cfg` = Nipper Friday; `knife_he.cfg` for grenade maps) |
 | `config/autoexec.cfg` | Runs on server start |
 
 Changes to `server.cfg` take effect next round or via `rcon exec server.cfg`.
@@ -236,7 +237,17 @@ Mode settings live in `config/modes/<mode>.cfg`. On every map the plugin runs
 #### NIPPER's maps
 
 The Nipper Friday rotation (`config/mapcycle-nipper.txt`) is `nipperhouse`,
-`ka_beams`, `nippers100`, `hamsters` and `de_westwood`. They come from NIPPER's
+`ka_beams`, `nippers100`, `he_dodgeball2`, `hamsters` and `de_westwood`. From
+Dec 1 to Jan 6, `mode nipper` / `auto` use the Christmas rotation
+(`config/mapcycle-nipper-xmas.txt`): `xmas_nipperhouse`, `x-mas_tree`,
+`xmas_lodge` and `xmas_crazytank`. Set `NIPPER_SEASON=xmas` or `none` to override.
+
+On grenade-fight maps (`he_*`) knife mode lets players and bots pick up the HE
+grenades the map lays out; everything else stays knife-only
+(`config/modes/knife_he.cfg` is the per-map override, exec'd after `knife.cfg`).
+`xmas_crazytank` keeps its drivable tank and mounted guns: that's the map's gimmick.
+
+They come from NIPPER's
 own [complete CS 1.6 map pack](https://gamebanana.com/mods/467088) on GameBanana.
 The maps aren't in git; fetch them before building:
 
@@ -249,9 +260,10 @@ just build
 custom sounds it needs. The script extracts only those files; nothing in the pack
 runs. To add another map, add a row and put its name in the mapcycle.
 `tests/mapcycle_test.sh` fails CI if a mapcycle names a map that isn't bundled,
-stock, or pinned. Bots need the map's `.nav`. Most of NIPPER's maps include one;
-`ka_monkeybars` doesn't, so it's left out (ZBot would generate one at map load,
-which is very slow under qemu).
+stock, or pinned. Bots need the map's `.nav`. Most of NIPPER's maps include one.
+`ka_monkeybars` doesn't, so it's left out for now (ZBot would generate one at map
+load, which is very slow under qemu). To add it, generate the `.nav` once on an
+x86 host with `bot_nav_generate`, then pin it.
 
 **License:** CC BY-NC-ND 4.0, maps by Nathaniel Miller (NIPPER). Credit NIPPER, no
 commercial use, and don't modify the BSPs. GameBanana's checklist asks for the
@@ -503,3 +515,14 @@ sudo cpupower frequency-set -g performance
 ## License
 
 [MIT](LICENSE)
+
+### Credits
+
+- **NIPPER's maps** (Nipper Friday) are by Nathaniel Miller
+  ([NIPPER](https://steamcommunity.com/id/nipper)), from his
+  [complete CS 1.6 map pack](https://gamebanana.com/mods/467088), licensed
+  [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). This
+  project doesn't distribute them: `just fetch-maps` downloads them from that
+  upload and checks them against a pinned SHA-256. Servers play them unmodified
+  and non-commercially, and NIPPER is credited in-game.
+- **Advanced Quake Sounds** by [ClaudiuHKS](https://github.com/ClaudiuHKS/AdvancedQuakeSounds) (MIT).

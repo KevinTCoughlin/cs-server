@@ -281,9 +281,12 @@ DUST2MAPCYCLE
 
     if [[ ! -f "${CONFIG_DIR}/mapcycle-nipper.txt" ]]; then
         cat > "${CONFIG_DIR}/mapcycle-nipper.txt" << 'NIPPERMAPCYCLE'
-scoutzknivez
-scoutzknivez_2k
-scoutzknivez_bender
+nipperhouse
+ka_beams
+nippers100
+he_dodgeball2
+hamsters
+de_westwood
 NIPPERMAPCYCLE
         ok "Default mapcycle-nipper.txt created"
     else
