@@ -35,6 +35,29 @@ up-d:
 down:
     {{ if ENGINE == "container" { "container stop -t 50 scoutzknivez" } else { "podman compose down" } }}
 
+# Restart with sv_lan 1 (no Steam auth/VAC, for Xash3D clients); `just lan off` reverts
+lan mode="on":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{mode}}" in
+      on) lan=1 ;;
+      off) lan=0 ;;
+      *) echo "usage: just lan [on|off]" >&2; exit 2 ;;
+    esac
+    if [ "{{ENGINE}}" = container ]; then
+      container stop -t 50 scoutzknivez >/dev/null 2>&1 || true
+      {{CTR_RUN}} -e LAN_MODE=$lan -d {{IMAGE}} >/dev/null 2>&1
+    else
+      LAN_MODE=$lan podman compose up -d --force-recreate
+    fi
+    printf 'waiting for server'
+    for _ in $(seq 40); do
+      if {{ENGINE}} logs scoutzknivez 2>&1 | grep -q 'VAC secure mode'; then break; fi
+      printf .; sleep 3
+    done
+    echo
+    {{ENGINE}} logs scoutzknivez 2>&1 | grep 'VAC secure mode' | tail -1
+
 # Follow server logs
 logs:
     {{ENGINE}} logs -f scoutzknivez

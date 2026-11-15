@@ -153,6 +153,7 @@ just up             # attached, config from ./config (like compose)
 just install        # or: run as a launchd agent (ops/cs-server), config in ~/.config/cs-server
 just status         # agent + container state and the address to connect to
 just logs           # follow output; `just rcon "status"` sends console commands
+just lan            # restart with sv_lan 1 so non-Steam (Xash3D) clients can join; `just lan off` reverts
 ```
 
 `just install` uses `ops/cs-server`, the macOS counterpart of the Quadlet unit: a launchd agent (`ops/launchd/com.kevintcoughlin.cs-server.plist`) that starts at login, restarts on crashes, and stops gracefully with the in-game countdown. `ops/cs-server` also has `update`, `restart`, `stop`, `start` and `uninstall`. Put `MAP=…`, `BOTS=…` etc. in `~/.config/cs-server/env`.
