@@ -16,7 +16,7 @@ permissions:
 jobs:
   dust2-announcement:
     name: Friday Dust 2 Announcement
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Create Dust 2 Friday Announcement
