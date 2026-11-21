@@ -158,7 +158,7 @@ generated=$(sed "s#${CONFIG}/#%h/.config/cs-server/#" "${UNIT}")
 reference=$(sed -n '/^\[Unit\]/,$p' "${ROOT}/quadlet/scoutzknivez.container")
 assert_eq "generated Quadlet unit matches quadlet/scoutzknivez.container" "${reference}" "${generated}"
 
-# Seeded config: every mounted file, private, with a generated RCON password.
+# Seeded config: every mounted file, private, and no RCON password.
 for name in "${CONFIG_NAMES[@]}"; do
     [[ -f "${CONFIG}/${name}" ]] || fail "config not seeded: ${name}"
     perms=$(mode_of "${CONFIG}/${name}")
@@ -172,20 +172,35 @@ perms=$(mode_of "${CONFIG}")
 assert_eq "config dir permissions" 700 "${perms}"
 perms=$(mode_of "${CONFIG}/modes")
 assert_eq "modes dir permissions" 700 "${perms}"
-password=$(sed -n 's/^rcon_password "\([0-9a-f]*\)"$/\1/p' "${CONFIG}/server.cfg")
-assert_eq "RCON password is 48 hex chars" 48 "${#password}"
+cmp -s "${ROOT}/config/server.cfg" "${CONFIG}/server.cfg" || fail "server.cfg differs from the image default"
+count=$(count_lines "${CONFIG}/server.cfg" "rcon_password")
+assert_eq "no RCON password unless asked for" 0 "${count}"
 cmp -s "${ROOT}/config/mapcycle.txt" "${CONFIG}/mapcycle.txt" || fail "mapcycle.txt differs from the image default"
+assert_not_contains "no TCP port is published" "${generated}" "/tcp"
+assert_not_contains "no FastDL URL unless asked for" "${generated}" "FASTDL_URL"
 
-# Re-running keeps the operator's edits and the existing password.
+# Re-running keeps the operator's edits; CS_RCON=1 adds a password once.
 printf 'de_dust2\n' > "${CONFIG}/mapcycle.txt"
-install CS_SERVER_IMAGE=localhost/cs-server:latest
-expect_ok "podman reinstall"
+install CS_SERVER_IMAGE=localhost/cs-server:latest CS_RCON=1
+expect_ok "podman reinstall with CS_RCON=1"
 kept=$(cat "${CONFIG}/mapcycle.txt")
 assert_eq "reinstall keeps an edited mapcycle" "de_dust2" "${kept}"
+password=$(sed -n 's/^rcon_password "\([0-9a-f]*\)"$/\1/p' "${CONFIG}/server.cfg")
+assert_eq "RCON password is 48 hex chars" 48 "${#password}"
+install CS_SERVER_IMAGE=localhost/cs-server:latest CS_RCON=1
+expect_ok "podman reinstall with CS_RCON=1 again"
 count=$(count_lines "${CONFIG}/server.cfg" "rcon_password")
 assert_eq "reinstall keeps the one RCON password" 1 "${count}"
 kept=$(cat "${CONFIG}/server.cfg")
 assert_contains "reinstall keeps the same password" "${kept}" "${password}"
+
+# FASTDL_URL lands in the unit, with % doubled for systemd.
+install 'FASTDL_URL=https://example.com/cs%20dl/cstrike/'
+expect_ok "podman install with FASTDL_URL"
+unit=$(cat "${UNIT}")
+assert_contains "unit carries the FastDL URL" "${unit}" 'Environment=FASTDL_URL=https://example.com/cs%%20dl/cstrike/'
+install 'FASTDL_URL=https://example.com/";quit'
+expect_die "bad FASTDL_URL" "Invalid FASTDL_URL"
 
 # An image too old to carry a mounted file is refused, not half-installed.
 fresh_home
@@ -212,7 +227,7 @@ for name in "${CONFIG_NAMES[@]}"; do
     assert_contains "docker mounts ${name}" "${run_line}" "-v ${CONFIG}/${name}:/hlds/cstrike/${name}:ro"
 done
 for flag in "--name scoutzknivez" "--restart on-failure:10" "--security-opt seccomp=unconfined" \
-    "--security-opt no-new-privileges" "--cap-drop ALL" "-p 27015:27015/udp" "-p 27015:27015/tcp" \
+    "--security-opt no-new-privileges" "--cap-drop ALL" "-p 27015:27015/udp" \
     "-v ${CONFIG}/modes:/hlds/cstrike/modes:ro" "--memory 512m" "--cpus 2" "-e MODE=scoutz"; do
     assert_contains "docker run flag" "${run_line}" "${flag}"
 done
@@ -220,6 +235,16 @@ if [[ "${run_line}" != *" ghcr.io/KevinTCoughlin/cs-server:latest" ]]; then
     fail "docker run: the default image must be the last argument: ${run_line}"
 fi
 assert_not_contains "docker path uses no systemd" "${calls}" "systemctl"
+assert_not_contains "docker publishes no TCP port" "${run_line}" "/tcp"
+assert_not_contains "docker: no FastDL URL unless asked for" "${run_line}" "FASTDL_URL"
+count=$(count_lines "${CONFIG}/server.cfg" "rcon_password")
+assert_eq "docker: no RCON password unless asked for" 0 "${count}"
+
+fresh_home
+install FAKE_CONTAINER=1 FASTDL_URL=https://example.com/cstrike/
+expect_ok "docker install with FASTDL_URL"
+run_line=$(grep '^docker run -d ' "${LOG}")
+assert_contains "docker run carries the FastDL URL" "${run_line}" "-e FASTDL_URL=https://example.com/cstrike/ "
 
 # --- Uninstall --------------------------------------------------------------
 use_runtimes podman

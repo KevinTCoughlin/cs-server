@@ -7,7 +7,6 @@ services:
     container_name: scoutzknivez
     ports:
       - "27015:27015/udp"
-      - "27015:27015/tcp"
     volumes:
       - ./config/server.cfg:/hlds/cstrike/server.cfg:ro,Z
       - ./config/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro,Z
@@ -24,6 +23,7 @@ services:
       MAPCYCLE: ${MAPCYCLE:-mapcycle.txt}
       LAN_MODE: ${LAN_MODE:-0}
       MODE: ${MODE:-scoutz}
+      FASTDL_URL: ${FASTDL_URL:-}
     sysctls:
       - net.core.rmem_max=26214400
       - net.core.wmem_max=26214400

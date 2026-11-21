@@ -14,7 +14,7 @@ CTR_MEMORY := env("CS_MEMORY", "640M")
 CTR_CPUS := env("CS_CPUS", "2")
 CTR_BUILD := "container build --platform linux/arm64 -t " + IMAGE + " -f Containerfile ."
 CTR_ENV_FILE := if path_exists(justfile_directory() / ".env") == "true" { "--env-file " + justfile_directory() / ".env" } else { "" }
-CTR_RUN := "container run --name scoutzknivez --rm -p 27015:27015/udp -p 27015:27015/tcp -m " + CTR_MEMORY + " -c " + CTR_CPUS + " --cap-drop ALL " + CTR_ENV_FILE + " -v " + justfile_directory() / "config/server.cfg" + ":/hlds/cstrike/server.cfg:ro -v " + justfile_directory() / "config/mapcycle.txt" + ":/hlds/cstrike/mapcycle.txt:ro -v " + justfile_directory() / "config/mapcycle-dust2.txt" + ":/hlds/cstrike/mapcycle-dust2.txt:ro -v " + justfile_directory() / "config/mapcycle-nipper.txt" + ":/hlds/cstrike/mapcycle-nipper.txt:ro -v " + justfile_directory() / "config/mapcycle-nipper-xmas.txt" + ":/hlds/cstrike/mapcycle-nipper-xmas.txt:ro -v " + justfile_directory() / "config/modes" + ":/hlds/cstrike/modes:ro"
+CTR_RUN := "container run --name scoutzknivez --rm -p 27015:27015/udp -m " + CTR_MEMORY + " -c " + CTR_CPUS + " --cap-drop ALL " + CTR_ENV_FILE + " -v " + justfile_directory() / "config/server.cfg" + ":/hlds/cstrike/server.cfg:ro -v " + justfile_directory() / "config/mapcycle.txt" + ":/hlds/cstrike/mapcycle.txt:ro -v " + justfile_directory() / "config/mapcycle-dust2.txt" + ":/hlds/cstrike/mapcycle-dust2.txt:ro -v " + justfile_directory() / "config/mapcycle-nipper.txt" + ":/hlds/cstrike/mapcycle-nipper.txt:ro -v " + justfile_directory() / "config/mapcycle-nipper-xmas.txt" + ":/hlds/cstrike/mapcycle-nipper-xmas.txt:ro -v " + justfile_directory() / "config/modes" + ":/hlds/cstrike/modes:ro"
 
 default:
     @just --list

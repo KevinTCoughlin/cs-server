@@ -31,4 +31,14 @@ assert_nomaster() {
 assert_nomaster 0
 assert_nomaster 1
 
+output=$(FASTDL_URL=https://example.com/cstrike/ "${COMPOSE[@]}" config)
+if ! grep -Eq "FASTDL_URL: ['\"]?https://example.com/cstrike/['\"]?$" <<<"${output}"; then
+    printf 'Expected rendered FASTDL_URL\n' >&2
+    exit 1
+fi
+if grep -q '/tcp\|protocol: tcp' <<<"${output}"; then
+    printf 'compose.yml must not publish a TCP port (GoldSrc is UDP only)\n' >&2
+    exit 1
+fi
+
 printf 'compose tests passed\n'

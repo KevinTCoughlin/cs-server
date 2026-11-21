@@ -13,7 +13,8 @@
 # localhost/cs-server:latest. `just e2e` builds the image first.
 #
 # Covers: every Metamod and AMX Mod X plugin loads and runs, the health check,
-# bots join, mode switching at round end in both directions (cvars, mapcycle
+# no TCP listener on the game port, FASTDL_URL reaching sv_downloadurl and
+# surviving map changes, bots join, mode switching at round end in both directions (cvars, mapcycle
 # and `localinfo sk_mode` surviving the changelevel), the sk_switchmode error
 # paths, every mapcycle map present in the image loads, no AMX Mod X run-time
 # errors, and a graceful SIGTERM shutdown.
@@ -37,6 +38,8 @@ IMAGE="${2:-${CS_E2E_IMAGE:-localhost/cs-server:latest}}"
 SCALE="${CS_E2E_TIMEOUT_SCALE:-1}"
 NAME="cs-e2e-$$"
 FIFO="/hlds/.runtime/hlds-input"
+# Has the characters the console treats specially when unquoted (`//`, `?`).
+FASTDL="https://fastdl.example.com/cs/cstrike/?v=1"
 
 if [[ -z "${ENGINE}" ]]; then
     for candidate in docker podman container; do
@@ -188,7 +191,7 @@ step "starting ${IMAGE} with ${ENGINE} as ${NAME}"
 # also the configuration where Steam's layer stops answering A2S_INFO, so the
 # health check below has to pass on the engine's own ping reply.
 "${ENGINE}" run -d --name "${NAME}" "${RUN_FLAGS[@]}" \
-    -e NOMASTER=1 -e LAN_MODE=1 -e BOTS=1 "${IMAGE}" >/dev/null
+    -e NOMASTER=1 -e LAN_MODE=1 -e BOTS=1 -e FASTDL_URL="${FASTDL}" "${IMAGE}" >/dev/null
 "${ENGINE}" logs -f "${NAME}" > "${LOG}" 2>&1 &
 LOG_PID=$!
 
@@ -205,6 +208,14 @@ for _ in $(seq $((30 * SCALE))); do
 done
 assert_eq "health check passes with NOMASTER=1 (server answers a ping)" 1 "${healthy}"
 
+# GoldSrc is UDP only, so no deployment path publishes the port on TCP. (The
+# one TCP socket HLDS opens listens on loopback, on an ephemeral port.)
+# /proc/net/tcp: field 2 is ADDR:PORT in hex, field 4 the state (0A = LISTEN).
+port_hex=$(printf ':%04X' 27015)
+listeners=$("${ENGINE}" exec "${NAME}" sh -c 'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null' |
+    awk -v port="${port_hex}" '$4 == "0A" && substr($2, length($2) - 4) == port { n++ } END { print n + 0 }')
+assert_eq "nothing listens on the game port over TCP" 0 "${listeners}"
+
 # --- Plugins ----------------------------------------------------------------
 # Every plugin listed in plugins.ini must have loaded.
 listed=$(grep -cE '^[A-Za-z0-9_]+\.amxx' "${ROOT}/plugins/amxmodx/plugins.ini" || true)
@@ -220,6 +231,7 @@ knife_gravity=$(sed -n 's/^sv_gravity[[:space:]]*"\{0,1\}\([0-9]*\).*/\1/p' "${R
 
 expect_cvar sv_gravity "${gravity}" "scoutz gravity from server.cfg"
 expect_cvar mapcyclefile mapcycle.txt "default mapcycle"
+expect_cvar sv_downloadurl "${FASTDL}" "FASTDL_URL sets the download URL"
 map=$(current_map)
 assert_eq "starting map" scoutzknivez "${map}"
 
@@ -267,6 +279,8 @@ step "switched to knife"
 switch_mode scoutz mapcycle.txt scoutzknivez
 expect_cvar sv_gravity "${gravity}" "knife settings do not leak back into scoutz"
 expect_cvar mapcyclefile mapcycle.txt "mapcycle follows the switch back"
+# server.cfg and the mode cfg were re-run twice by now.
+expect_cvar sv_downloadurl "${FASTDL}" "the download URL survives map changes"
 map=$(current_map)
 assert_eq "map after switching back" scoutzknivez "${map}"
 step "switched back to scoutz"

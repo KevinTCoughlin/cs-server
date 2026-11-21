@@ -545,7 +545,7 @@ footer p{max-width:60em}
         <pre>connect &lt;your-ip&gt;:27015</pre>
       </li>
     </ol>
-    <p class="note" style="margin-top:18px">Prefer to do it by hand? <code>podman run -d -p 27015:27015/udp -p 27015:27015/tcp --name scoutzknivez ghcr.io/kevintcoughlin/cs-server:latest</code>, or clone the repo and run <code>podman compose up --build</code>.</p>
+    <p class="note" style="margin-top:18px">Prefer to do it by hand? <code>podman run -d -p 27015:27015/udp --name scoutzknivez ghcr.io/kevintcoughlin/cs-server:latest</code>, or clone the repo and run <code>podman compose up --build</code>.</p>
   </div>
 </section>
 
@@ -725,7 +725,7 @@ footer p{max-width:60em}
       <details>
         <summary>FastDL <small>Fast map downloads for clients</small></summary>
         <div class="d-body">
-          <p>Custom maps (and Quake sounds, if you add them) are served from this site over HTTP for fast client downloads. The repository's <code>config/server.cfg</code>, which is also baked into the image, sets <code>sv_downloadurl</code> to this URL. The one-line installer writes its own <code>server.cfg</code> without it, so add the line there if you want FastDL. NIPPER's maps aren't served here (see <a href="#nipper">Nipper Friday</a>).</p>
+          <p>Custom maps (and Quake sounds, if you add them) are served from this site over HTTP for fast client downloads. That is this project's own server. A server you install sends custom content itself until you set <code>FASTDL_URL</code> (container environment, or on the installer's command line) to a host that serves your <code>cstrike/</code> files. NIPPER's maps aren't served here (see <a href="#nipper">Nipper Friday</a>).</p>
           <pre>https://kevintcoughlin.com/cs-server/cstrike/</pre>
         </div>
       </details>

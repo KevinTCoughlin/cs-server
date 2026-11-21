@@ -47,7 +47,7 @@ Pre-built images are available on GitHub Container Registry:
 
 ```bash
 podman pull ghcr.io/kevintcoughlin/cs-server:latest
-podman run -d -p 27015:27015/udp -p 27015:27015/tcp \
+podman run -d -p 27015:27015/udp \
   --name scoutzknivez ghcr.io/kevintcoughlin/cs-server:latest
 ```
 
@@ -178,7 +178,7 @@ Edit files in `config/` — they're bind-mounted into the container:
 | `config/modes/*.cfg` | Per-mode settings, run after `server.cfg` (`knife.cfg` = Nipper Friday; `knife_he.cfg` for grenade maps) |
 | `config/autoexec.cfg` | Runs on server start |
 
-Changes to `server.cfg` take effect next round or via `rcon exec server.cfg`.
+Changes to `server.cfg` take effect on the next map or via `just rcon "exec server.cfg"`.
 
 ### Friday Dust 2
 
@@ -197,7 +197,7 @@ systemctl --user restart scoutzknivez
 
 # Docker
 docker run -d --security-opt seccomp=unconfined \
-  -p 27015:27015/udp -p 27015:27015/tcp \
+  -p 27015:27015/udp \
   -e MAP=de_dust2 \
   -e MAPCYCLE=mapcycle-dust2.txt \
   ghcr.io/kevintcoughlin/cs-server:latest
@@ -310,7 +310,20 @@ The AQS plugin looks for WAV files in `sound/quake/`. These are not included (co
 
 Custom content (maps, sounds) is served via GitHub Pages so clients download over HTTP instead of the game server's slow built-in transfer (~5 KB/s).
 
-**How it works:** `sv_downloadurl` in `server.cfg` points clients to `https://kevintcoughlin.com/cs-server/cstrike/`. The engine tries `.bz2` compressed files first, then falls back to uncompressed.
+**How it works:** the `FASTDL_URL` environment variable sets `sv_downloadurl`, which points clients at an HTTP host that serves your `cstrike/` content. The engine tries `.bz2` compressed files first, then falls back to uncompressed. It is empty by default, so a new server sends custom content itself until you name a host:
+
+```bash
+# Compose / justfile: .env
+FASTDL_URL=https://example.com/cstrike/
+
+# Quadlet: ~/.config/containers/systemd/scoutzknivez.container
+Environment=FASTDL_URL=https://example.com/cstrike/
+
+# install.sh
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | FASTDL_URL=https://example.com/cstrike/ bash
+```
+
+Don't set `sv_downloadurl` in `server.cfg`: that file is re-run on every map and would override the variable. This project's own server uses `https://kevintcoughlin.com/cs-server/cstrike/`, which is the `docs/cstrike/` directory of this repository on GitHub Pages; a fork that enables Pages can do the same with the recipe below.
 
 ### Syncing Content
 
@@ -339,9 +352,11 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
 | `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife) or `knife` (Nipper Friday) |
+| `FASTDL_URL` | empty | http(s) URL serving your `cstrike/` content (`sv_downloadurl`); see [FastDL](#fastdl-fast-downloads) |
 
-Startup rejects invalid booleans, out-of-range ports/player counts, and unsafe
-map or mapcycle filenames instead of passing unchecked values to HLDS.
+Startup rejects invalid booleans, out-of-range ports/player counts, unsafe
+map or mapcycle filenames and malformed FastDL URLs instead of passing
+unchecked values to HLDS.
 
 ## Bots
 
@@ -363,17 +378,29 @@ To disable bots, set `BOTS=0` in `compose.yml` or your environment.
 
 ## RCON
 
-The installer generates a random RCON password in
-`${HOME}/.config/cs-server/server.cfg`. Treat that file as a secret and do not
-commit or publish it. For manual deployments, set a strong unique password:
+Network rcon is off by default: no `rcon_password` is set, and the engine
+refuses every rcon packet without one. The host that runs the container can
+still send console commands, through a private pipe inside it:
+
+```bash
+just rcon "status"          # from a checkout
+cs-server rcon status       # macOS service
+podman exec scoutzknivez sh -c 'echo status > /hlds/.runtime/hlds-input'
+```
+
+To administer the server from a game client, opt in. `CS_RCON=1` makes
+`install.sh` (or `cs-server install` on macOS) generate a random password in
+`${HOME}/.config/cs-server/server.cfg`; for a manual deployment add a strong,
+unique one yourself:
 
 ```
 rcon_password "your_password_here"
 ```
 
 Then in-game: `rcon_password your_password_here` followed by `rcon <command>`.
-If remote administration is not needed, leave RCON disabled instead of using a
-blank or predictable password.
+Treat `server.cfg` as a secret once it holds a password, and do not commit or
+publish it. `sv_rcon_maxfailures` and `sv_rcon_banpenalty` (see
+[HLDS Anti-Abuse](#hlds-anti-abuse)) limit guessing.
 
 ## Adding Plugins
 
@@ -470,13 +497,13 @@ Rate limiting and anti-abuse cvars in `server.cfg`:
 
 ### Firewall
 
-Only the required game ports should be open. Use the host firewall and, for a
-public server, a hosting provider with UDP DDoS protection:
+The server needs one port: 27015/udp. GoldSrc does not use TCP (game, queries
+and rcon are all UDP), so nothing publishes it. Use the host firewall and, for
+a public server, a hosting provider with UDP DDoS protection:
 
 ```bash
 # CS 1.6 server
 firewall-cmd --permanent --zone=FedoraWorkstation --add-port=27015/udp
-firewall-cmd --permanent --zone=FedoraWorkstation --add-port=27015/tcp
 firewall-cmd --reload
 ```
 
