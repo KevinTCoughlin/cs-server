@@ -39,4 +39,5 @@ jobs:
         run: |
           bash tests/entrypoint_test.sh
           bash tests/mapcycle_test.sh
+          bash tests/mounts_test.sh
           bash tests/compose_test.sh
