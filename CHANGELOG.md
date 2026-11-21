@@ -10,6 +10,9 @@
 
 - **Query-flood firewall recipe.** `ops/firewall/cs-server.nft` rate-limits connectionless packets (queries, pings, connection attempts) to the game port per source address in the kernel, leaving in-game traffic alone; `cs-server-firewall.service` loads it at boot. Works beside firewalld. Nothing applies it automatically; `install.sh` points at it. `tests/firewall_test.sh` exercises the rules in a private network namespace (#79)
 
+### Changed
+- **Docker no longer runs the server with `seccomp=unconfined`.** The profile built into Docker 29 answers the i386 binary's `socket()` with `ENOSYS`; Docker's own upstream default profile, passed as a file, does not (checked on Docker 29.4.2). `compose.yml` uses `ops/seccomp/docker-default.json`, the image carries the same file, and `install.sh` reads it out of the image for `docker run`, falling back to `unconfined` with a warning for older images. Podman is unchanged (#78)
+
 ### Fixed
 - `just deploy` failed with a container-name clash while the Quadlet service was running; it now builds the image and restarts the service.
 - The quickstart page still told readers to open 27015 on TCP.

@@ -482,13 +482,26 @@ install_docker() {
         fastdl_args=(-e "FASTDL_URL=${FASTDL_URL}")
     fi
 
+    # The seccomp profile built into Docker 29 answers the i386 HLDS binary's
+    # 32-bit socket() with ENOSYS, so it can't open its port. The image
+    # carries Docker's upstream default profile, which does not have that
+    # fault; an image from before 1.1.0 has none and runs unconfined.
+    local seccomp="${CONFIG_DIR}/seccomp.json"
+    if docker run --rm --network none --entrypoint cat "${IMAGE}" \
+        /usr/local/share/cs-server/seccomp.json > "${seccomp}.new" 2>/dev/null && [[ -s "${seccomp}.new" ]]; then
+        mv "${seccomp}.new" "${seccomp}"
+        chmod 600 "${seccomp}"
+    else
+        rm -f "${seccomp}.new" "${seccomp}"
+        seccomp="unconfined"
+        warn "${IMAGE} has no seccomp profile; running with seccomp=unconfined"
+    fi
+
     info "Creating and starting container"
-    # seccomp=unconfined: Docker's default profile answers the i386 HLDS
-    # binary's 32-bit socket() with ENOSYS, so it can't open its port.
     docker run -d \
         --name "${SERVICE_NAME}" \
         --restart on-failure:10 \
-        --security-opt seccomp=unconfined \
+        --security-opt "seccomp=${seccomp}" \
         -p 27015:27015/udp \
         -v "${CONFIG_DIR}/server.cfg:/hlds/cstrike/server.cfg:ro" \
         -v "${CONFIG_DIR}/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro" \
