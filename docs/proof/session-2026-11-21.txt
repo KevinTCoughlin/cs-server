@@ -1,0 +1,167 @@
+# cs-server: unedited console capture, 2026-11-21 (UTC).
+# Local arm64 build of this repo on an Apple silicon Mac (Apple container, HLDS under qemu-i386).
+# Started with PORT=27016 LAN_MODE=1; the lines without a timestamp after boot are commands
+# typed into the server console (status, meta list, amxx plugins, stats, cvars).
+# 192.168.64.23 is the container VM private address.
+
+[entrypoint] Running hlds_linux under i386 emulation (/usr/local/libexec/cs-server/hlds_linux)
+[entrypoint] HLDS started (PID: 7)
+Auto-restarting the server on crash
+
+Console initialized.
+Using breakpad crash handler
+Setting breakpad minidump AppID = 10
+Forcing breakpad minidump interfaces to load
+Looking up breakpad interfaces from steamclient
+Calling BreakpadMiniDumpSystemInit
+Protocol version 48
+Exe version 1.1.2.7/Stdio (cstrike)
+Exe build: 13:37:29 May 18 2026 (4419)
+STEAM Auth Server
+Server IP address 192.168.64.23:27016
+   
+   Metamod-r version 1.3.0.149 Copyright (c) 2016-2018 ReHLDS Team (rebuild of original Metamod by Will Day and Jussi Kivilinna)
+   Metamod-r comes with ABSOLUTELY NO WARRANTY; for details type `meta gpl'.
+   This is free software, and you are welcome to redistribute it
+   under certain conditions; type `meta gpl' for details.
+   
+Metamod-r v1.3.0.149, API (5:13)
+Metamod-r build: 11:31:21 Apr 23 2024
+Metamod-r from: https://github.com/theAsmodai/metamod-r/commit/603a257
+
+   AMX Mod X version 1.10.0.5487 Copyright (c) 2004-2015 AMX Mod X Development Team 
+   AMX Mod X comes with ABSOLUTELY NO WARRANTY; for details type `amxx gpl'.
+   This is free software and you are welcome to redistribute it under 
+   certain conditions; type 'amxx gpl' for details.
+  
+L 11/21/2026 - 07:30:43: GameConfig CRC computed engine=E9E42234 (/hlds/engine_i486.so)
+L 11/21/2026 - 07:30:43: GameConfig CRC computed server=09101E8B (/hlds/cstrike/dlls/cs.so)
+L 11/21/2026 - 07:30:43: GameConfig CRC mismatch for game "*" section "*" library "engine" platform "<unknown>" expected ???????? got E9E42234
+L 11/21/2026 - 07:30:43: GameConfig CRC mismatch for game "*" section "*" library "engine" platform "linux" expected 48E4E4D5 got E9E42234
+L 11/21/2026 - 07:30:43: GameConfig CRC mismatch for game "*" section "*" library "engine" platform "<unknown>" expected ???????? got E9E42234
+ReGameDLL version: 5.30.0.814-dev
+L 11/21/2026 - 07:30:43: -------- Mapchange to scoutzknivez --------
+L 11/21/2026 - 07:30:43: GameConfig CRC mismatch for game "*" section "*" library "server" platform "<unknown>" expected ???????? got 09101E8B
+L 11/21/2026 - 07:30:43: [CSX] Could not load csstats file: cstrike/addons/amxmodx/data/csstats.dat
+Total spawns points: 26
+[AMXX] Loaded 1 admin from file
+L 11/21/2026 - 07:30:45: [rtv.amxx] [RTV] Loaded 2 maps from mapcycle
+[S_API FAIL] SteamAPI_Init() failed; SteamAPI_IsSteamRunning() failed.
+IPC function call IClientUtils::GetSteamRealm took too long: 131 msec
+Setting breakpad minidump AppID = 70
+Looking up breakpad interfaces from steamclient
+Calling BreakpadMiniDumpSystemInit
+
+Executing AMX Mod X Configuration File 
+L 11/21/2026 - 07:30:46: [scoutzknivez.amxx] [SK] mode: scoutz
+   VAC secure mode disabled.
+L 11/21/2026 - 07:30:56: [websitebot.amxx] [WebsiteBot] Created bot: kevintcoughlin.com/cs-server/ (id 11)
+mp_logecho 1
+log on
+Server logging data to file logs/L1121000.log
+L 11/21/2026 - 07:32:05: Log file started (file "logs/L1121000.log") (game "cstrike") (version "48/1.1.2.7/Stdio/4419")
+status
+hostname:  ScoutzKnivez
+version :  48/1.1.2.7/Stdio 4419 insecure  (10)
+tcp/ip  :  192.168.64.23:27016
+map     :  scoutzknivez at: 0 x, 0 y, 0 z
+players :  11 active (20 max)
+
+#      name userid uniqueid frag time ping loss adr
+# 1 "Harold" 1 BOT   1 01:22    0    0
+# 2   "Paul" 2 BOT   4 01:22    0    0
+# 3   "Nick" 3 BOT   2 01:22    0    0
+# 4   "Adam" 4 BOT   2 01:22    0    0
+# 5    "Pat" 5 BOT   0 01:22    0    0
+# 6   "Mike" 6 BOT   3 01:22    0    0
+# 7 "Connor" 7 BOT   4 01:22    0    0
+# 8  "Colin" 8 BOT   0 01:22    0    0
+# 9   "Dave" 9 BOT   2 01:22    0    0
+#10  "Scott" 10 BOT   0 01:22    0    0
+#11 "kevintcoughlin.com/cs-server/" 11 BOT   0 01:22    0    0
+11 users
+meta list
+Currently loaded plugins:
+      description   stat pend  file                      vers             src  load  unload
+ [ 1] AMX Mod X     RUN   -    amxmodx_mm_i386.so        v1.10.0.5487     ini  Start ANY  
+ [ 2] CStrike       RUN   -    cstrike_amxx_i386.so      v1.10.0.5487     pl1  ANY   ANY  
+ [ 3] Fun           RUN   -    fun_amxx_i386.so          v1.10.0.5487     pl1  ANY   ANY  
+ [ 4] Ham Sandwich  RUN   -    hamsandwich_amxx_i386.so  v1.10.0.5487     pl1  ANY   ANY  
+ [ 5] FakeMeta      RUN   -    fakemeta_amxx_i386.so     v1.10.0.5487     pl1  ANY   ANY  
+ [ 6] ReAPI         RUN   -    reapi_amxx_i386.so        v5.29.0.359-dev  pl1  ANY   Never
+ [ 7] CSX           RUN   -    csx_amxx_i386.so          v1.10.0.5487     pl1  ANY   ANY  
+ [ 8] MySQL         RUN   -    mysql_amxx_i386.so        v1.10.0.5487     pl1  ANY   ANY  
+8 plugins, 8 running
+amxx plugins
+Currently loaded plugins:
+       id  name                    version     author            url                              file         status   
+ [  1] 0   Admin Base              1.10.0.548  AMXX Dev Team                                      admin.amxx   running  
+ [  2] 1   Admin Commands          1.10.0.548  AMXX Dev Team                                      admincmd.am  running  
+ [  3] 2   Admin Help              1.10.0.548  AMXX Dev Team                                      adminhelp.a  running  
+ [  4] 3   Slots Reservation       1.10.0.548  AMXX Dev Team                                      adminslots.  running  
+ [  5] 4   Multi-Lingual System    1.10.0.548  AMXX Dev Team                                      multilingua  running  
+ [  6] 5   Menus Front-End         1.10.0.548  AMXX Dev Team                                      menufront.a  running  
+ [  7] 6   Commands Menu           1.10.0.548  AMXX Dev Team                                      cmdmenu.amx  running  
+ [  8] 7   Players Menu            1.10.0.548  AMXX Dev Team                                      plmenu.amxx  running  
+ [  9] 8   Maps Menu               1.10.0.548  AMXX Dev Team                                      mapsmenu.am  running  
+ [ 10] 9   NextMap                 1.10.0.548  AMXX Dev Team                                      nextmap.amx  running  
+ [ 11] 10  TimeLeft                1.10.0.548  AMXX Dev Team                                      timeleft.am  running  
+ [ 12] 11  Admin Votes             1.10.0.548  AMXX Dev Team                                      adminvote.a  running  
+ [ 13] 12  Anti Flood              1.10.0.548  AMXX Dev Team                                      antiflood.a  running  
+ [ 14] 13  ScoutzKnivez            1.2         cs-server                                          scoutzknive  running  
+ [ 15] 14  Auto Bhop               1.0         cs-server                                          autobhop.am  running  
+ [ 16] 15  ADV. QUAKE SOUNDS (ENA  8.0         HATTRICK (HTTRCK                                   AQS.amxx     running  
+ [ 17] 16  RTV + Nominations       1.0         cs-server                                          rtv.amxx     running  
+ [ 18] 17  Website Bot             1.0         cs-server                                          websitebot.  running  
+ [ 19] 18  AFK Kicker              1.0         cs-server                                          afkkicker.a  running  
+ [ 20] 19  High Ping Kicker        1.0         cs-server                                          highpingkic  running  
+ [ 21] 20  Advertisements          1.0         cs-server                                          advertiseme  running  
+21 plugins, 21 running
+stats
+CPU   In    Out   Uptime  Users   FPS    Players
+ 0.00  0.00  0.00       1    11   64.20       0
+sv_gravity
+"sv_gravity" is "240"
+sv_airaccelerate
+"sv_airaccelerate" is "100"
+L 11/21/2026 - 07:32:06: "Mike<6><BOT><CT>" killed "Scott<10><BOT><TERRORIST>" with "knife"
+L 11/21/2026 - 07:32:10: "Adam<4><BOT><TERRORIST>" killed "Nick<3><BOT><CT>" with "knife"
+L 11/21/2026 - 07:32:10: "Dave<9><BOT><CT>" killed "Adam<4><BOT><TERRORIST>" with "knife"
+L 11/21/2026 - 07:32:10: Team "CT" triggered "CTs_Win" (CT "2") (T "1")
+L 11/21/2026 - 07:32:10: World triggered "Round_End"
+L 11/21/2026 - 07:32:15: World triggered "Round_Start"
+L 11/21/2026 - 07:32:24: "Adam<4><BOT><TERRORIST>" killed "Mike<6><BOT><CT>" with "knife"
+L 11/21/2026 - 07:32:25: "Harold<1><BOT><CT>" killed "Paul<2><BOT><TERRORIST>" with "knife"
+L 11/21/2026 - 07:32:27: "Connor<7><BOT><CT>" killed "Adam<4><BOT><TERRORIST>" with "knife"
+L 11/21/2026 - 07:32:28: "Colin<8><BOT><TERRORIST>" killed "Connor<7><BOT><CT>" with "knife"
+L 11/21/2026 - 07:32:28: "Scott<10><BOT><TERRORIST>" killed "Harold<1><BOT><CT>" with "knife"
+L 11/21/2026 - 07:32:29: "Nick<3><BOT><CT>" killed "Scott<10><BOT><TERRORIST>" with "knife"
+L 11/21/2026 - 07:32:32: "Nick<3><BOT><CT>" killed "Pat<5><BOT><TERRORIST>" with "knife"
+L 11/21/2026 - 07:32:33: "Colin<8><BOT><TERRORIST>" killed "Nick<3><BOT><CT>" with "knife"
+L 11/21/2026 - 07:32:42: "Dave<9><BOT><CT>" killed "Colin<8><BOT><TERRORIST>" with "knife"
+L 11/21/2026 - 07:32:42: Team "CT" triggered "CTs_Win" (CT "3") (T "1")
+L 11/21/2026 - 07:32:42: World triggered "Round_End"
+L 11/21/2026 - 07:32:47: World triggered "Round_Start"
+status
+hostname:  ScoutzKnivez
+version :  48/1.1.2.7/Stdio 4419 insecure  (10)
+tcp/ip  :  192.168.64.23:27016
+map     :  scoutzknivez at: 0 x, 0 y, 0 z
+players :  11 active (20 max)
+
+#      name userid uniqueid frag time ping loss adr
+# 1 "Harold" 1 BOT   2 02:07    0    0
+# 2   "Paul" 2 BOT   4 02:07    0    0
+# 3   "Nick" 3 BOT   4 02:07    0    0
+# 4   "Adam" 4 BOT   4 02:07    0    0
+# 5    "Pat" 5 BOT   0 02:07    0    0
+# 6   "Mike" 6 BOT   4 02:07    0    0
+# 7 "Connor" 7 BOT   5 02:07    0    0
+# 8  "Colin" 8 BOT   2 02:07    0    0
+# 9   "Dave" 9 BOT   4 02:07    0    0
+#10  "Scott" 10 BOT   1 02:07    0    0
+#11 "kevintcoughlin.com/cs-server/" 11 BOT   0 02:07    0    0
+11 users
+stats
+CPU   In    Out   Uptime  Users   FPS    Players
+ 0.00  0.00  0.00       2    11  252.30       0

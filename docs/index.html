@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CS 1.6 ScoutzKnivez Server: Host a Holiday LAN Night with Bots</title>
-<meta name="description" content="Free, open-source Counter-Strike 1.6 ScoutzKnivez server in a container. One-line install with Podman or Docker, ReHLDS stack, ZBots that fill empty slots. Set it up for a holiday LAN night.">
+<title>CS 1.6 ScoutzKnivez Server: your own low-gravity server in one command</title>
+<meta name="description" content="Free, open-source Counter-Strike 1.6 ScoutzKnivez server in a container. One-line install with Podman or Docker, ReHLDS stack, ZBots that fill empty slots. Runs on Linux, Apple silicon and WSL2.">
 <link rel="canonical" href="https://kevintcoughlin.com/cs-server/">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <meta name="author" content="Kevin Coughlin">
-<meta name="theme-color" content="#0c0c0e">
+<meta name="theme-color" content="#0b0c0f">
 <meta name="color-scheme" content="dark">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%230c0c0e'/%3E%3Cpath d='M3 13 13 3M3 3l4 4' stroke='%23ff8c00' stroke-width='2' stroke-linecap='square'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230b0c0f'/%3E%3Cpath d='M3 13 13 3M3 3l4 4' stroke='%23ff9a1f' stroke-width='2' stroke-linecap='square'/%3E%3C/svg%3E">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="CS 1.6 ScoutzKnivez Server">
 <meta property="og:url" content="https://kevintcoughlin.com/cs-server/">
-<meta property="og:title" content="Host a CS 1.6 ScoutzKnivez LAN night over the holiday break">
+<meta property="og:title" content="Your own CS 1.6 ScoutzKnivez server in one command">
 <meta property="og:description" content="Low-gravity scouts and knives with friends and family. One command installs a containerized CS 1.6 server; bots fill the empty slots. Free and open source.">
 <meta property="og:image" content="https://kevintcoughlin.com/cs-server/og-image.png">
 <meta property="og:image:width" content="1200">
@@ -22,7 +22,7 @@
 <meta property="og:image:alt" content="CS 1.6 ScoutzKnivez Server: containerized Counter-Strike 1.6 with the ReHLDS stack">
 <meta property="og:locale" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Host a CS 1.6 ScoutzKnivez LAN night over the holiday break">
+<meta name="twitter:title" content="Your own CS 1.6 ScoutzKnivez server in one command">
 <meta name="twitter:description" content="One command installs a containerized CS 1.6 ScoutzKnivez server. Bots fill the empty slots. Free and open source.">
 <meta name="twitter:image" content="https://kevintcoughlin.com/cs-server/og-image.png">
 <script type="application/ld+json">
@@ -48,509 +48,953 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0c0c0e;
-  --surface:#141418;
-  --border:#2a2a32;
-  --text:#c8c8d0;
-  --text-dim:#787882;
-  --accent:#ff8c00;
-  --accent-dim:#b36200;
-  --green:#4ec94e;
-  --red:#d04040;
+  --bg:#0b0c0f;
+  --bg-2:#101216;
+  --surface:#15171c;
+  --surface-2:#1b1e25;
+  --border:#262a33;
+  --border-2:#343945;
+  --text:#d5d8df;
+  --text-dim:#8b909c;
+  --white:#f5f6f8;
+  --accent:#ff9a1f;
+  --accent-ink:#1a0f00;
+  --green:#5fd068;
+  --ct:#7fb4ff;
+  --t:#ffb65c;
+  --red:#e0584f;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --radius:10px;
+  --wrap:1120px;
 }
-html{font-size:16px;scroll-behavior:smooth}
+html{scroll-behavior:smooth;scroll-padding-top:72px;-webkit-text-size-adjust:100%}
 body{
-  font-family:"Courier New",Courier,"Lucida Console",monospace;
+  font-family:var(--sans);
   background:var(--bg);
   color:var(--text);
   line-height:1.6;
-  min-height:100vh;
+  font-size:16px;
+  overflow-x:hidden;
 }
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
+code,pre,kbd{font-family:var(--mono)}
+code{font-size:.9em;color:var(--white);overflow-wrap:anywhere}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.wrap{max-width:var(--wrap);margin:0 auto;padding:0 20px}
+.skip{position:absolute;left:-999px}
+.skip:focus{left:12px;top:12px;z-index:100;background:var(--accent);color:var(--accent-ink);padding:8px 12px;border-radius:6px}
 
-.container{
-  max-width:760px;
-  margin:0 auto;
-  padding:2rem 1.5rem;
-}
-
-/* Header */
-header{
-  text-align:center;
-  padding:3rem 0 2rem;
-  border-bottom:1px solid var(--border);
-  margin-bottom:2rem;
-}
-.logo{
-  font-size:0.85rem;
-  color:var(--text-dim);
-  letter-spacing:0.05em;
-  white-space:pre;
-  line-height:1.2;
-  margin-bottom:1.5rem;
-  display:inline-block;
-  text-align:left;
-}
-h1{
-  font-size:1.6rem;
-  color:#fff;
-  letter-spacing:0.04em;
-  margin-bottom:0.5rem;
-}
-.tagline{
-  color:var(--text-dim);
-  font-size:0.85rem;
-}
-
-/* Sections */
-section{margin-bottom:2.5rem}
-h2{
-  font-size:1rem;
-  color:var(--accent);
-  text-transform:uppercase;
-  letter-spacing:0.1em;
-  margin-bottom:1rem;
-  padding-bottom:0.4rem;
-  border-bottom:1px solid var(--border);
-}
-
-/* Connect box */
-.connect-box{
-  background:var(--surface);
-  border:1px solid var(--border);
-  border-left:3px solid var(--green);
-  padding:1rem 1.25rem;
-  margin-bottom:0.75rem;
-}
-.connect-box .label{
-  font-size:0.75rem;
-  color:var(--text-dim);
-  text-transform:uppercase;
-  letter-spacing:0.08em;
-  margin-bottom:0.25rem;
-}
-.connect-box code{
-  color:#fff;
-  font-size:1rem;
-}
-.connect-note{
-  font-size:0.8rem;
-  color:var(--text-dim);
-}
-
-/* Stack list */
-.stack-list{list-style:none}
-.stack-list li{
-  padding:0.5rem 0;
-  border-bottom:1px solid var(--border);
-  font-size:0.85rem;
-}
-.stack-list li:last-child{border-bottom:none}
-.stack-list .name{color:#fff;font-weight:bold}
-.stack-list .ver{color:var(--accent-dim);margin-left:0.25rem}
-.stack-list .desc{color:var(--text-dim);display:block;margin-top:0.15rem}
-
-/* Code blocks */
-pre{
-  background:var(--surface);
-  border:1px solid var(--border);
-  padding:1rem 1.25rem;
-  overflow-x:auto;
-  font-size:0.85rem;
-  line-height:1.5;
-}
-pre .prompt{color:var(--green);user-select:none}
-pre .cmd{color:#fff}
-pre .comment{color:var(--text-dim)}
-
-/* Tables */
-table{
-  width:100%;
-  border-collapse:collapse;
-  font-size:0.82rem;
-}
-th,td{
-  text-align:left;
-  padding:0.5rem 0.75rem;
-  border:1px solid var(--border);
-}
-th{
-  background:var(--surface);
-  color:var(--accent);
-  text-transform:uppercase;
-  font-size:0.72rem;
-  letter-spacing:0.06em;
-}
-td{background:var(--bg)}
-td code{color:#fff}
-
-/* Steps */
-.steps{list-style:none;counter-reset:step}
-.steps li{
-  counter-increment:step;
-  padding:0.6rem 0;
-  padding-left:2rem;
-  position:relative;
-  font-size:0.85rem;
-}
-.steps li::before{
-  content:counter(step);
-  position:absolute;
-  left:0;
-  color:var(--accent);
-  font-weight:bold;
-  width:1.4rem;
-  text-align:center;
-}
-
-/* GitHub link */
-.gh-link{
-  display:inline-block;
-  padding:0.6rem 1.5rem;
-  border:1px solid var(--accent);
-  color:var(--accent);
-  font-size:0.85rem;
-  letter-spacing:0.04em;
-  transition:background 0.15s,color 0.15s;
-}
-.gh-link:hover{
-  background:var(--accent);
-  color:var(--bg);
-  text-decoration:none;
-}
-.gh-link[href*="ko-fi"]:hover{
-  background:var(--green);
-}
-
-/* Install box */
-.install-box{
-  background:var(--surface);
-  border:1px solid var(--border);
-  border-left:3px solid #892CA0;
-  padding:1rem 1.25rem;
-  position:relative;
-  margin-bottom:0.75rem;
-}
-.install-box code{
-  color:#fff;
-  font-size:0.85rem;
-  word-break:break-all;
-}
-.copy-btn{
-  position:absolute;
-  top:0.75rem;
-  right:0.75rem;
-  background:var(--border);
-  border:none;
-  color:var(--text);
-  font-family:inherit;
-  font-size:0.72rem;
-  padding:0.3rem 0.6rem;
-  cursor:pointer;
-  letter-spacing:0.04em;
-  transition:background 0.15s,color 0.15s;
-}
-.copy-btn:hover{background:var(--accent);color:var(--bg)}
-.copy-btn.copied{background:var(--green);color:var(--bg)}
-
-/* Footer */
-footer{
-  border-top:1px solid var(--border);
-  padding-top:1.5rem;
-  margin-top:2rem;
-  text-align:center;
-  font-size:0.75rem;
-  color:var(--text-dim);
-}
-
-/* Holiday promo */
+/* Promo bar */
 .promo-bar{
   background:linear-gradient(90deg,#2a1608,#14240f);
   border-bottom:1px solid var(--border);
-  text-align:center;
-  font-size:0.8rem;
-  padding:0.55rem 1rem;
-  color:var(--text);
+  text-align:center;font-size:.85rem;padding:.5rem 1rem;
 }
-.promo-bar a{font-weight:bold;white-space:nowrap}
+.promo-bar a{font-weight:600;white-space:nowrap}
 .promo-bar[hidden]{display:none}
-.holiday{
-  background:var(--surface);
-  border:1px solid var(--border);
-  border-left:3px solid var(--red);
-  padding:1rem 1.25rem;
-}
-.holiday .steps li{border-bottom:1px solid var(--border)}
-.holiday .steps li:last-child{border-bottom:none}
-.holiday .steps strong{color:#fff;display:block}
-code{overflow-wrap:anywhere}
 
-/* Responsive */
-@media(max-width:500px){
-  .container{padding:1.25rem 1rem}
-  header{padding:2rem 0 1.5rem}
-  h1{font-size:1.3rem}
-  .logo{font-size:0.65rem}
-  table{font-size:0.75rem}
-  th,td{padding:0.4rem 0.5rem}
+/* Nav */
+.nav{
+  position:sticky;top:0;z-index:50;
+  background:rgba(11,12,15,.82);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--border);
+}
+.nav .wrap{display:flex;align-items:center;gap:24px;height:56px}
+.brand{display:flex;align-items:center;gap:10px;color:var(--white);font-weight:700;letter-spacing:.01em;white-space:nowrap}
+.brand:hover{text-decoration:none}
+.brand svg{width:22px;height:22px;flex:none}
+.nav-links{display:flex;gap:22px;margin-left:auto;font-size:.92rem}
+.nav-links a{color:var(--text-dim)}
+.nav-links a:hover{color:var(--white);text-decoration:none}
+@media(max-width:720px){.nav-links a.opt{display:none}.nav-links{gap:16px}}
+
+/* Buttons */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  font:600 .95rem/1 var(--sans);
+  padding:.8rem 1.15rem;border-radius:8px;border:1px solid transparent;
+  cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s,color .15s,transform .15s;
+}
+.btn:hover{text-decoration:none}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--accent);color:var(--accent-ink)}
+.btn-primary:hover{background:#ffb04a}
+.btn-ghost{background:transparent;border-color:var(--border-2);color:var(--white)}
+.btn-ghost:hover{border-color:var(--text-dim);background:var(--surface)}
+.btn-sm{padding:.5rem .8rem;font-size:.85rem}
+.btn svg{width:16px;height:16px}
+
+/* Hero */
+.hero{
+  position:relative;
+  padding:56px 0 64px;
+  background:
+    radial-gradient(900px 420px at 85% -10%,rgba(255,154,31,.13),transparent 60%),
+    radial-gradient(700px 380px at 0% 0%,rgba(127,180,255,.07),transparent 60%);
+  border-bottom:1px solid var(--border);
+}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:48px;align-items:center}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  font:600 .78rem/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--text-dim);margin-bottom:18px;
+}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(95,208,104,.18)}
+h1{
+  font-size:clamp(2.1rem,4.6vw,3.35rem);line-height:1.08;letter-spacing:-.02em;
+  color:var(--white);font-weight:800;margin-bottom:18px;text-wrap:balance;
+}
+h1 em{font-style:normal;color:var(--accent)}
+.lede{font-size:1.1rem;color:var(--text);max-width:34em;margin-bottom:26px}
+.lede strong{color:var(--white);font-weight:600}
+
+/* Install widget */
+.install{background:var(--surface);border:1px solid var(--border-2);border-radius:var(--radius);overflow:hidden}
+.tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg-2)}
+.tabs button{
+  flex:1;background:none;border:0;border-bottom:2px solid transparent;color:var(--text-dim);
+  font:600 .82rem/1 var(--sans);padding:.75rem .5rem;cursor:pointer;
+}
+.tabs button:hover{color:var(--white)}
+.tabs button[aria-selected="true"]{color:var(--white);border-bottom-color:var(--accent)}
+.cmd{display:flex;align-items:center;gap:12px;padding:14px 14px 14px 16px}
+.cmd pre{flex:1;min-width:0;overflow-x:auto;font-size:.86rem;line-height:1.55;color:var(--white);white-space:pre}
+.cmd pre .p{color:var(--green);user-select:none}
+.copy{
+  flex:none;background:var(--surface-2);border:1px solid var(--border-2);color:var(--text);
+  font:600 .78rem/1 var(--sans);padding:.55rem .75rem;border-radius:6px;cursor:pointer;
+}
+.copy:hover{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.copy.copied{background:var(--green);border-color:var(--green);color:#06210a}
+.install-note{font-size:.84rem;color:var(--text-dim);padding:0 16px 14px}
+.hero-cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}
+.trust{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:22px;font-size:.86rem;color:var(--text-dim);list-style:none}
+.trust li{display:flex;align-items:center;gap:7px}
+.trust svg{width:14px;height:14px;color:var(--green);flex:none}
+
+/* Terminal */
+.term{
+  background:#08090b;border:1px solid var(--border-2);border-radius:12px;overflow:hidden;
+  box-shadow:0 30px 80px -30px rgba(0,0,0,.9),0 0 0 1px rgba(255,255,255,.02) inset;
+}
+.term-bar{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface);border-bottom:1px solid var(--border)}
+.lights{display:flex;gap:6px}
+.lights i{width:10px;height:10px;border-radius:50%;background:var(--border-2)}
+.term-tabs{display:flex;gap:4px;margin-left:6px;overflow-x:auto}
+.term-tabs button{
+  background:none;border:0;color:var(--text-dim);font:500 .78rem/1 var(--mono);
+  padding:.45rem .65rem;border-radius:6px;cursor:pointer;white-space:nowrap;
+}
+.term-tabs button:hover{color:var(--white)}
+.term-tabs button[aria-selected="true"]{background:var(--surface-2);color:var(--white)}
+.term-body{
+  height:390px;overflow:auto;padding:14px 16px;
+  font:400 .76rem/1.55 var(--mono);color:#b9bdc7;white-space:pre-wrap;overflow-wrap:anywhere;
+  scrollbar-width:thin;scrollbar-color:var(--border-2) transparent;
+}
+.term-body .c{color:var(--white)}
+.term-body .c::before{content:"> ";color:var(--green)}
+.term-body .ok{color:var(--green)}
+.term-body .hi{color:var(--accent)}
+.term-body .d{color:#666b77}
+.cursor{display:inline-block;width:.55em;height:1em;background:var(--accent);vertical-align:-2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.caption{font-size:.82rem;color:var(--text-dim);margin-top:10px}
+
+/* Sections */
+section{padding:72px 0}
+section.alt{background:var(--bg-2);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.kicker{font:600 .78rem/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+h2{font-size:clamp(1.55rem,3vw,2.1rem);line-height:1.15;letter-spacing:-.015em;color:var(--white);font-weight:750;margin-bottom:12px;text-wrap:balance}
+.sub{color:var(--text-dim);max-width:44em;margin-bottom:36px;font-size:1.02rem}
+h3{color:var(--white);font-size:1.05rem;font-weight:650;margin-bottom:6px}
+
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.stat{background:var(--surface);padding:22px 20px}
+.stat b{display:block;font:750 2rem/1.1 var(--sans);color:var(--white);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat span{display:block;font-size:.88rem;color:var(--text-dim);margin-top:6px}
+.stat code{font-size:.8rem;color:var(--text-dim)}
+
+/* Round replay */
+.round{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:24px;margin-top:24px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);font:600 .78rem/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim)}
+.score{display:flex;align-items:center;gap:10px;font:700 1rem/1 var(--sans);letter-spacing:0;font-variant-numeric:tabular-nums}
+.score .ct{color:var(--ct)}.score .t{color:var(--t)}
+.feed{list-style:none;height:296px;padding:10px 12px;display:flex;flex-direction:column;justify-content:flex-end;gap:6px;overflow:hidden}
+.feed li{
+  display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;
+  background:var(--bg-2);border:1px solid var(--border);font-size:.9rem;font-weight:600;
+  animation:slide .35s ease-out;
+}
+.feed li.ev{justify-content:center;font:600 .76rem/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);background:none;border-style:dashed}
+.feed time{font:400 .74rem/1 var(--mono);color:var(--text-dim);margin-right:auto}
+.feed .ct{color:var(--ct)}.feed .t{color:var(--t)}
+.feed svg{width:26px;height:12px;color:var(--text-dim);flex:none}
+@keyframes slide{from{opacity:0;transform:translateY(8px)}}
+.board{width:100%;border-collapse:collapse;font-size:.88rem}
+.board th,.board td{padding:7px 16px;text-align:left;border-bottom:1px solid var(--border)}
+.board tr:last-child td{border-bottom:0}
+.board th{font:600 .72rem/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim)}
+.board td:nth-child(2),.board th:nth-child(2){text-align:right;font-variant-numeric:tabular-nums}
+.board td:last-child,.board th:last-child{text-align:right;color:var(--text-dim);font-family:var(--mono);font-size:.78rem}
+.board td:first-child{color:var(--white)}
+
+/* Cards */
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px}
+.card p{font-size:.94rem;color:var(--text-dim)}
+.card p code{font-size:.82rem}
+.icon{width:36px;height:36px;border-radius:8px;background:rgba(255,154,31,.12);color:var(--accent);display:grid;place-items:center;margin-bottom:14px}
+.icon svg{width:20px;height:20px}
+.persona{display:flex;flex-direction:column}
+.persona ul{list-style:none;margin:10px 0 18px;font-size:.92rem;color:var(--text-dim)}
+.persona li{padding:4px 0 4px 22px;position:relative}
+.persona li::before{content:"";position:absolute;left:2px;top:.72em;width:10px;height:6px;border-left:2px solid var(--green);border-bottom:2px solid var(--green);transform:rotate(-45deg)}
+.persona .btn{margin-top:auto;align-self:flex-start}
+
+/* Steps */
+.steps3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;counter-reset:s;list-style:none}
+.steps3 li{counter-increment:s;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;min-width:0}
+.steps3 li::before{content:counter(s);display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-weight:800;font-size:.9rem;margin-bottom:12px}
+.steps3 p{font-size:.94rem;color:var(--text-dim)}
+.steps3 pre,.ref pre{background:#08090b;border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-top:12px;overflow-x:auto;font-size:.82rem;line-height:1.55;color:var(--white)}
+pre .p{color:var(--green);user-select:none}
+pre .cm{color:var(--text-dim)}
+
+/* Stack */
+.stack{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.stack div{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.stack b{display:block;color:var(--white);font-size:.98rem}
+.stack code{display:block;color:var(--accent);font-size:.8rem;margin:2px 0 8px}
+.stack span{font-size:.85rem;color:var(--text-dim)}
+
+/* Reference */
+.ref{display:grid;gap:10px}
+details{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
+summary{
+  list-style:none;cursor:pointer;padding:16px 20px;display:flex;align-items:center;gap:12px;
+  color:var(--white);font-weight:650;
+}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";margin-left:auto;font:400 1.3rem/1 var(--mono);color:var(--text-dim)}
+details[open] summary::after{content:"\2212"}
+summary small{font-weight:400;color:var(--text-dim);font-size:.86rem}
+.d-body{padding:0 20px 20px;font-size:.94rem}
+.d-body>*+*{margin-top:12px}
+.d-body ol,.d-body ul{padding-left:1.2em}
+.d-body li{padding:3px 0}
+.d-body li strong{color:var(--white)}
+.tbl{overflow-x:auto}
+table.kv{width:100%;border-collapse:collapse;font-size:.88rem;min-width:420px}
+.kv th,.kv td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border)}
+.kv th{font:600 .72rem/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim)}
+.kv tr:last-child td{border-bottom:0}
+.note{color:var(--text-dim);font-size:.88rem}
+
+/* Final CTA */
+.final{text-align:center;padding:80px 0;background:radial-gradient(700px 300px at 50% 100%,rgba(255,154,31,.12),transparent 65%)}
+.final .install{max-width:760px;margin:26px auto 0;text-align:left}
+.final .hero-cta{justify-content:center}
+
+footer{border-top:1px solid var(--border);padding:28px 0 40px;font-size:.84rem;color:var(--text-dim)}
+footer .wrap{display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:space-between}
+footer p{max-width:60em}
+
+@media(max-width:960px){
+  .hero-grid,.round{grid-template-columns:minmax(0,1fr)}
+  .hero{padding:36px 0 48px}
+  .grid-3,.steps3{grid-template-columns:minmax(0,1fr)}
+  .stack{grid-template-columns:repeat(2,1fr)}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  section{padding:56px 0}
+  .term-body{height:320px}
+}
+@media(max-width:480px){
+  .cmd{flex-direction:column;align-items:stretch}
+  .cmd pre{width:100%}
+  .stack{grid-template-columns:minmax(0,1fr)}
+  .hero-cta .btn{flex:1}
+}
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .cursor,.feed li{animation:none}
 }
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <!-- Holiday promo: hidden automatically after the date in data-until (see script at the end). -->
-<div class="promo-bar" id="promoBar" data-until="2027-01-07"><span aria-hidden="true">&#127876;</span> Family and friends home for the holidays? Host a ScoutzKnivez LAN night, now from a Linux box or an Apple silicon Mac. <a href="#holiday">Holiday setup &rarr;</a></div>
-<div class="container">
+<div class="promo-bar" id="promoBar" data-until="2027-01-07"><span aria-hidden="true">&#127876;</span> Everyone home for the holidays? Host a ScoutzKnivez LAN night from a Linux box or an Apple silicon Mac. <a href="#holiday">Holiday setup &rarr;</a></div>
 
-<header>
-<div class="logo" aria-hidden="true">   _____ ____       _  __       _
-  / ___// __/      | |/ /____  (_)   _____  ____
-  \__ \/ /__  _____| / // __ \/ / | / / _ \/_  /
- ___/ / /___/_____/  / / / / / /| |/ /  __/ / /_
-/____/_/         /_/|_/_/ /_/_/ |___/\___/ /___/</div>
-<h1>CS 1.6 ScoutzKnivez Server</h1>
-<p class="tagline">Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack</p>
+<nav class="nav" aria-label="Main">
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="#1b1e25"/><path d="M3 13 13 3M3 3l4 4" stroke="#ff9a1f" stroke-width="2" stroke-linecap="square" fill="none"/></svg>
+      cs-server
+    </a>
+    <div class="nav-links">
+      <a class="opt" href="#proof">Proof</a>
+      <a class="opt" href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a class="opt" href="#reference">Reference</a>
+    </div>
+    <a class="btn btn-ghost btn-sm" href="https://github.com/KevinTCoughlin/cs-server">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.33.66.07-.52.28-.87.5-1.07-1.77-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0 0 8 0Z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div>
+      <p class="eyebrow"><span class="dot" aria-hidden="true"></span>Free &middot; MIT &middot; Counter-Strike 1.6</p>
+      <h1>Your own low-gravity CS&nbsp;1.6 server, up in <em>one command</em>.</h1>
+      <p class="lede">Scouts, knives and bunny hops on a <strong>containerized ReHLDS stack</strong>. Bots fill the empty slots, so the first round starts the moment you connect, whether that's a LAN night or a box in your homelab.</p>
+
+      <div class="install" data-tabs>
+        <div class="tabs" role="tablist" aria-label="Platform">
+          <button role="tab" aria-selected="true" data-tab="linux">Linux</button>
+          <button role="tab" aria-selected="false" data-tab="mac">Apple silicon</button>
+          <button role="tab" aria-selected="false" data-tab="win">Windows (WSL2)</button>
+        </div>
+        <div data-pane="linux">
+          <div class="cmd"><pre><span class="p">$ </span><span data-copy-src>curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash</span></pre><button class="copy" type="button">Copy</button></div>
+          <p class="install-note">Needs <a href="https://podman.io/getting-started/installation">Podman</a> or <a href="https://docs.docker.com/get-docker/">Docker</a>. Pulls the prebuilt image and starts the server on port 27015.</p>
+        </div>
+        <div data-pane="mac" hidden>
+          <div class="cmd"><pre><span class="p">$ </span><span data-copy-src>brew install just container &amp;&amp; container system start &amp;&amp; git clone https://github.com/KevinTCoughlin/cs-server.git &amp;&amp; cd cs-server &amp;&amp; just up-d</span></pre><button class="copy" type="button">Copy</button></div>
+          <p class="install-note">Builds from source with Apple's <code>container</code> CLI (about 10 minutes the first time). <a href="#macos">How it runs on a Mac</a>.</p>
+        </div>
+        <div data-pane="win" hidden>
+          <div class="cmd"><pre><span class="p">&gt; </span><span data-copy-src>wsl --install Debian</span></pre><button class="copy" type="button">Copy</button></div>
+          <p class="install-note">Then install Podman or Docker CE inside Debian and run the Linux command there. <a href="#windows">WSL2 steps</a>.</p>
+        </div>
+      </div>
+
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#install">Set it up in 3 steps</a>
+        <a class="btn btn-ghost" href="#proof">See it running</a>
+      </div>
+      <ul class="trust">
+        <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m3 8.5 3.2 3L13 4.5"/></svg>Bots fill to 10 players</li>
+        <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m3 8.5 3.2 3L13 4.5"/></svg>Rootless, zero capabilities</li>
+        <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m3 8.5 3.2 3L13 4.5"/></svg>Every version pinned</li>
+      </ul>
+    </div>
+
+    <div>
+      <div class="term" id="term">
+        <div class="term-bar">
+          <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+          <div class="term-tabs" role="tablist" aria-label="Captured server output">
+            <button role="tab" aria-selected="true" data-scene="boot">boot</button>
+            <button role="tab" aria-selected="false" data-scene="status">status</button>
+            <button role="tab" aria-selected="false" data-scene="plugins">amxx plugins</button>
+            <button role="tab" aria-selected="false" data-scene="round">round log</button>
+          </div>
+        </div>
+        <div class="term-body" id="termBody" tabindex="0" role="log" aria-label="Server console output"></div>
+      </div>
+      <p class="caption">Real console output from this repo's image, captured 21 Nov 2026 on an Apple silicon Mac. Excerpts; <a href="proof/session-2026-11-21.txt">read the full raw log</a>.</p>
+    </div>
+  </div>
 </header>
 
-<main>
+<main id="main">
 
-<section>
-<h2>// Install</h2>
-<div class="install-box">
-  <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash</code>
-  <button class="copy-btn" id="copy-btn" type="button">Copy</button>
-</div>
-<p class="connect-note">Requires <a href="https://podman.io/getting-started/installation">Podman</a> (rootless) or <a href="https://docs.docker.com/get-docker/">Docker</a>. The script pulls the image from ghcr.io, writes config files to <code style="color:#fff">~/.config/cs-server/</code> (including a random RCON password), and starts the server on port <strong style="color:#fff">27015</strong>. With Podman it installs a systemd Quadlet unit; with Docker it creates a container with a restart policy.</p>
+<section id="proof">
+  <div class="wrap">
+    <p class="kicker">Proof, not promises</p>
+    <h2>Numbers from one real session</h2>
+    <p class="sub">No mock-ups and no borrowed screenshots. These come straight from the server console two minutes after <code>container run</code>, with the 32-bit engine running under emulation on an M-series Mac.</p>
+
+    <div class="stats">
+      <div class="stat"><b>252</b><span>server FPS under qemu-i386</span><code>stats</code></div>
+      <div class="stat"><b>21 / 21</b><span>AMX Mod X plugins running</span><code>amxx plugins</code></div>
+      <div class="stat"><b>10 + 1</b><span>bots in game, plus the website bot</span><code>status</code></div>
+      <div class="stat"><b>8 / 8</b><span>Metamod modules loaded, ReAPI included</span><code>meta list</code></div>
+    </div>
+
+    <div class="round">
+      <div class="panel">
+        <div class="panel-head"><span>Kill feed &middot; scoutzknivez</span><span class="score" aria-live="off"><span class="ct">CT <span id="sCT">1</span></span><span aria-hidden="true">:</span><span class="t"><span id="sT">1</span> T</span></span></div>
+        <ul class="feed" id="feed" aria-label="Replay of logged kills"></ul>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span>Scoreboard at 02:07</span><span>status</span></div>
+        <table class="board">
+          <thead><tr><th>Player</th><th>Frags</th><th>ID</th></tr></thead>
+          <tbody>
+            <tr><td>Connor</td><td>5</td><td>BOT</td></tr>
+            <tr><td>Paul</td><td>4</td><td>BOT</td></tr>
+            <tr><td>Nick</td><td>4</td><td>BOT</td></tr>
+            <tr><td>Adam</td><td>4</td><td>BOT</td></tr>
+            <tr><td>Mike</td><td>4</td><td>BOT</td></tr>
+            <tr><td>Dave</td><td>4</td><td>BOT</td></tr>
+            <tr><td>Harold</td><td>2</td><td>BOT</td></tr>
+            <tr><td>Colin</td><td>2</td><td>BOT</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p class="caption">The feed replays the 12 kills the server logged between 07:32:06 and 07:32:42 UTC, in order, with their real timestamps. Yes, the bots went straight for the knives.</p>
+  </div>
 </section>
 
-<section>
-<h2>// Quick Connect</h2>
-<div class="connect-box">
-  <div class="label">Console Command</div>
-  <code>connect &lt;your-ip&gt;:27015</code>
-</div>
-<p class="connect-note">Default port: <strong style="color:#fff">27015</strong> (UDP + TCP). Replace &lt;your-ip&gt; with your server's LAN or public IP.</p>
+<section class="alt" id="features">
+  <div class="wrap">
+    <p class="kicker">What you get</p>
+    <h2>A full ScoutzKnivez server, already tuned</h2>
+    <p class="sub">Everything is configured in the image. You don't hunt for plugins, compile anything or edit a config to get a good first round.</p>
+    <div class="grid-3">
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg></div>
+        <h3>Low gravity, high air control</h3>
+        <p><code>sv_gravity 240</code>, <code>sv_airaccelerate 100</code>, no freeze time, no buy menu. Everyone spawns with a scout and a knife, and holding jump bunny hops.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="8" width="14" height="10" rx="2"/><path d="M12 8V4M9 13h.01M15 13h.01"/></svg></div>
+        <h3>Bots that make room</h3>
+        <p>ZBots keep 10 players in the game and leave as people join, so two friends still get a full server. Set <code>BOTS=0</code> to turn them off.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/><path d="m16 16 2 2 4-4"/></svg></div>
+        <h3>Players pick the map</h3>
+        <p>Type <code>rtv</code> in chat to start a vote and <code>nominate</code> to add a map. Three ScoutzKnivez maps ship in the image, with classic Dust 2 one variable away.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14.5 4 20 9.5 9 20.5H3.5V15z"/><path d="m12 6.5 5.5 5.5"/></svg></div>
+        <h3>Nipper Friday</h3>
+        <p>A knife-only mode on NIPPER's classic maps. <code>just mode nipper</code> switches at the end of the round, with no restart. <a href="#nipper">How it works</a>.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.500 7-10V6z"/><path d="m9 12 2 2 4-4"/></svg></div>
+        <h3>Locked down by default</h3>
+        <p>Runs as a non-root user with every Linux capability dropped, no privilege escalation, memory and CPU limits, and RCON lockout after 5 failures.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.300M20 12a8 8 0 0 1-14 5.300"/><path d="M18 3v4h-4M6 21v-4h4"/></svg></div>
+        <h3>Stays up on its own</h3>
+        <p>A systemd Quadlet unit on Linux or a launchd agent on macOS starts it at boot and restarts it after a crash. On shutdown, players get a 30-second countdown.</p>
+      </div>
+    </div>
+  </div>
 </section>
 
-<section id="holiday">
-<h2>// Ready Before the Holiday Break</h2>
-<p style="font-size:0.85rem;margin-bottom:1rem">Christmas, New Year, winter or summer holidays: wherever you are, the break is when everyone is finally in one place. Set it up once for a LAN night with family and friends.</p>
-<div class="holiday">
-<ol class="steps">
-  <li><strong>Install it on a spare Linux machine</strong>Run the install command above on any box with Podman or Docker. The three ScoutzKnivez maps are in the image, so there is nothing else to download.</li>
-  <li><strong>No spare Linux box? Use your Mac</strong>Apple silicon Macs run it with Apple's <code style="color:#fff">container</code> CLI: <code style="color:#fff">just build &amp;&amp; just up</code> from a checkout. See <a href="#macos">macOS / Apple silicon</a>.</li>
-  <li><strong>Everyone connects from the CS 1.6 console</strong>Open the console and type <code style="color:#fff">connect &lt;server-lan-ip&gt;:27015</code>. The installer prints the address when it finishes.</li>
-  <li><strong>Keep it to the house</strong>For a LAN-only night with the Podman install, change <code style="color:#fff">Environment=LAN_MODE=0</code> to <code style="color:#fff">1</code> in <code style="color:#fff">~/.config/containers/systemd/scoutzknivez.container</code>, then run <code style="color:#fff">systemctl --user daemon-reload &amp;&amp; systemctl --user restart scoutzknivez</code>.</li>
-  <li><strong>Or let friends join from their houses</strong>Leave <code style="color:#fff">LAN_MODE=0</code> (the default), allow 27015 UDP and TCP through the host firewall, forward it on your router, and share your public IP.</li>
-  <li><strong>Only two of you? Bots fill in</strong>ZBots fill the server up to 10 players and leave as people join, so even a small group gets a full round. Set <code style="color:#fff">BOTS=0</code> to turn them off.</li>
-  <li><strong>Make Friday a Nipper Friday</strong>Knives only on NIPPER's classic CS maps, with his Christmas maps through Jan 6. <code style="color:#fff">just mode nipper</code> switches at the end of the round, no restart. See <a href="#nipper">Nipper Friday</a>.</li>
-  <li><strong>Switch it up</strong>Type <code style="color:#fff">rtv</code> in chat to vote for a new map. For classic Dust 2, set <code style="color:#fff">MAP=de_dust2</code> and <code style="color:#fff">MAPCYCLE=mapcycle-dust2.txt</code> in the same unit file and restart.</li>
-</ol>
-</div>
+<section id="who">
+  <div class="wrap">
+    <p class="kicker">Pick your path</p>
+    <h2>Built for a game night, kept honest for tinkerers</h2>
+    <p class="sub">The same image serves three kinds of people. Start with the one that sounds like you.</p>
+    <div class="grid-3">
+      <div class="card persona">
+        <h3>Hosting a LAN night</h3>
+        <ul>
+          <li>One command on a spare Linux box or your Mac</li>
+          <li>Friends type <code>connect &lt;ip&gt;:27015</code></li>
+          <li><code>LAN_MODE=1</code> keeps it inside the house</li>
+        </ul>
+        <a class="btn btn-ghost btn-sm" href="#holiday">LAN night checklist</a>
+      </div>
+      <div class="card persona">
+        <h3>Modding for fun</h3>
+        <ul>
+          <li>Eight small, readable AMX Mod X plugins</li>
+          <li>Drop <code>.bsp</code> maps into <code>maps/</code> and rebuild</li>
+          <li>Per-mode configs in <code>config/modes/</code></li>
+        </ul>
+        <a class="btn btn-ghost btn-sm" href="https://github.com/KevinTCoughlin/cs-server/tree/main/plugins/amxmodx/scripting">Browse the plugins</a>
+      </div>
+      <div class="card persona">
+        <h3>Running a homelab</h3>
+        <ul>
+          <li>Multi-stage Debian 13 image with pinned versions</li>
+          <li>Trivy scan and SBOM on every published build</li>
+          <li>A2S health check, not a process grep</li>
+        </ul>
+        <a class="btn btn-ghost btn-sm" href="#production">Production setup</a>
+      </div>
+    </div>
+  </div>
 </section>
 
-<section>
-<h2>// Stack</h2>
-<ul class="stack-list">
-  <li><span class="name">ReHLDS</span><span class="ver">3.15.0.896</span><span class="desc">Reverse-engineered HLDS engine</span></li>
-  <li><span class="name">ReGameDLL_CS</span><span class="ver">5.30.0.814</span><span class="desc">Reverse-engineered game DLL</span></li>
-  <li><span class="name">Metamod-R</span><span class="ver">1.3.0.149</span><span class="desc">Plugin loader</span></li>
-  <li><span class="name">AMX Mod X</span><span class="ver">1.10.0 (build 5488)</span><span class="desc">Server-side scripting platform</span></li>
-  <li><span class="name">ReAPI</span><span class="ver">5.29.0.358</span><span class="desc">Extended API for ReHLDS/ReGameDLL</span></li>
-</ul>
+<section class="alt" id="install">
+  <div class="wrap">
+    <p class="kicker">Install</p>
+    <h2>Three steps to the first round</h2>
+    <p class="sub">On Linux the installer does the work. It pulls the image from ghcr.io, writes configs to <code>~/.config/cs-server/</code> with a random RCON password, and starts the server.</p>
+    <ol class="steps3">
+      <li>
+        <h3>Run the installer</h3>
+        <p>On any Linux machine with Podman or Docker.</p>
+        <pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash</pre>
+      </li>
+      <li>
+        <h3>Open the port (optional)</h3>
+        <p>For friends outside your network, allow 27015 UDP and TCP on the host and forward it on your router. Skip this for LAN play.</p>
+      </li>
+      <li>
+        <h3>Connect from CS 1.6</h3>
+        <p>Open the console in the game and type the address the installer printed.</p>
+        <pre>connect &lt;your-ip&gt;:27015</pre>
+      </li>
+    </ol>
+    <p class="note" style="margin-top:18px">Prefer to do it by hand? <code>podman run -d -p 27015:27015/udp -p 27015:27015/tcp --name scoutzknivez ghcr.io/kevintcoughlin/cs-server:latest</code>, or clone the repo and run <code>podman compose up --build</code>.</p>
+  </div>
 </section>
 
-<section>
-<h2>// Quick Start</h2>
-<p style="font-size:0.85rem;margin-bottom:1rem"><strong style="color:#fff">Option 1: Pull from ghcr.io</strong> (fastest — pre-built image)</p>
-<pre><span class="prompt">$</span> <span class="cmd">podman pull ghcr.io/kevintcoughlin/cs-server:latest</span>
-<span class="prompt">$</span> <span class="cmd">podman run -d -p 27015:27015/udp -p 27015:27015/tcp \</span>
-  <span class="cmd">--name scoutzknivez ghcr.io/kevintcoughlin/cs-server:latest</span></pre>
-<p style="font-size:0.85rem;margin-top:1.5rem;margin-bottom:1rem"><strong style="color:#fff">Option 2: Build from source</strong> (if you need custom maps/configs)</p>
-<ol class="steps">
-  <li>Clone the repository</li>
-  <li>Optional: add custom <code style="color:#fff">.bsp</code> maps to <code style="color:#fff">maps/</code>. The default ScoutzKnivez maps are already bundled from <code style="color:#fff">docs/cstrike/maps/</code></li>
-  <li>Build and launch the server</li>
-</ol>
-<pre><span class="prompt">$</span> <span class="cmd">git clone https://github.com/KevinTCoughlin/cs-server.git</span>
-<span class="prompt">$</span> <span class="cmd">cd cs-server</span>
-<span class="comment"># optional: copy custom .bsp maps into maps/</span>
-<span class="prompt">$</span> <span class="cmd">podman compose up --build</span></pre>
+<section id="stack">
+  <div class="wrap">
+    <p class="kicker">Under the hood</p>
+    <h2>The ReHLDS stack, pinned</h2>
+    <p class="sub">Every component is a fixed version in the Containerfile, so a rebuild next year gives you the same server.</p>
+    <div class="stack">
+      <div><b>ReHLDS</b><code>3.15.0.896</code><span>Reverse-engineered HLDS engine</span></div>
+      <div><b>ReGameDLL_CS</b><code>5.30.0.814</code><span>Game DLL with built-in ZBot</span></div>
+      <div><b>Metamod-R</b><code>1.3.0.149</code><span>Plugin loader</span></div>
+      <div><b>AMX Mod X</b><code>1.10.0 (5488)</code><span>Server-side scripting</span></div>
+      <div><b>ReAPI</b><code>5.29.0.358</code><span>Extended API for plugins</span></div>
+    </div>
+    <p class="note" style="margin-top:14px">The capture above came from a local build made just before the AMX Mod X bump, so it reports build 5487.</p>
+  </div>
 </section>
 
-<section>
-<h2>// Plugins</h2>
-<ul class="stack-list">
-  <li><span class="name">ScoutzKnivez</span><span class="desc">Auto-strips weapons, gives scout + knife on spawn. Also runs knife mode for <a href="#nipper">Nipper Friday</a> and switches modes at round end</span></li>
-  <li><span class="name">Auto Bhop</span><span class="desc">Hold jump to bunny hop — essential for low-gravity</span></li>
-  <li><span class="name">Quake Sounds</span><span class="desc"><a href="https://github.com/ClaudiuHKS/AdvancedQuakeSounds">AQS v8.0</a> — kill streaks, headshots, knife kills with HUD messages. Toggle: <code style="color:#fff">!sounds</code>. Sound files are not included (copyright); see the README to add them</span></li>
-  <li><span class="name">Rock the Vote</span><span class="desc">Type <code style="color:#fff">rtv</code> to start a map vote, <code style="color:#fff">nominate &lt;map&gt;</code> to add maps</span></li>
-  <li><span class="name">AFK Kicker</span><span class="desc">Once 4 or more people are playing, idle players move to spectator after 60 seconds and are kicked after 3 minutes</span></li>
-  <li><span class="name">High Ping Kicker</span><span class="desc">Warns then kicks players over 150 ms average ping</span></li>
-  <li><span class="name">Advertisements</span><span class="desc">Rotating server info and command hints in chat</span></li>
-  <li><span class="name">Website Bot</span><span class="desc">Spectator bot in the scoreboard showing the server website URL. Leaves when the server is within 2 slots of full</span></li>
-  <li><span class="name">Anti-Flood</span><span class="desc">Chat spam prevention (built into AMX Mod X)</span></li>
-</ul>
+<section class="alt" id="reference">
+  <div class="wrap">
+    <p class="kicker">Reference</p>
+    <h2>Everything else, when you need it</h2>
+    <p class="sub">Settings, platforms and operations. The <a href="https://github.com/KevinTCoughlin/cs-server#readme">README</a> has the long version.</p>
+
+    <div class="ref">
+      <details id="holiday">
+        <summary>LAN night checklist <small>Holiday break or any weekend</small></summary>
+        <div class="d-body">
+          <p>The break is when everyone is finally in one place. Set it up once.</p>
+          <ol>
+            <li><strong>Install it on a spare Linux machine.</strong> Run the install command on any box with Podman or Docker. The three ScoutzKnivez maps are in the image, so there is nothing else to download.</li>
+            <li><strong>No spare Linux box? Use your Mac.</strong> Apple silicon Macs run it with Apple's <code>container</code> CLI: <code>just build &amp;&amp; just up</code> from a checkout. See <a href="#macos">macOS / Apple silicon</a>.</li>
+            <li><strong>Everyone connects from the CS 1.6 console.</strong> Type <code>connect &lt;server-lan-ip&gt;:27015</code>. The installer prints the address when it finishes.</li>
+            <li><strong>Keep it to the house.</strong> With the Podman install, change <code>Environment=LAN_MODE=0</code> to <code>1</code> in <code>~/.config/containers/systemd/scoutzknivez.container</code>, then run <code>systemctl --user daemon-reload &amp;&amp; systemctl --user restart scoutzknivez</code>.</li>
+            <li><strong>Or let friends join from their houses.</strong> Leave <code>LAN_MODE=0</code> (the default), allow 27015 UDP and TCP through the host firewall, forward it on your router, and share your public IP.</li>
+            <li><strong>Only two of you? Bots fill in.</strong> ZBots fill the server up to 10 players and leave as people join. Set <code>BOTS=0</code> to turn them off.</li>
+            <li><strong>Make Friday a Nipper Friday.</strong> Knives only on NIPPER's classic maps, with his Christmas maps through Jan 6. See <a href="#nipper">Nipper Friday</a>.</li>
+            <li><strong>Switch it up.</strong> Type <code>rtv</code> in chat to vote for a new map. For classic Dust 2, set <code>MAP=de_dust2</code> and <code>MAPCYCLE=mapcycle-dust2.txt</code> in the same unit file and restart.</li>
+          </ol>
+        </div>
+      </details>
+
+      <details id="plugins">
+        <summary>Plugins <small>What each one does</small></summary>
+        <div class="d-body">
+          <div class="tbl"><table class="kv">
+            <thead><tr><th>Plugin</th><th>Behaviour</th></tr></thead>
+            <tbody>
+              <tr><td><strong>ScoutzKnivez</strong></td><td>Strips weapons and gives scout + knife on spawn. Also runs knife mode for Nipper Friday and switches modes at round end</td></tr>
+              <tr><td><strong>Auto Bhop</strong></td><td>Hold jump to bunny hop</td></tr>
+              <tr><td><strong>Quake Sounds</strong></td><td><a href="https://github.com/ClaudiuHKS/AdvancedQuakeSounds">AQS v8.0</a>: kill streaks, headshots and knife kills with HUD messages. Toggle with <code>!sounds</code>. Sound files are not included (copyright); the README explains how to add them</td></tr>
+              <tr><td><strong>Rock the Vote</strong></td><td><code>rtv</code> starts a map vote, <code>nominate &lt;map&gt;</code> adds maps</td></tr>
+              <tr><td><strong>AFK Kicker</strong></td><td>Once 4 or more people are playing, idle players move to spectator after 60 seconds and are kicked after 3 minutes</td></tr>
+              <tr><td><strong>High Ping Kicker</strong></td><td>Warns then kicks players over 150 ms average ping</td></tr>
+              <tr><td><strong>Advertisements</strong></td><td>Rotating server info and command hints in chat</td></tr>
+              <tr><td><strong>Website Bot</strong></td><td>Spectator bot in the scoreboard showing the server website. Leaves when the server is within 2 slots of full</td></tr>
+              <tr><td><strong>Anti-Flood</strong></td><td>Chat spam prevention (built into AMX Mod X)</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Game settings and bots <small>Cvars the server ships with</small></summary>
+        <div class="d-body">
+          <div class="tbl"><table class="kv">
+            <thead><tr><th>Cvar</th><th>Value</th><th>Effect</th></tr></thead>
+            <tbody>
+              <tr><td><code>sv_gravity</code></td><td><code>240</code></td><td>Low gravity (default 800)</td></tr>
+              <tr><td><code>sv_airaccelerate</code></td><td><code>100</code></td><td>High air control</td></tr>
+              <tr><td><code>mp_freezetime</code></td><td><code>0</code></td><td>No freeze on round start</td></tr>
+              <tr><td><code>mp_buytime</code></td><td><code>0</code></td><td>No buy menu</td></tr>
+              <tr><td><code>mp_roundtime</code></td><td><code>3</code></td><td>3 minute rounds</td></tr>
+              <tr><td><code>mp_startmoney</code></td><td><code>16000</code></td><td>Max starting money (unused, no buy menu)</td></tr>
+              <tr><td><code>bot_quota</code></td><td><code>10</code></td><td>Players to keep in the game (bots + humans)</td></tr>
+              <tr><td><code>bot_quota_mode</code></td><td><code>fill</code></td><td>Bots fill empty slots and leave as humans join</td></tr>
+              <tr><td><code>bot_difficulty</code></td><td><code>1</code></td><td>Normal difficulty</td></tr>
+              <tr><td><code>bot_join_after_player</code></td><td><code>0</code></td><td>Bots join immediately, no human needed</td></tr>
+              <tr><td><code>bot_auto_vacate</code></td><td><code>1</code></td><td>Bots leave to make room for humans</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Environment variables <small>MAP, MODE, BOTS and friends</small></summary>
+        <div class="d-body">
+          <div class="tbl"><table class="kv">
+            <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>MAP</code></td><td><code>scoutzknivez</code></td><td>Starting map name</td></tr>
+              <tr><td><code>MAXPLAYERS</code></td><td><code>20</code></td><td>Maximum player slots (1&ndash;32)</td></tr>
+              <tr><td><code>PORT</code></td><td><code>27015</code></td><td>Server listen port</td></tr>
+              <tr><td><code>BOTS</code></td><td><code>1</code></td><td>Enable bots (1=on, 0=off)</td></tr>
+              <tr><td><code>LAN_MODE</code></td><td><code>0</code></td><td>LAN-only server (1) or public (0)</td></tr>
+              <tr><td><code>MAPCYCLE</code></td><td><code>mapcycle.txt</code></td><td>Map rotation file, e.g. <code>mapcycle-dust2.txt</code></td></tr>
+              <tr><td><code>MODE</code></td><td><code>scoutz</code></td><td>Startup game mode: <code>scoutz</code> or <code>knife</code> (Nipper Friday)</td></tr>
+              <tr><td><code>NOMASTER</code></td><td><code>0</code></td><td>Skip the master server (1=on). For Docker Desktop on Windows</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </details>
+
+      <details id="nipper">
+        <summary>Nipper Friday <small>Knife-only mode on NIPPER's maps</small></summary>
+        <div class="d-body">
+          <p>Back in the day, Friday nights meant knife fights on NIPPER's custom maps: a house you could actually explore, grenade dodgeball in a gym, a hamster cage floating in space. Nipper Friday brings that back as a knife-only mode on <a href="https://gamebanana.com/mods/467088">NIPPER's own map pack</a>, without touching the everyday ScoutzKnivez setup.</p>
+          <ol>
+            <li><strong>Knives only.</strong> No scout, no buying, no picking up weapons, normal gravity. On grenade maps like <code>he_dodgeball2</code>, you can pick up the HE grenades the map lays out.</li>
+            <li><strong>The rotation.</strong> <code>nipperhouse</code>, <code>ka_beams</code>, <code>nippers100</code>, <code>he_dodgeball2</code>, <code>hamsters</code> and <code>de_westwood</code>. From Dec 1 to Jan 6: <code>xmas_nipperhouse</code>, <code>x-mas_tree</code>, <code>xmas_lodge</code> and <code>xmas_crazytank</code>.</li>
+            <li><strong>No restart.</strong> <code>just mode nipper</code> (or <code>scoutz</code>) announces the switch in chat and changes map at the end of the round, so nobody gets cut off mid-fight.</li>
+            <li><strong>Every Friday, if you want.</strong> <code>just friday-enable</code> turns it on Friday at 17:00 and off Saturday at 04:00, local time. It does nothing while the server is off and never restarts it.</li>
+            <li><strong>Get the maps.</strong> <code>just fetch-maps &amp;&amp; just build</code> downloads NIPPER's pack once from GameBanana, checks its SHA-256, and builds in only the maps it uses.</li>
+          </ol>
+          <p class="note"><strong>Credit:</strong> maps by Nathaniel Miller (<a href="https://steamcommunity.com/id/nipper">NIPPER</a>), released under <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/">CC BY-NC-ND 4.0</a>. This project doesn't re-host them: they aren't in the repository, the published images or the FastDL below. Each server downloads them from NIPPER's own upload, and players get them from that game server. They're played unmodified, free and non-commercially, with NIPPER credited in-game.</p>
+        </div>
+      </details>
+
+      <details id="macos">
+        <summary>macOS / Apple silicon <small>Apple container + qemu-i386</small></summary>
+        <div class="d-body">
+          <p>Runs under Apple <code>container</code>. Rosetta only translates x86_64 and HLDS is 32-bit i386, so the Mac image is arm64 and runs the server under <code>qemu-i386</code> user-mode emulation (~250 server FPS with 10 bots on an M-series Mac).</p>
+          <ol>
+            <li>Install: <code>brew install container &amp;&amp; container system start</code></li>
+            <li>Build (~10 min, from source): <code>just build</code></li>
+            <li>Run: <code>just up</code>, or as a launchd agent: <code>just install</code></li>
+            <li>Connect: <code>connect &lt;mac-ip&gt;:27015</code></li>
+          </ol>
+          <p>See the <a href="https://github.com/KevinTCoughlin/cs-server#macos--apple-silicon">README</a> for details.</p>
+        </div>
+      </details>
+
+      <details id="windows">
+        <summary>Windows (WSL2) <small>Skip Docker Desktop for game traffic</small></summary>
+        <div class="d-body">
+          <p>Docker Desktop for Windows cannot reliably forward UDP game traffic. Run the server inside a WSL2 Debian distro with Podman or Docker CE instead.</p>
+          <ol>
+            <li>Install Debian: <code>wsl --install Debian</code></li>
+            <li>Install dependencies (i386 libs, curl, unzip)</li>
+            <li>Install Podman or Docker CE in the distro, then run the install script inside WSL2</li>
+            <li>Find the WSL2 IP: <code>ip addr show eth0</code></li>
+            <li>Connect from Windows: <code>connect &lt;wsl2-ip&gt;:27015</code></li>
+          </ol>
+          <p>See the <a href="https://github.com/KevinTCoughlin/cs-server#windows-wsl2">README</a> for full instructions. Related: <a href="https://github.com/KevinTCoughlin/cs-server/issues/18">issue 18</a>.</p>
+        </div>
+      </details>
+
+      <details id="production">
+        <summary>Production (Quadlet) <small>systemd, crash recovery, graceful shutdown</small></summary>
+        <div class="d-body">
+          <p>Run as a rootless Podman Quadlet unit managed by systemd. The one-line installer sets this up with the prebuilt image. From a clone, with a locally built image:</p>
+          <pre><span class="p">$ </span>podman compose up --build -d &amp;&amp; podman compose down
+<span class="p">$ </span>mkdir -p ~/.config/cs-server &amp;&amp; cp config/server.cfg config/mapcycle*.txt ~/.config/cs-server/
+<span class="p">$ </span>just install  <span class="cm"># copies the unit, runs daemon-reload</span>
+<span class="p">$ </span>systemctl --user start scoutzknivez</pre>
+          <p>To start on boot, run <code>loginctl enable-linger</code> for your user. On shutdown, players see a 30-second countdown before the server stops cleanly.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Security <small>What the container can't do</small></summary>
+        <div class="d-body">
+          <div class="tbl"><table class="kv">
+            <tbody>
+              <tr><td><strong>No capabilities</strong></td><td>All Linux capabilities dropped</td></tr>
+              <tr><td><strong>No privilege escalation</strong></td><td>no-new-privileges enforced, setuid/setgid bits stripped</td></tr>
+              <tr><td><strong>Nologin user</strong></td><td>System user with /usr/sbin/nologin shell</td></tr>
+              <tr><td><strong>Resource limits</strong></td><td>512 MB memory, 2 CPU cores max</td></tr>
+              <tr><td><strong>Query rate limiting</strong></td><td>Anti-amplification via sv_max_queries_sec</td></tr>
+              <tr><td><strong>RCON lockout</strong></td><td>5 failures = 60 min ban</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </details>
+
+      <details>
+        <summary>FastDL <small>Fast map downloads for clients</small></summary>
+        <div class="d-body">
+          <p>Custom maps (and Quake sounds, if you add them) are served from this site over HTTP for fast client downloads. The repository's <code>config/server.cfg</code>, which is also baked into the image, sets <code>sv_downloadurl</code> to this URL. The one-line installer writes its own <code>server.cfg</code> without it, so add the line there if you want FastDL. NIPPER's maps aren't served here (see <a href="#nipper">Nipper Friday</a>).</p>
+          <pre>https://kevintcoughlin.com/cs-server/cstrike/</pre>
+        </div>
+      </details>
+    </div>
+  </div>
 </section>
 
-<section>
-<h2>// Game Settings</h2>
-<table>
-  <thead>
-    <tr><th>Setting</th><th>Value</th><th>Effect</th></tr>
-  </thead>
-  <tbody>
-    <tr><td><code>sv_gravity</code></td><td><code>240</code></td><td>Low gravity (default 800)</td></tr>
-    <tr><td><code>sv_airaccelerate</code></td><td><code>100</code></td><td>High air control</td></tr>
-    <tr><td><code>mp_freezetime</code></td><td><code>0</code></td><td>No freeze on round start</td></tr>
-    <tr><td><code>mp_buytime</code></td><td><code>0</code></td><td>No buy menu</td></tr>
-    <tr><td><code>mp_roundtime</code></td><td><code>3</code></td><td>3 minute rounds</td></tr>
-    <tr><td><code>mp_startmoney</code></td><td><code>16000</code></td><td>Max starting money (unused, no buy menu)</td></tr>
-  </tbody>
-</table>
-</section>
-
-<section>
-<h2>// Environment Variables</h2>
-<table>
-  <thead>
-    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
-  </thead>
-  <tbody>
-    <tr><td><code>MAP</code></td><td><code>scoutzknivez</code></td><td>Starting map name</td></tr>
-    <tr><td><code>MAXPLAYERS</code></td><td><code>20</code></td><td>Maximum player slots (1&ndash;32)</td></tr>
-    <tr><td><code>PORT</code></td><td><code>27015</code></td><td>Server listen port</td></tr>
-    <tr><td><code>BOTS</code></td><td><code>1</code></td><td>Enable bots (1=on, 0=off)</td></tr>
-    <tr><td><code>LAN_MODE</code></td><td><code>0</code></td><td>LAN-only server (1) or public (0)</td></tr>
-    <tr><td><code>MAPCYCLE</code></td><td><code>mapcycle.txt</code></td><td>Map rotation file, e.g. <code>mapcycle-dust2.txt</code></td></tr>
-    <tr><td><code>MODE</code></td><td><code>scoutz</code></td><td>Startup game mode: <code>scoutz</code> or <code>knife</code> (Nipper Friday)</td></tr>
-    <tr><td><code>NOMASTER</code></td><td><code>0</code></td><td>Skip the master server (1=on). For Docker Desktop on Windows</td></tr>
-  </tbody>
-</table>
-</section>
-
-<section>
-<h2>// Bots</h2>
-<p style="font-size:0.85rem;margin-bottom:1rem">Bots are enabled by default using ReGameDLL_CS's built-in ZBot support. Bots fill the server up to 10 players and leave as humans join — no human player required to start.</p>
-<table>
-  <thead>
-    <tr><th>Cvar</th><th>Value</th><th>Effect</th></tr>
-  </thead>
-  <tbody>
-    <tr><td><code>bot_quota</code></td><td><code>10</code></td><td>Players to keep in the game (bots + humans in fill mode)</td></tr>
-    <tr><td><code>bot_quota_mode</code></td><td><code>fill</code></td><td>Bots fill empty slots; leave as humans join</td></tr>
-    <tr><td><code>bot_difficulty</code></td><td><code>1</code></td><td>Normal difficulty</td></tr>
-    <tr><td><code>bot_join_after_player</code></td><td><code>0</code></td><td>Bots join immediately</td></tr>
-    <tr><td><code>bot_auto_vacate</code></td><td><code>1</code></td><td>Bots leave to make room for humans</td></tr>
-  </tbody>
-</table>
-</section>
-
-<section>
-<h2>// Windows (WSL2)</h2>
-<p style="font-size:0.85rem;margin-bottom:1rem">Docker Desktop for Windows cannot reliably forward UDP game traffic. Run the server inside a WSL2 Debian distro with Podman or Docker CE instead.</p>
-<ol class="steps">
-  <li>Install Debian: <code style="color:#fff">wsl --install Debian</code></li>
-  <li>Install dependencies (i386 libs, curl, unzip)</li>
-  <li>Install Podman or Docker CE in the distro, then run the install script inside WSL2</li>
-  <li>Find WSL2 IP: <code style="color:#fff">ip addr show eth0</code></li>
-  <li>Connect from Windows: <code style="color:#fff">connect &lt;wsl2-ip&gt;:27015</code></li>
-</ol>
-<p style="font-size:0.85rem;margin-top:1rem">See <a href="https://github.com/KevinTCoughlin/cs-server#windows-wsl2">README</a> for full instructions. Related: <a href="https://github.com/KevinTCoughlin/cs-server/issues/18">#18</a></p>
-</section>
-
-<section id="nipper">
-<h2>// Nipper Friday</h2>
-<p style="font-size:0.85rem;margin-bottom:1rem">Back in the day, Friday nights meant knife fights on NIPPER's custom maps: a house you could actually explore, grenade dodgeball in a gym, a hamster cage floating in space. Nipper Friday brings that back as a knife-only mode on <a href="https://gamebanana.com/mods/467088">NIPPER's own map pack</a>, without touching the everyday ScoutzKnivez setup.</p>
-<ol class="steps">
-  <li><strong>Knives only</strong>No scout, no buying, no picking up weapons, normal gravity. On grenade maps like <code style="color:#fff">he_dodgeball2</code>, you can pick up the HE grenades the map lays out.</li>
-  <li><strong>The rotation</strong><code style="color:#fff">nipperhouse</code>, <code style="color:#fff">ka_beams</code>, <code style="color:#fff">nippers100</code>, <code style="color:#fff">he_dodgeball2</code>, <code style="color:#fff">hamsters</code> and <code style="color:#fff">de_westwood</code>. From Dec 1 to Jan 6: <code style="color:#fff">xmas_nipperhouse</code>, <code style="color:#fff">x-mas_tree</code>, <code style="color:#fff">xmas_lodge</code> and <code style="color:#fff">xmas_crazytank</code>.</li>
-  <li><strong>No restart</strong><code style="color:#fff">just mode nipper</code> (or <code style="color:#fff">scoutz</code>) announces the switch in chat and changes map at the end of the round, so nobody gets cut off mid-fight.</li>
-  <li><strong>Every Friday, if you want</strong><code style="color:#fff">just friday-enable</code> turns it on Friday at 17:00 and off Saturday at 04:00, local time. It does nothing while the server is off and never restarts it.</li>
-  <li><strong>Get the maps</strong><code style="color:#fff">just fetch-maps &amp;&amp; just build</code> downloads NIPPER's pack once from GameBanana, checks its SHA-256, and builds in only the maps it uses.</li>
-</ol>
-<p style="font-size:0.85rem;margin-top:1rem"><strong>Credit:</strong> maps by Nathaniel Miller (<a href="https://steamcommunity.com/id/nipper">NIPPER</a>), released under <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/">CC BY-NC-ND 4.0</a>. This project doesn't re-host them: they aren't in the repository, the published images or the FastDL below. Each server downloads them from NIPPER's own upload, and players get them from that game server. They're played unmodified, free and non-commercially, with NIPPER credited in-game.</p>
-</section>
-
-<section id="macos">
-<h2>// macOS / Apple silicon</h2>
-<p style="font-size:0.85rem;margin-bottom:1rem">Runs under Apple <code style="color:#fff">container</code>. Rosetta only translates x86_64 and HLDS is 32-bit i386, so the Mac image is arm64 and runs the server under <code style="color:#fff">qemu-i386</code> user-mode emulation (~250 server FPS with 10 bots on an M-series Mac).</p>
-<ol class="steps">
-  <li>Install: <code style="color:#fff">brew install container &amp;&amp; container system start</code></li>
-  <li>Build (~10 min, from source): <code style="color:#fff">just build</code></li>
-  <li>Run: <code style="color:#fff">just up</code>, or as a launchd agent: <code style="color:#fff">just install</code></li>
-  <li>Connect: <code style="color:#fff">connect &lt;mac-ip&gt;:27015</code></li>
-</ol>
-<p style="font-size:0.85rem;margin-top:1rem">See <a href="https://github.com/KevinTCoughlin/cs-server#macos--apple-silicon">README</a> for details.</p>
-</section>
-
-<section>
-<h2>// Production (Quadlet)</h2>
-<p style="font-size:0.85rem;margin-bottom:1rem">Run as a rootless Podman Quadlet unit managed by systemd for auto-start, crash recovery, and graceful shutdown. The one-line installer sets this up with the prebuilt image. From a clone, with a locally built image:</p>
-<pre><span class="prompt">$</span> <span class="cmd">podman compose up --build -d &amp;&amp; podman compose down</span>
-<span class="prompt">$</span> <span class="cmd">mkdir -p ~/.config/cs-server &amp;&amp; cp config/server.cfg config/mapcycle*.txt ~/.config/cs-server/</span>
-<span class="prompt">$</span> <span class="cmd">just install</span>  <span class="comment"># copies the unit, runs daemon-reload</span>
-<span class="prompt">$</span> <span class="cmd">systemctl --user start scoutzknivez</span></pre>
-<p style="font-size:0.85rem;margin-top:1rem">To start on boot, run <code style="color:#fff">loginctl enable-linger</code> for your user.</p>
-<p style="font-size:0.85rem;margin-top:1rem">On shutdown, players see a 30-second countdown before the server stops cleanly.</p>
-</section>
-
-<section>
-<h2>// Security</h2>
-<ul class="stack-list">
-  <li><span class="name">No capabilities</span><span class="desc">All Linux capabilities dropped</span></li>
-  <li><span class="name">No privilege escalation</span><span class="desc">no-new-privileges enforced, setuid/setgid bits stripped</span></li>
-  <li><span class="name">Nologin user</span><span class="desc">System user with /usr/sbin/nologin shell</span></li>
-  <li><span class="name">Resource limits</span><span class="desc">512 MB memory, 2 CPU cores max</span></li>
-  <li><span class="name">Query rate limiting</span><span class="desc">Anti-amplification via sv_max_queries_sec</span></li>
-  <li><span class="name">RCON lockout</span><span class="desc">5 failures = 60 min ban</span></li>
-</ul>
-</section>
-
-<section>
-<h2>// FastDL</h2>
-<p style="font-size:0.85rem;margin-bottom:1rem">Custom maps (and Quake sounds, if you add them) are served from this site via HTTP for fast client downloads. The repository's <code style="color:#fff">config/server.cfg</code>, which is also baked into the image, sets <code style="color:#fff">sv_downloadurl</code> to this URL. The one-line installer writes its own <code style="color:#fff">server.cfg</code> without it, so add the line there if you want FastDL. NIPPER's maps aren't served here (see <a href="#nipper">Nipper Friday</a>).</p>
-<div class="connect-box">
-  <div class="label">FastDL URL</div>
-  <code>https://kevintcoughlin.com/cs-server/cstrike/</code>
-</div>
-</section>
-
-<section style="text-align:center">
-<h2>// Source</h2>
-<a class="gh-link" href="https://github.com/KevinTCoughlin/cs-server">View on GitHub</a>
-<a class="gh-link" href="https://github.com/sponsors/KevinTCoughlin" style="margin-left:0.75rem;border-color:var(--green);color:var(--green)">Sponsor on GitHub</a>
+<section class="final">
+  <div class="wrap">
+    <h2>Have a server running before the next round of coffee</h2>
+    <p class="sub" style="margin-left:auto;margin-right:auto">Free and MIT licensed. If it earns a spot on your LAN, a star helps other people find it.</p>
+    <div class="install">
+      <div class="cmd"><pre><span class="p">$ </span><span data-copy-src>curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash</span></pre><button class="copy" type="button">Copy</button></div>
+    </div>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="https://github.com/KevinTCoughlin/cs-server">Star on GitHub</a>
+      <a class="btn btn-ghost" href="https://github.com/sponsors/KevinTCoughlin">Sponsor the project</a>
+    </div>
+  </div>
 </section>
 
 </main>
 
 <footer>
-  <p>Released under the MIT License. NIPPER's maps are &copy; Nathaniel Miller (NIPPER), CC BY-NC-ND 4.0, and aren't distributed by this project.</p>
-  <p style="margin-top:0.3rem">CS 1.6 ScoutzKnivez Server &mdash; <a href="https://github.com/KevinTCoughlin/cs-server">github.com/KevinTCoughlin/cs-server</a></p>
+  <div class="wrap">
+    <p>Released under the MIT License. Counter-Strike is a trademark of Valve Corporation; this project is not affiliated with or endorsed by Valve. NIPPER's maps are &copy; Nathaniel Miller (NIPPER), CC BY-NC-ND 4.0, and aren't distributed by this project.</p>
+    <p><a href="https://github.com/KevinTCoughlin/cs-server">github.com/KevinTCoughlin/cs-server</a></p>
+  </div>
 </footer>
 
-</div>
 <script>
-// Hide the holiday promo bar once its end date has passed.
-(function() {
+(function () {
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Hide the holiday promo bar once its end date has passed.
   var bar = document.getElementById('promoBar');
-  if (bar && new Date() >= new Date(bar.getAttribute('data-until') + 'T00:00:00')) {
-    bar.hidden = true;
+  if (bar && new Date() >= new Date(bar.getAttribute('data-until') + 'T00:00:00')) bar.hidden = true;
+
+  // Copy buttons: copy the command next to the button.
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var src = btn.parentNode.querySelector('[data-copy-src]');
+      if (!src || !navigator.clipboard) return;
+      navigator.clipboard.writeText(src.textContent).then(function () {
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+      });
+    });
+  });
+
+  // Platform tabs in the install widget.
+  document.querySelectorAll('[data-tabs]').forEach(function (box) {
+    var tabs = box.querySelectorAll('[data-tab]');
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t === tab)); });
+        box.querySelectorAll('[data-pane]').forEach(function (p) {
+          p.hidden = p.getAttribute('data-pane') !== tab.getAttribute('data-tab');
+        });
+      });
+    });
+  });
+
+  // Open a reference <details> when it is the link target.
+  function openTarget() {
+    var el = location.hash && document.getElementById(location.hash.slice(1));
+    if (el && el.tagName === 'DETAILS') { el.open = true; el.scrollIntoView(); }
+  }
+  window.addEventListener('hashchange', openTarget);
+  openTarget();
+
+  // Terminal replay. Lines are verbatim from proof/session-2026-11-21.txt
+  // (excerpted); a leading ">" marks a command typed into the server console.
+  var SCENES = {
+    boot: [
+      '[entrypoint] Running hlds_linux under i386 emulation',
+      '[entrypoint] HLDS started (PID: 7)',
+      'Console initialized.',
+      'Protocol version 48',
+      'Exe version 1.1.2.7/Stdio (cstrike)',
+      'Exe build: 13:37:29 May 18 2026 (4419)',
+      'Server IP address 192.168.64.23:27016',
+      'Metamod-r v1.3.0.149, API (5:13)',
+      '   AMX Mod X version 1.10.0.5487',
+      'ReGameDLL version: 5.30.0.814-dev',
+      'L 11/21/2026 - 07:30:43: -------- Mapchange to scoutzknivez --------',
+      'Total spawns points: 26',
+      '[AMXX] Loaded 1 admin from file',
+      'L 11/21/2026 - 07:30:45: [rtv.amxx] [RTV] Loaded 2 maps from mapcycle',
+      'L 11/21/2026 - 07:30:46: [scoutzknivez.amxx] [SK] mode: scoutz',
+      'L 11/21/2026 - 07:30:56: [websitebot.amxx] [WebsiteBot] Created bot: kevintcoughlin.com/cs-server/ (id 11)',
+      '>sv_gravity',
+      '"sv_gravity" is "240"',
+      '>sv_airaccelerate',
+      '"sv_airaccelerate" is "100"',
+      '>stats',
+      'CPU   In    Out   Uptime  Users   FPS    Players',
+      ' 0.00  0.00  0.00       2    11  252.30       0'
+    ],
+    status: [
+      '>status',
+      'hostname:  ScoutzKnivez',
+      'version :  48/1.1.2.7/Stdio 4419 insecure  (10)',
+      'tcp/ip  :  192.168.64.23:27016',
+      'map     :  scoutzknivez at: 0 x, 0 y, 0 z',
+      'players :  11 active (20 max)',
+      '',
+      '#      name userid uniqueid frag time ping loss adr',
+      '# 1 "Harold" 1 BOT   2 02:07    0    0',
+      '# 2   "Paul" 2 BOT   4 02:07    0    0',
+      '# 3   "Nick" 3 BOT   4 02:07    0    0',
+      '# 4   "Adam" 4 BOT   4 02:07    0    0',
+      '# 5    "Pat" 5 BOT   0 02:07    0    0',
+      '# 6   "Mike" 6 BOT   4 02:07    0    0',
+      '# 7 "Connor" 7 BOT   5 02:07    0    0',
+      '# 8  "Colin" 8 BOT   2 02:07    0    0',
+      '# 9   "Dave" 9 BOT   4 02:07    0    0',
+      '#10  "Scott" 10 BOT   1 02:07    0    0',
+      '#11 "kevintcoughlin.com/cs-server/" 11 BOT   0 02:07    0    0',
+      '11 users'
+    ],
+    plugins: [
+      '>meta list',
+      ' [ 1] AMX Mod X     RUN   -    amxmodx_mm_i386.so        v1.10.0.5487',
+      ' [ 2] CStrike       RUN   -    cstrike_amxx_i386.so      v1.10.0.5487',
+      ' [ 3] Fun           RUN   -    fun_amxx_i386.so          v1.10.0.5487',
+      ' [ 4] Ham Sandwich  RUN   -    hamsandwich_amxx_i386.so  v1.10.0.5487',
+      ' [ 5] FakeMeta      RUN   -    fakemeta_amxx_i386.so     v1.10.0.5487',
+      ' [ 6] ReAPI         RUN   -    reapi_amxx_i386.so        v5.29.0.359-dev',
+      ' [ 7] CSX           RUN   -    csx_amxx_i386.so          v1.10.0.5487',
+      ' [ 8] MySQL         RUN   -    mysql_amxx_i386.so        v1.10.0.5487',
+      '8 plugins, 8 running',
+      '>amxx plugins',
+      ' [ 14] 13  ScoutzKnivez            1.2         cs-server   running',
+      ' [ 15] 14  Auto Bhop               1.0         cs-server   running',
+      ' [ 16] 15  ADV. QUAKE SOUNDS       8.0         HATTRICK    running',
+      ' [ 17] 16  RTV + Nominations       1.0         cs-server   running',
+      ' [ 18] 17  Website Bot             1.0         cs-server   running',
+      ' [ 19] 18  AFK Kicker              1.0         cs-server   running',
+      ' [ 20] 19  High Ping Kicker        1.0         cs-server   running',
+      ' [ 21] 20  Advertisements          1.0         cs-server   running',
+      '21 plugins, 21 running'
+    ],
+    round: [
+      'L 11/21/2026 - 07:32:15: World triggered "Round_Start"',
+      'L 11/21/2026 - 07:32:24: "Adam<4><BOT><TERRORIST>" killed "Mike<6><BOT><CT>" with "knife"',
+      'L 11/21/2026 - 07:32:25: "Harold<1><BOT><CT>" killed "Paul<2><BOT><TERRORIST>" with "knife"',
+      'L 11/21/2026 - 07:32:27: "Connor<7><BOT><CT>" killed "Adam<4><BOT><TERRORIST>" with "knife"',
+      'L 11/21/2026 - 07:32:28: "Colin<8><BOT><TERRORIST>" killed "Connor<7><BOT><CT>" with "knife"',
+      'L 11/21/2026 - 07:32:28: "Scott<10><BOT><TERRORIST>" killed "Harold<1><BOT><CT>" with "knife"',
+      'L 11/21/2026 - 07:32:29: "Nick<3><BOT><CT>" killed "Scott<10><BOT><TERRORIST>" with "knife"',
+      'L 11/21/2026 - 07:32:32: "Nick<3><BOT><CT>" killed "Pat<5><BOT><TERRORIST>" with "knife"',
+      'L 11/21/2026 - 07:32:33: "Colin<8><BOT><TERRORIST>" killed "Nick<3><BOT><CT>" with "knife"',
+      'L 11/21/2026 - 07:32:42: "Dave<9><BOT><CT>" killed "Colin<8><BOT><TERRORIST>" with "knife"',
+      'L 11/21/2026 - 07:32:42: Team "CT" triggered "CTs_Win" (CT "3") (T "1")',
+      'L 11/21/2026 - 07:32:42: World triggered "Round_End"',
+      'L 11/21/2026 - 07:32:47: World triggered "Round_Start"'
+    ]
+  };
+
+  var body = document.getElementById('termBody');
+  var termTabs = document.querySelectorAll('[data-scene]');
+  var timer = null;
+
+  function lineEl(text) {
+    var el = document.createElement('div');
+    if (text.charAt(0) === '>') { el.className = 'c'; text = text.slice(1); }
+    else if (/running$|RUN |^\[entrypoint\]/.test(text)) el.className = 'ok';
+    else if (/252\.30|is "\d+"|CTs_Win|Mapchange|Created bot/.test(text)) el.className = 'hi';
+    else if (/^L \d/.test(text) && !/killed/.test(text)) el.className = 'd';
+    el.textContent = text || ' ';
+    return el;
+  }
+
+  function play(name, instant) {
+    clearTimeout(timer);
+    body.textContent = '';
+    var lines = SCENES[name], i = 0;
+    var cur = document.createElement('span');
+    cur.className = 'cursor';
+    if (instant) {
+      lines.forEach(function (l) { body.appendChild(lineEl(l)); });
+      return;
+    }
+    (function step() {
+      if (i >= lines.length) { body.appendChild(cur); return; }
+      var isCmd = lines[i].charAt(0) === '>';
+      body.appendChild(lineEl(lines[i++]));
+      body.scrollTop = body.scrollHeight;
+      timer = setTimeout(step, isCmd ? 520 : 70 + Math.random() * 90);
+    })();
+  }
+
+  termTabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      termTabs.forEach(function (t) { t.setAttribute('aria-selected', String(t === tab)); });
+      play(tab.getAttribute('data-scene'), reduce);
+    });
+  });
+  play('boot', reduce);
+
+  // Kill feed replay: [time, killer, killer team, victim, victim team] or a
+  // round event, exactly as logged. Gaps are the real gaps, compressed 3x.
+  var FEED = [
+    ['07:32:06', 'Mike', 'ct', 'Scott', 't'],
+    ['07:32:10', 'Adam', 't', 'Nick', 'ct'],
+    ['07:32:10', 'Dave', 'ct', 'Adam', 't'],
+    ['07:32:10', 'CTs win the round', 2, 1],
+    ['07:32:15', 'Round start'],
+    ['07:32:24', 'Adam', 't', 'Mike', 'ct'],
+    ['07:32:25', 'Harold', 'ct', 'Paul', 't'],
+    ['07:32:27', 'Connor', 'ct', 'Adam', 't'],
+    ['07:32:28', 'Colin', 't', 'Connor', 'ct'],
+    ['07:32:28', 'Scott', 't', 'Harold', 'ct'],
+    ['07:32:29', 'Nick', 'ct', 'Scott', 't'],
+    ['07:32:32', 'Nick', 'ct', 'Pat', 't'],
+    ['07:32:33', 'Colin', 't', 'Nick', 'ct'],
+    ['07:32:42', 'Dave', 'ct', 'Colin', 't'],
+    ['07:32:42', 'CTs win the round', 3, 1]
+  ];
+  var KNIFE = '<svg viewBox="0 0 26 12" fill="currentColor" aria-label="knife"><path d="M0 7 15 2.500c1.200-.4 2.300-.2 3 .5l-1.500 3.500L0 8z"/><rect x="17" y="5" width="9" height="3.500" rx="1.200"/></svg>';
+  var feed = document.getElementById('feed');
+  var sCT = document.getElementById('sCT'), sT = document.getElementById('sT');
+
+  function secs(t) { var p = t.split(':'); return (+p[1]) * 60 + (+p[2]); }
+  function span(cls, text) { var s = document.createElement('span'); s.className = cls; s.textContent = text; return s; }
+
+  function feedItem(e) {
+    var li = document.createElement('li');
+    var tm = document.createElement('time');
+    tm.textContent = e[0];
+    if (e.length < 5) {
+      li.className = 'ev';
+      li.textContent = e[0] + '  ' + e[1];
+      if (e.length === 4) { sCT.textContent = e[2]; sT.textContent = e[3]; }
+      return li;
+    }
+    li.appendChild(tm);
+    li.appendChild(span(e[2], e[1]));
+    li.insertAdjacentHTML('beforeend', KNIFE);
+    li.appendChild(span(e[4], e[3]));
+    return li;
+  }
+
+  function push(e) {
+    feed.appendChild(feedItem(e));
+    while (feed.children.length > 6) feed.removeChild(feed.firstChild);
+  }
+
+  if (reduce) {
+    FEED.slice(-6).forEach(push);
+    sCT.textContent = 3; sT.textContent = 1;
+  } else {
+    var k = 0;
+    (function next() {
+      if (k >= FEED.length) {
+        k = 0;
+        setTimeout(function () { feed.textContent = ''; sCT.textContent = 1; sT.textContent = 1; next(); }, 5000);
+        return;
+      }
+      push(FEED[k]);
+      var gap = k + 1 < FEED.length ? (secs(FEED[k + 1][0]) - secs(FEED[k][0])) * 1000 / 3 : 0;
+      k++;
+      setTimeout(next, Math.max(450, gap));
+    })();
   }
 })();
-
-document.getElementById('copy-btn').addEventListener('click', function() {
-  var cmd = document.getElementById('install-cmd').textContent;
-  var btn = this;
-  navigator.clipboard.writeText(cmd).then(function() {
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
-    setTimeout(function() {
-      btn.textContent = 'Copy';
-      btn.classList.remove('copied');
-    }, 2000);
-  });
-});
 </script>
 </body>
 </html>
