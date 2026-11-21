@@ -44,7 +44,7 @@ start_entrypoint() {
     rm -f "${RECORD}" "${RECORD}.ready"
     (
         cd "${WORK}"
-        exec env PATH="${BIN}:${PATH}" HLDS_RUNTIME_DIR="${RUNTIME}" \
+        exec env PATH="${BIN}:${PATH}" HLDS_RUNTIME_DIR="${RUNTIME}" HLDS_STATE_DIR="${WORK}/state" \
             HLDS_EMULATOR="${WORK}/missing" RECORD="${RECORD}" "$@" \
             bash "${ROOT}/entrypoint.sh"
     ) > "${WORK}/output" 2>&1 &

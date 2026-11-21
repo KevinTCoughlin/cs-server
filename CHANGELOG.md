@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+- **State volume.** Bans (`banned.cfg`, `listip.cfg`), AMX Mod X admins (`users.ini`), stats, plugin storage and logs now live under `/hlds/state`, mounted as the named volume `cs-server-state` by `compose.yml`, the Quadlet unit and `install.sh`, and as `~/.config/cs-server/state` on macOS. Before this, all of it was lost whenever the container was replaced. The ban lists are loaded at every start. `install.sh --uninstall` asks before removing the volume. An existing install gets the volume when its unit is regenerated (re-run the installer) (#71)
+- **Server logs on disk.** `LOGS=1` (default) turns on HLDS file logging into the state volume; `LOG_RETENTION_DAYS` (default 7) deletes older files at start and daily; `LOGADDRESS=host:port` forwards log lines to a stats collector. Logs hold player names, SteamIDs and addresses; set `LOGS=0` to turn them off (#74)
+- **Read-only root filesystem** on Quadlet, Compose and `install.sh` (Podman and Docker), with a tmpfs on `/tmp` for the console FIFO. `/hlds/.runtime` is now a link to `/tmp/hlds-runtime`; the documented FIFO path is unchanged (#80)
+- `tests/e2e_test.sh` runs the server read-only on a state volume and checks that a ban survives container replacement.
+
+### Fixed
+- `just deploy` failed with a container-name clash while the Quadlet service was running; it now builds the image and restarts the service.
+- The quickstart page still told readers to open 27015 on TCP.
+
 ## [1.0.0] - 2026-11-21
 
 First tagged release. Images for it are on ghcr.io as `1.0.0`, `1.0` and `1` (`linux/amd64`, `linux/arm64`).

@@ -53,5 +53,29 @@ expect justfile 1 "${modes}"
 expect ops/cs-server 1 "${modes}"
 expect install.sh 2 "${modes}"
 
+# The state volume (bans, admins, stats, logs) is writable and mounted on
+# every path; without it a replaced container starts from nothing.
+state=":/hlds/state"
+expect compose.yml 1 "${state}"
+expect quadlet/scoutzknivez.container 1 "Volume=cs-server-state${state}"
+expect justfile 1 "${state}"
+expect ops/cs-server 1 "${state}"
+expect install.sh 2 "${state}"
+expect compose.yml 1 "name: cs-server-state"
+if grep -F -- "${state}:ro" compose.yml quadlet/scoutzknivez.container justfile ops/cs-server install.sh >&2; then
+    printf 'the state volume must not be mounted read-only\n' >&2
+    failed=1
+fi
+
+# Read-only root filesystem with a tmpfs for the console FIFO, on the paths
+# whose engine supports it (not Apple container).
+expect compose.yml 1 "read_only: true"
+expect compose.yml 1 "- /tmp"
+expect quadlet/scoutzknivez.container 1 "ReadOnly=true"
+expect quadlet/scoutzknivez.container 1 "Tmpfs=/tmp"
+expect install.sh 1 "ReadOnly=true"
+expect install.sh 1 "--read-only"
+expect install.sh 2 "/tmp"
+
 [[ "${failed}" -eq 0 ]] || exit 1
 printf 'mount tests passed\n'

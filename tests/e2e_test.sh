@@ -13,7 +13,8 @@
 # localhost/cs-server:latest. `just e2e` builds the image first.
 #
 # Covers: every Metamod and AMX Mod X plugin loads and runs, the health check,
-# no TCP listener on the game port, FASTDL_URL reaching sv_downloadurl and
+# a read-only root filesystem, file logs, a ban surviving container
+# replacement (state volume), no TCP listener on the game port, FASTDL_URL reaching sv_downloadurl and
 # surviving map changes, bots join, mode switching at round end in both directions (cvars, mapcycle
 # and `localinfo sk_mode` surviving the changelevel), the sk_switchmode error
 # paths, every mapcycle map present in the image loads, no AMX Mod X run-time
@@ -50,12 +51,21 @@ if [[ -z "${ENGINE}" ]]; then
     done
 fi
 
-# Same hardening as the deployment paths. Docker needs seccomp=unconfined for
-# the i386 binary's socket() (see compose.yml).
+# Same hardening as the deployment paths: read-only root, a tmpfs for the
+# console FIFO, a state volume. Docker needs seccomp=unconfined for the i386
+# binary's socket() (see compose.yml). Apple container gets a state folder
+# and a writable root, as in ops/cs-server.
+STATE="cs-e2e-state-$$"
+STATE_DIR=""
+READ_ONLY=1
 case "${ENGINE}" in
-    docker) RUN_FLAGS=(--cap-drop ALL --security-opt no-new-privileges:true --security-opt seccomp=unconfined) ;;
-    podman) RUN_FLAGS=(--cap-drop ALL --security-opt no-new-privileges) ;;
-    container) RUN_FLAGS=(--cap-drop ALL -m "${CS_MEMORY:-640M}" -c "${CS_CPUS:-2}") ;;
+    docker) RUN_FLAGS=(--cap-drop ALL --security-opt no-new-privileges:true --security-opt seccomp=unconfined --read-only --tmpfs /tmp -v "${STATE}:/hlds/state") ;;
+    podman) RUN_FLAGS=(--cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp -v "${STATE}:/hlds/state") ;;
+    container)
+        STATE_DIR=$(mktemp -d)
+        READ_ONLY=0
+        RUN_FLAGS=(--cap-drop ALL -m "${CS_MEMORY:-640M}" -c "${CS_CPUS:-2}" -v "${STATE_DIR}:/hlds/state")
+        ;;
     *) fail "usage: ${0##*/} [docker|podman|container] [image]" ;;
 esac
 
@@ -78,6 +88,11 @@ cleanup() {
         printf '[e2e] container %s kept; log at %s\n' "${NAME}" "${LOG}" >&2
     else
         "${ENGINE}" rm -f "${NAME}" >/dev/null 2>&1 || true
+        if [[ -n "${STATE_DIR}" ]]; then
+            rm -rf "${STATE_DIR}"
+        else
+            "${ENGINE}" volume rm "${STATE}" >/dev/null 2>&1 || true
+        fi
         rm -f "${LOG}"
     fi
     exit "${status}"
@@ -185,18 +200,36 @@ map_in_image() {
     "${ENGINE}" exec "${NAME}" test -f "/hlds/cstrike/maps/$1.bsp"
 }
 
-# --- Boot -------------------------------------------------------------------
-step "starting ${IMAGE} with ${ENGINE} as ${NAME}"
+# boot [run flags...]: start the container and wait for the first map.
 # NOMASTER and LAN mode keep the run off the Steam master list. NOMASTER is
 # also the configuration where Steam's layer stops answering A2S_INFO, so the
 # health check below has to pass on the engine's own ping reply.
-"${ENGINE}" run -d --name "${NAME}" "${RUN_FLAGS[@]}" \
-    -e NOMASTER=1 -e LAN_MODE=1 -e BOTS=1 -e FASTDL_URL="${FASTDL}" "${IMAGE}" >/dev/null
-"${ENGINE}" logs -f "${NAME}" > "${LOG}" 2>&1 &
-LOG_PID=$!
+boot() {
+    if [[ -n "${LOG_PID}" ]]; then
+        kill "${LOG_PID}" 2>/dev/null || true
+    fi
+    : > "${LOG}"
+    MARK=0
+    "${ENGINE}" run -d --name "${NAME}" "${RUN_FLAGS[@]}" \
+        -e NOMASTER=1 -e LAN_MODE=1 -e FASTDL_URL="${FASTDL}" "$@" "${IMAGE}" >/dev/null
+    "${ENGINE}" logs -f "${NAME}" > "${LOG}" 2>&1 &
+    LOG_PID=$!
+    wait_log '\[SK\] mode: scoutz' 240 >/dev/null || fail "the server did not finish loading its first map"
+}
 
-wait_log '\[SK\] mode: scoutz' 240 >/dev/null || fail "the server did not finish loading its first map"
+# --- Boot -------------------------------------------------------------------
+step "starting ${IMAGE} with ${ENGINE} as ${NAME}"
+boot -e BOTS=1
 step "server is up"
+
+if [[ "${READ_ONLY}" == "1" ]]; then
+    if "${ENGINE}" exec "${NAME}" sh -c ': > /hlds/cstrike/e2e-probe' 2>/dev/null; then
+        fail "the root filesystem is writable; the run flags ask for read-only"
+    fi
+fi
+if warning=$(tr -d '\r' < "${LOG}" | grep -a 'WARNING: .* is not writable'); then
+    fail "the state volume is not writable by the server: ${warning}"
+fi
 
 healthy=0
 for _ in $(seq $((30 * SCALE))); do
@@ -319,6 +352,26 @@ if [[ "${CS_E2E_SKIP_MAPS:-0}" != "1" ]]; then
     step "loaded ${swept} mapcycle maps${skipped:+; not in this image:${skipped}}"
 fi
 
+# --- State written to the volume --------------------------------------------
+# A ban by address (192.0.2.0/24 is reserved for documentation), saved the way
+# AMX Mod X's amx_banip does it. Checked again after the container is replaced.
+send "addip 0 192.0.2.7"
+send writeip
+saved=""
+for _ in $(seq $((10 * SCALE))); do
+    saved=$("${ENGINE}" exec "${NAME}" cat /hlds/state/listip.cfg 2>/dev/null || true)
+    [[ "${saved}" == *192.0.2.7* ]] && break
+    sleep 1
+done
+assert_contains "writeip lands in the state volume" "${saved}" "addip 0 192.0.2.7"
+"${ENGINE}" exec "${NAME}" sh -c 'ls /hlds/state/logs/L*.log >/dev/null 2>&1' ||
+    fail "no server log file in the state volume (LOGS defaults to 1)"
+"${ENGINE}" exec "${NAME}" sh -c 'ls /hlds/state/amxmodx/logs/L*.log >/dev/null 2>&1' ||
+    fail "no AMX Mod X log file in the state volume"
+"${ENGINE}" exec "${NAME}" test -s /hlds/state/amxmodx/users.ini ||
+    fail "users.ini was not seeded into the state volume"
+step "ban list, logs and users.ini are in the state volume"
+
 # --- Nothing went wrong along the way ---------------------------------------
 if errors=$(tr -d '\r' < "${LOG}" | grep -aiE 'run time error|bad load|plugin file open error|Segmentation fault'); then
     fail "the server log has plugin or engine errors:
@@ -342,5 +395,14 @@ if [[ "${ENGINE}" != "container" ]]; then
     assert_eq "exit code after a graceful stop" 0 "${code}"
 fi
 step "graceful shutdown in ${elapsed}s"
+
+# --- A replaced container keeps its state ------------------------------------
+"${ENGINE}" rm -f "${NAME}" >/dev/null
+step "replacing the container on the same state volume"
+boot -e BOTS=0
+# listip pads each octet: "192.  0.  2.  7 : permanent".
+line=$(ask listip '^ *192\. *0\. *2\. *7 : ')
+assert_contains "the ban survives container replacement" "${line}" "permanent"
+step "the ban survived"
 
 printf 'e2e tests passed\n'

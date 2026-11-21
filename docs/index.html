@@ -581,7 +581,7 @@ footer p{max-width:60em}
             <li><strong>No spare Linux box? Use your Mac.</strong> Apple silicon Macs run it with Apple's <code>container</code> CLI: <code>just build &amp;&amp; just up</code> from a checkout. See <a href="#macos">macOS / Apple silicon</a>.</li>
             <li><strong>Everyone connects from the CS 1.6 console.</strong> Type <code>connect &lt;server-lan-ip&gt;:27015</code>. The installer prints the address when it finishes.</li>
             <li><strong>Keep it to the house.</strong> With the Podman install, change <code>Environment=LAN_MODE=0</code> to <code>1</code> in <code>~/.config/containers/systemd/scoutzknivez.container</code>, then run <code>systemctl --user daemon-reload &amp;&amp; systemctl --user restart scoutzknivez</code>.</li>
-            <li><strong>Or let friends join from their houses.</strong> Leave <code>LAN_MODE=0</code> (the default), allow 27015 UDP and TCP through the host firewall, forward it on your router, and share your public IP.</li>
+            <li><strong>Or let friends join from their houses.</strong> Leave <code>LAN_MODE=0</code> (the default), allow 27015 UDP through the host firewall, forward it on your router, and share your public IP.</li>
             <li><strong>Only two of you? Bots fill in.</strong> ZBots fill the server up to 10 players and leave as people join. Set <code>BOTS=0</code> to turn them off.</li>
             <li><strong>Make Friday a Nipper Friday.</strong> Knives only on NIPPER's classic maps, with his Christmas maps through Jan 6. See <a href="#nipper">Nipper Friday</a>.</li>
             <li><strong>Switch it up.</strong> Type <code>rtv</code> in chat to vote for a new map. For classic Dust 2, set <code>MAP=de_dust2</code> and <code>MAPCYCLE=mapcycle-dust2.txt</code> in the same unit file and restart.</li>
@@ -645,6 +645,8 @@ footer p{max-width:60em}
               <tr><td><code>MAPCYCLE</code></td><td><code>mapcycle.txt</code></td><td>Map rotation file, e.g. <code>mapcycle-dust2.txt</code></td></tr>
               <tr><td><code>MODE</code></td><td><code>scoutz</code></td><td>Startup game mode: <code>scoutz</code> or <code>knife</code> (Nipper Friday)</td></tr>
               <tr><td><code>NOMASTER</code></td><td><code>0</code></td><td>Skip the master server (1=on). For Docker Desktop on Windows</td></tr>
+              <tr><td><code>LOGS</code></td><td><code>1</code></td><td>Write server log files to the state volume (1=on, 0=off)</td></tr>
+              <tr><td><code>LOG_RETENTION_DAYS</code></td><td><code>7</code></td><td>Delete log files older than this many days (0 keeps them all)</td></tr>
             </tbody>
           </table></div>
         </div>

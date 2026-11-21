@@ -14,7 +14,7 @@ expect_invalid() {
 
     local output status
     set +e
-    output=$(env HLDS_RUNTIME_DIR="${WORK_DIR}/runtime" "$@" bash "${ROOT}/entrypoint.sh" 2>&1)
+    output=$(env HLDS_RUNTIME_DIR="${WORK_DIR}/runtime" HLDS_STATE_DIR="${WORK_DIR}/state" "$@" bash "${ROOT}/entrypoint.sh" 2>&1)
     status=$?
     set -e
 
@@ -42,6 +42,16 @@ expect_invalid "FASTDL_URL must be an http(s) URL" 'FASTDL_URL=https://example.c
 expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.com/a b"
 expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.com/$(printf 'a%.0s' {1..120})"
 
+expect_invalid "LOGS must be 0 or 1" LOGS=on
+expect_invalid "LOG_RETENTION_DAYS must be an integer from 0 to 3650" LOG_RETENTION_DAYS=-1
+expect_invalid "LOG_RETENTION_DAYS must be an integer from 0 to 3650" LOG_RETENTION_DAYS=forever
+expect_invalid "LOGADDRESS must be host:port" LOGADDRESS=stats.example.com
+expect_invalid "LOGADDRESS must be host:port" LOGADDRESS=stats.example.com:0
+expect_invalid "LOGADDRESS must be host:port" LOGADDRESS=stats.example.com:65536
+expect_invalid "LOGADDRESS must be host:port" "LOGADDRESS=stats.example.com:27500;quit"
+expect_invalid "LOGADDRESS must be host:port" "LOGADDRESS=a b:27500"
+expect_invalid "LOGADDRESS needs LOGS=1" LOGS=0 LOGADDRESS=192.0.2.5:27500
+
 cat > "${WORK_DIR}/hlds_run" <<'EOF'
 #!/bin/sh
 exit 17
@@ -52,8 +62,9 @@ run_stub() {
     set +e
     (
         cd "${WORK_DIR}"
-        env HLDS_RUNTIME_DIR="${WORK_DIR}/runtime" "$@" bash "${ROOT}/entrypoint.sh"
-    ) >/dev/null 2>&1
+        env HLDS_RUNTIME_DIR="${WORK_DIR}/runtime" HLDS_STATE_DIR="${WORK_DIR}/state" \
+            HLDS_STATE_DEFAULTS="${WORK_DIR}/defaults" "$@" bash "${ROOT}/entrypoint.sh"
+    ) > "${WORK_DIR}/output" 2>&1
     status=$?
     set -e
 }
@@ -134,6 +145,96 @@ run_stub FASTDL_URL=
 if [[ "${status}" -ne 17 ]]; then
     printf 'Expected no +sv_downloadurl without FASTDL_URL, got %d\n' "${status}" >&2
     exit 1
+fi
+
+# File logging: on by default, after server.cfg; LOGADDRESS adds a receiver.
+cat > "${WORK_DIR}/hlds_run" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" > args
+exit 17
+EOF
+chmod +x "${WORK_DIR}/hlds_run"
+
+run_stub
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"+exec server.cfg +exec banned.cfg +exec listip.cfg "*" +log on") ;;
+    *) printf 'Expected the ban lists to be loaded and +log on by default, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+
+run_stub LOGADDRESS=stats.example.com:27500
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *" +log on +logaddress_add stats.example.com 27500") ;;
+    *) printf 'Expected LOGADDRESS as +logaddress_add host port, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+
+run_stub LOGS=0
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"+log"*) printf 'Expected no log arguments with LOGS=0, got: %s\n' "${args}" >&2; exit 1 ;;
+    *) ;;
+esac
+
+# State directory: missing pieces are created, users.ini is seeded from the
+# image default, existing files are left alone, old logs are pruned.
+state="${WORK_DIR}/state"
+rm -rf "${state}"
+mkdir -p "${WORK_DIR}/defaults"
+printf '; default admins\n' > "${WORK_DIR}/defaults/users.ini"
+run_stub
+for path in banned.cfg listip.cfg amxmodx/users.ini; do
+    if [[ ! -f "${state}/${path}" ]]; then
+        printf 'Expected the entrypoint to create %s in the state directory\n' "${path}" >&2
+        exit 1
+    fi
+done
+for path in logs amxmodx/logs amxmodx/vault; do
+    if [[ ! -d "${state}/${path}" ]]; then
+        printf 'Expected the entrypoint to create %s/ in the state directory\n' "${path}" >&2
+        exit 1
+    fi
+done
+
+printf 'addip 0 192.0.2.7\n' > "${state}/listip.cfg"
+printf '"admin" "" "abcdefghijklmnopqrstu" "ce"\n' > "${state}/amxmodx/users.ini"
+: > "${state}/logs/old.log"
+: > "${state}/logs/new.log"
+: > "${state}/amxmodx/logs/old.log"
+: > "${state}/logs/old.txt"
+touch -d '30 days ago' "${state}/logs/old.log" "${state}/amxmodx/logs/old.log" "${state}/logs/old.txt"
+run_stub
+if [[ "$(cat "${state}/listip.cfg")" != "addip 0 192.0.2.7" ]] || ! grep -q '^"admin"' "${state}/amxmodx/users.ini"; then
+    printf 'The entrypoint must not overwrite existing state files\n' >&2
+    exit 1
+fi
+if [[ -e "${state}/logs/old.log" || -e "${state}/amxmodx/logs/old.log" ]]; then
+    printf 'Expected log files older than LOG_RETENTION_DAYS to be deleted\n' >&2
+    exit 1
+fi
+if [[ ! -e "${state}/logs/new.log" || ! -e "${state}/logs/old.txt" ]]; then
+    printf 'Pruning must only delete old *.log files\n' >&2
+    exit 1
+fi
+
+: > "${state}/logs/old.log"
+touch -d '30 days ago' "${state}/logs/old.log"
+run_stub LOG_RETENTION_DAYS=0
+if [[ ! -e "${state}/logs/old.log" ]]; then
+    printf 'LOG_RETENTION_DAYS=0 must keep every log\n' >&2
+    exit 1
+fi
+
+# An unwritable state directory is a warning, not a failed start.
+if [[ "$(id -u)" -ne 0 ]]; then
+    mkdir -p "${WORK_DIR}/locked"
+    chmod 500 "${WORK_DIR}/locked"
+    run_stub HLDS_STATE_DIR="${WORK_DIR}/locked"
+    chmod 700 "${WORK_DIR}/locked"
+    if [[ "${status}" -ne 17 ]] || ! grep -q 'WARNING: .* is not writable' "${WORK_DIR}/output"; then
+        printf 'Expected a warning and a normal start with an unwritable state directory, got %d\n' "${status}" >&2
+        exit 1
+    fi
 fi
 
 if grep -q '^sv_downloadurl' "${ROOT}/config/server.cfg"; then

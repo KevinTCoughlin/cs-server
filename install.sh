@@ -43,6 +43,8 @@ IMAGE="${CS_SERVER_IMAGE:-${IMAGE}}"
 AUTO_UPDATE="${CS_AUTO_UPDATE:-0}"
 SERVICE_NAME="scoutzknivez"
 CONFIG_DIR="${HOME}/.config/cs-server"
+# Named volume for what the server writes: bans, admins, stats, logs.
+STATE_VOLUME="cs-server-state"
 QUADLET_DIR="${HOME}/.config/containers/systemd"
 RUNTIME=""
 
@@ -213,6 +215,20 @@ do_uninstall() {
         fi
     fi
 
+    # Prompt before removing saved state
+    if ${RUNTIME} volume inspect "${STATE_VOLUME}" &>/dev/null; then
+        local remove_state=false
+        # confirm intentionally returns false when the user declines.
+        # shellcheck disable=SC2310
+        confirm "Remove saved server state (bans, admins, stats, logs) in volume ${STATE_VOLUME}?" && remove_state=true
+        if [[ "${remove_state}" == true ]]; then
+            ${RUNTIME} volume rm "${STATE_VOLUME}"
+            ok "State volume removed"
+        else
+            info "Keeping state volume ${STATE_VOLUME}"
+        fi
+    fi
+
     # Prompt before removing image
     if ${RUNTIME} image inspect "${IMAGE}" &>/dev/null; then
         local remove_image=false
@@ -369,15 +385,20 @@ Volume=${CONFIG_DIR}/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro,Z
 Volume=${CONFIG_DIR}/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro,Z
 Volume=${CONFIG_DIR}/mapcycle-nipper-xmas.txt:/hlds/cstrike/mapcycle-nipper-xmas.txt:ro,Z
 Volume=${CONFIG_DIR}/modes:/hlds/cstrike/modes:ro,Z
+Volume=${STATE_VOLUME}:/hlds/state
 Environment=MAP=scoutzknivez
 Environment=MAXPLAYERS=20
 Environment=PORT=27015
 Environment=BOTS=1
 Environment=MAPCYCLE=mapcycle.txt
 Environment=LAN_MODE=0
-Environment=MODE=scoutz${fastdl_env}
+Environment=MODE=scoutz
+Environment=LOGS=1
+Environment=LOG_RETENTION_DAYS=7${fastdl_env}
 Sysctl=net.core.rmem_max=26214400
 Sysctl=net.core.wmem_max=26214400
+ReadOnly=true
+Tmpfs=/tmp
 DropCapability=ALL
 NoNewPrivileges=true
 HealthCmd=/healthcheck.sh
@@ -431,6 +452,7 @@ QUADLET
     echo "  Server address:  ${server_ip}:27015"
     echo "  Image:           ${IMAGE}"
     echo "  Config files:    ${CONFIG_DIR}/"
+    echo "  Saved state:     volume ${STATE_VOLUME} (bans, admins, stats, logs)"
     echo "  Quadlet unit:    ${QUADLET_DIR}/${SERVICE_NAME}.container"
     echo ""
     echo "  Useful commands:"
@@ -474,6 +496,7 @@ install_docker() {
         -v "${CONFIG_DIR}/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro" \
         -v "${CONFIG_DIR}/mapcycle-nipper-xmas.txt:/hlds/cstrike/mapcycle-nipper-xmas.txt:ro" \
         -v "${CONFIG_DIR}/modes:/hlds/cstrike/modes:ro" \
+        -v "${STATE_VOLUME}:/hlds/state" \
         -e MAP=scoutzknivez \
         -e MAXPLAYERS=20 \
         -e PORT=27015 \
@@ -481,9 +504,13 @@ install_docker() {
         -e MAPCYCLE=mapcycle.txt \
         -e LAN_MODE=0 \
         -e MODE=scoutz \
+        -e LOGS=1 \
+        -e LOG_RETENTION_DAYS=7 \
         ${fastdl_args[@]+"${fastdl_args[@]}"} \
         --sysctl net.core.rmem_max=26214400 \
         --sysctl net.core.wmem_max=26214400 \
+        --read-only \
+        --tmpfs /tmp \
         --cap-drop ALL \
         --security-opt no-new-privileges \
         --memory 512m \
@@ -508,6 +535,7 @@ install_docker() {
     echo "  Server address:  ${server_ip}:27015"
     echo "  Image:           ${IMAGE}"
     echo "  Config files:    ${CONFIG_DIR}/"
+    echo "  Saved state:     volume ${STATE_VOLUME} (bans, admins, stats, logs)"
     echo ""
     echo "  Useful commands:"
     echo "    docker ps -f name=${SERVICE_NAME}           # check status"
