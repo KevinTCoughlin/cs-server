@@ -56,7 +56,7 @@ quadlet/                   Systemd Quadlet unit file
 Custom gameplay is implemented via AMX Mod X plugins (Pawn language):
 
 1. Edit `plugins/amxmodx/scripting/scoutzknivez.sma`
-2. Rebuild the container — the builder stage compiles `.sma` → `.amxx` automatically
+2. Rebuild the container — the `plugins` build stage compiles `.sma` → `.amxx` automatically
 3. Test with `just up`
 
 To add a new plugin:

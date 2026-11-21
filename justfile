@@ -10,7 +10,7 @@ ENGINE := env("CONTAINER_ENGINE", if os() == "macos" { "container" } else { "pod
 # and the i386 HLDS payload runs under qemu-i386 (scripts/i386-compat.sh).
 # Run flags mirror compose.yml; the launchd service lives in ops/cs-server.
 IMAGE := "localhost/cs-server:latest"
-CTR_MEMORY := env("CS_MEMORY", "1G")
+CTR_MEMORY := env("CS_MEMORY", "640M")
 CTR_CPUS := env("CS_CPUS", "2")
 CTR_BUILD := "container build --platform linux/arm64 -t " + IMAGE + " -f Containerfile ."
 CTR_ENV_FILE := if path_exists(justfile_directory() / ".env") == "true" { "--env-file " + justfile_directory() / ".env" } else { "" }
