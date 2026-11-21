@@ -13,7 +13,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-# shellcheck source=tests/lib.sh
+# shellcheck disable=SC1091 # lib.sh is linted on its own
 source "${ROOT}/tests/lib.sh"
 
 WORK=$(mktemp -d)

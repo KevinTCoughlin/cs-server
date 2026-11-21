@@ -9,7 +9,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-# shellcheck source=tests/lib.sh
+# shellcheck disable=SC1091 # lib.sh is linted on its own
 source "${ROOT}/tests/lib.sh"
 
 command -v zip >/dev/null 2>&1 || fail "zip is required to build the fixtures"
