@@ -32,6 +32,7 @@
 - Quadlet `Volume` paths updated from hardcoded `~/Development/cs-server/` to `~/.config/cs-server/` to match `install.sh` behaviour
 
 ### Added
+- ghcr.io images are now multi-arch (`linux/amd64` + `linux/arm64`). `docker.yml` and the weekly build run one native job per architecture (arm64 on `ubuntu-24.04-arm`), smoke-test and Trivy-scan each, push by digest and publish one manifest list. The arm64 job is the first CI coverage of the `qemu-i386` path. `build-and-scan` remains as a single check that requires both
 - **Nipper Friday:** a knife-only mode on NIPPER's classic CS 1.6 maps, a tribute to the Friday knife nights his maps were made for. `scoutzknivez.sma` gains modes (`scoutz` | `knife`, kept in `localinfo sk_mode`) and `sk_switchmode`, which queues a mode or rotation change for the next round end with a chat announcement and no container restart. Knife mode blocks the scout, buying and weapon pickups; on `he_*` grenade maps the map's HE grenades can be picked up (`config/modes/knife_he.cfg`)
 - `config/modes/<mode>.cfg` and `<mode>_<prefix>.cfg` exec'd after `server.cfg` on every map; `MODE` env (default `scoutz`)
 - `scripts/mode.sh` (`just mode`, `cs-server mode`): `nipper` | `scoutz` | `auto`; uses `mapcycle-nipper-xmas.txt` (`xmas_nipperhouse`, `x-mas_tree`, `xmas_lodge`, `xmas_crazytank`) from Dec 1 to Jan 6

@@ -43,12 +43,31 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build-and-scan:
-    runs-on: ubuntu-24.04
+  # One native build per architecture. arm64 runs on a Linux arm runner; the
+  # image there carries the i386 HLDS payload under qemu-i386 (the same image
+  # Apple `container` runs on Apple silicon).
+  image:
+    name: image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            steam_timeout: 180
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            steam_timeout: 300
+    env:
+      LOCAL_IMAGE: local/cs-server:ci
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+
+      - name: Lowercase image name
+        run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -66,13 +85,6 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=CS 1.6 ScoutzKnivez Server
             org.opencontainers.image.description=Containerized Counter-Strike 1.6 ScoutzKnivez server using the ReHLDS stack
@@ -84,32 +96,33 @@ jobs:
         with:
           context: .
           file: ./Containerfile
-          platforms: linux/amd64
+          platforms: linux/${{ matrix.arch }}
           push: false
           load: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ env.LOCAL_IMAGE }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
       - name: Smoke test — verify binaries present and executable
         run: |
           docker run --rm \
-            --platform linux/amd64 \
             --entrypoint /bin/sh \
-            "${{ fromJSON(steps.meta.outputs.json).tags[0] }}" \
+            "${LOCAL_IMAGE}" \
             -c "test -x /hlds/hlds_linux && test -x /hlds/hlds_run && test -x /entrypoint.sh && test -s /etc/ssl/certs/ca-certificates.crt"
 
       # Runs the server for real: Docker's default seccomp profile answers the
       # i386 binary's 32-bit socket() with ENOSYS and HLDS crash-loops, which
-      # the file checks above can't see. Same flags as install.sh.
+      # the file checks above can't see. Same flags as install.sh. On arm64
+      # this is the only CI coverage of the qemu-i386 path.
       - name: Smoke test — server starts and reaches Steam
+        env:
+          STEAM_TIMEOUT: ${{ matrix.steam_timeout }}
         run: |
-          image="${{ fromJSON(steps.meta.outputs.json).tags[0] }}"
-          docker run -d --name hlds-smoke --platform linux/amd64 \
+          docker run -d --name hlds-smoke \
             --cap-drop ALL --security-opt no-new-privileges:true \
-            --security-opt seccomp=unconfined "${image}"
-          for _ in $(seq 60); do
+            --security-opt seccomp=unconfined "${LOCAL_IMAGE}"
+          for _ in $(seq $((STEAM_TIMEOUT / 3))); do
             if docker logs hlds-smoke 2>&1 | grep -q 'Connection to Steam servers successful'; then
               docker logs hlds-smoke 2>&1 | grep -E 'Connection to Steam|VAC secure'
               docker exec hlds-smoke /healthcheck.sh
@@ -119,7 +132,7 @@ jobs:
             fi
             sleep 3
           done
-          echo "::error::HLDS did not report a Steam connection within 180s"
+          echo "::error::HLDS did not report a Steam connection within ${STEAM_TIMEOUT}s"
           docker logs hlds-smoke 2>&1 | tail -40
           docker rm -f hlds-smoke >/dev/null
           exit 1
@@ -128,7 +141,7 @@ jobs:
         id: trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          image-ref: ${{ env.LOCAL_IMAGE }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -138,29 +151,110 @@ jobs:
         if: always() && steps.trivy.outcome == 'success'
         with:
           sarif_file: 'trivy-results.sarif'
+          category: trivy-${{ matrix.arch }}
 
       - name: Run Trivy vulnerability scanner (table format)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          image-ref: ${{ env.LOCAL_IMAGE }}
           format: 'table'
           severity: 'CRITICAL,HIGH,MEDIUM'
 
-      - name: Push Docker image
+      # Push this architecture untagged; the `publish` job tags a manifest
+      # list that points at both digests.
+      - name: Push image by digest
+        id: push
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Containerfile
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: linux/${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.arch }}
+
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Single check name covering every architecture (the job was a single
+  # amd64 build before the matrix).
+  build-and-scan:
+    needs: image
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every image build to pass
+        env:
+          RESULT: ${{ needs.image.result }}
+        run: |
+          echo "image builds: ${RESULT}"
+          [ "${RESULT}" = success ]
+
+  publish:
+    needs: image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Lowercase image name
+        run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Create and push the multi-arch manifest
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          tags=$(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "${DOCKER_METADATA_OUTPUT_JSON}")
+          sources=$(printf "${REGISTRY}/${IMAGE_NAME}@sha256:%s " *)
+          # shellcheck disable=SC2086 # word splitting is intended
+          docker buildx imagetools create ${tags} ${sources}
+
+      - name: Inspect manifest
+        run: docker buildx imagetools inspect "${{ fromJSON(steps.meta.outputs.json).tags[0] }}"
 
       - name: Generate SBOM
-        if: github.event_name != 'pull_request'
         uses: anchore/sbom-action@v0.24.3
         with:
           image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
@@ -168,7 +262,6 @@ jobs:
           output-file: sbom.spdx.json
 
       - name: Upload SBOM
-        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: sbom
