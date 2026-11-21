@@ -205,6 +205,30 @@ COPY --chown=hlds:hlds config/server.cfg    /hlds/cstrike/server.cfg
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 COPY --chmod=755 scripts/healthcheck.sh /healthcheck.sh
 
+# Everything the server writes at run time lives under /hlds/state, so one
+# volume there keeps bans, admins, stats and logs across container
+# replacement and the rest of the image can be mounted read-only. HLDS and
+# AMX Mod X only know their own paths, so those become symlinks into it;
+# entrypoint.sh creates the targets. users.ini is the one file with shipped
+# content: its default is kept aside to seed a new volume. /hlds/.runtime
+# (console FIFO) points into /tmp for the same reason.
+RUN cs=/hlds/cstrike && amx="${cs}/addons/amxmodx" && \
+    install -d -o hlds -g hlds /hlds/state && \
+    install -d /usr/local/share/cs-server && \
+    mv "${amx}/configs/users.ini" /usr/local/share/cs-server/users.ini && \
+    chmod 644 /usr/local/share/cs-server/users.ini && \
+    rm -rf "${amx}/logs" "${cs}/logs" && \
+    ln -s /hlds/state/banned.cfg            "${cs}/banned.cfg" && \
+    ln -s /hlds/state/listip.cfg            "${cs}/listip.cfg" && \
+    ln -s /hlds/state/logs                  "${cs}/logs" && \
+    ln -s /hlds/state/amxmodx/users.ini     "${amx}/configs/users.ini" && \
+    ln -s /hlds/state/amxmodx/cmdaccess.ini "${amx}/configs/cmdaccess.ini" && \
+    ln -s /hlds/state/amxmodx/logs          "${amx}/logs" && \
+    ln -s /hlds/state/amxmodx/csstats.dat   "${amx}/data/csstats.dat" && \
+    ln -s /hlds/state/amxmodx/vault.ini     "${amx}/data/vault.ini" && \
+    ln -s /hlds/state/amxmodx/vault         "${amx}/data/vault" && \
+    ln -s /tmp/hlds-runtime                 /hlds/.runtime
+
 # Create Steam SDK symlink for steamclient.so (fixes Docker Desktop on Windows)
 RUN mkdir -p /home/hlds/.steam/sdk32 && \
     ln -s /hlds/steamclient.so /home/hlds/.steam/sdk32/steamclient.so && \

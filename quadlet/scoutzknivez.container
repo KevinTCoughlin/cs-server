@@ -13,6 +13,7 @@ Volume=%h/.config/cs-server/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:
 Volume=%h/.config/cs-server/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro,Z
 Volume=%h/.config/cs-server/mapcycle-nipper-xmas.txt:/hlds/cstrike/mapcycle-nipper-xmas.txt:ro,Z
 Volume=%h/.config/cs-server/modes:/hlds/cstrike/modes:ro,Z
+Volume=cs-server-state:/hlds/state
 Environment=MAP=scoutzknivez
 Environment=MAXPLAYERS=20
 Environment=PORT=27015
@@ -20,8 +21,12 @@ Environment=BOTS=1
 Environment=MAPCYCLE=mapcycle.txt
 Environment=LAN_MODE=0
 Environment=MODE=scoutz
+Environment=LOGS=1
+Environment=LOG_RETENTION_DAYS=7
 Sysctl=net.core.rmem_max=26214400
 Sysctl=net.core.wmem_max=26214400
+ReadOnly=true
+Tmpfs=/tmp
 DropCapability=ALL
 NoNewPrivileges=true
 HealthCmd=/healthcheck.sh

@@ -13,6 +13,9 @@ MAPCYCLE="${MAPCYCLE:-mapcycle.txt}"
 LAN_MODE="${LAN_MODE:-0}"
 MODE="${MODE:-scoutz}"
 FASTDL_URL="${FASTDL_URL:-}"
+LOGS="${LOGS:-1}"
+LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"
+LOGADDRESS="${LOGADDRESS:-}"
 
 validate_boolean() {
     local name="$1" value="$2"
@@ -66,7 +69,24 @@ validate_url() {
     fi
 }
 
+# host:port of a log receiver (HLstatsX and the like). Reaches the console.
+validate_logaddress() {
+    local name="$1" value="$2" port
+    if [[ -z "${value}" ]]; then
+        return 0
+    fi
+    port="${value##*:}"
+    if [[ ! "${value}" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,252}[A-Za-z0-9])?:[0-9]{1,5}$ ]] ||
+       [[ "$((10#${port}))" -lt 1 || "$((10#${port}))" -gt 65535 ]]; then
+        echo "[entrypoint] ${name} must be host:port (a hostname or IPv4 address and a port from 1 to 65535)" >&2
+        exit 1
+    fi
+}
+
 validate_boolean "BOTS" "${BOTS}"
+validate_boolean "LOGS" "${LOGS}"
+validate_integer "LOG_RETENTION_DAYS" "${LOG_RETENTION_DAYS}" 0 3650
+validate_logaddress "LOGADDRESS" "${LOGADDRESS}"
 validate_boolean "NOMASTER" "${NOMASTER}"
 validate_boolean "LAN_MODE" "${LAN_MODE}"
 validate_integer "MAXPLAYERS" "${MAXPLAYERS}" 1 32
@@ -74,6 +94,10 @@ validate_integer "PORT" "${PORT}" 1 65535
 validate_filename "MAP" "${MAP}"
 validate_filename "MAPCYCLE" "${MAPCYCLE}"
 validate_url "FASTDL_URL" "${FASTDL_URL}"
+if [[ -n "${LOGADDRESS}" && "${LOGS}" != "1" ]]; then
+    echo "[entrypoint] LOGADDRESS needs LOGS=1" >&2
+    exit 1
+fi
 case "${MODE}" in
     scoutz | knife) ;;
     *)
@@ -85,12 +109,21 @@ esac
 # hlds_linux needs libs from its own directory (normally set by hlds_run)
 export LD_LIBRARY_PATH=".:${LD_LIBRARY_PATH:-}"
 
-RUNTIME_DIR="${HLDS_RUNTIME_DIR:-/hlds/.runtime}"
+# The image links /hlds/.runtime here, so the FIFO keeps its documented path
+# and still works on a read-only root filesystem with a tmpfs on /tmp.
+RUNTIME_DIR="${HLDS_RUNTIME_DIR:-/tmp/hlds-runtime}"
+STATE_DIR="${HLDS_STATE_DIR:-/hlds/state}"
+STATE_DEFAULTS="${HLDS_STATE_DEFAULTS:-/usr/local/share/cs-server}"
 FIFO="${RUNTIME_DIR}/hlds-input"
 SCRIPT_PID=
 SHUTTING_DOWN=0
 
+PRUNE_PID=
+
 cleanup() {
+    if [[ -n "${PRUNE_PID}" ]]; then
+        kill "${PRUNE_PID}" 2>/dev/null || true
+    fi
     exec 3>&- 3<&- || true
     rm -f "${FIFO}"
 }
@@ -132,6 +165,52 @@ graceful_shutdown() {
 }
 trap graceful_shutdown SIGTERM SIGINT
 
+# Run-time state (bans, admins, stats, logs): the image's symlinks point into
+# STATE_DIR, which is a volume on every deployment path. Create what is
+# missing; never overwrite. An unwritable directory is not fatal: the server
+# runs, but nothing it writes is kept.
+prepare_state() {
+    if ! mkdir -p "${STATE_DIR}/logs" "${STATE_DIR}/amxmodx/logs" "${STATE_DIR}/amxmodx/vault" 2>/dev/null ||
+       [[ ! -w "${STATE_DIR}" || ! -w "${STATE_DIR}/amxmodx" ]]; then
+        echo "[entrypoint] WARNING: ${STATE_DIR} is not writable by uid $(id -u); bans, admins, stats and logs will not be saved" >&2
+        return 0
+    fi
+    local f
+    for f in banned.cfg listip.cfg; do
+        [[ -e "${STATE_DIR}/${f}" ]] || : > "${STATE_DIR}/${f}"
+    done
+    if [[ ! -e "${STATE_DIR}/amxmodx/users.ini" && -f "${STATE_DEFAULTS}/users.ini" ]]; then
+        cp "${STATE_DEFAULTS}/users.ini" "${STATE_DIR}/amxmodx/users.ini"
+        echo "[entrypoint] Seeded ${STATE_DIR}/amxmodx/users.ini"
+    fi
+}
+
+# Delete server and AMX Mod X log files older than LOG_RETENTION_DAYS.
+prune_logs() {
+    [[ "${LOG_RETENTION_DAYS}" -gt 0 ]] || return 0
+    local dir
+    for dir in "${STATE_DIR}/logs" "${STATE_DIR}/amxmodx/logs"; do
+        [[ -d "${dir}" ]] || continue
+        find "${dir}" -maxdepth 1 -type f -name '*.log' -mtime "+${LOG_RETENTION_DAYS}" -delete 2>/dev/null || true
+    done
+}
+
+prepare_state
+prune_logs
+# A server can stay up for months: prune once a day as well.
+# The sleep runs in the background so the loop can be stopped at once.
+(
+    nap=
+    trap 'kill "${nap}" 2>/dev/null; exit 0' TERM INT
+    while :; do
+        sleep 86400 &
+        nap=$!
+        wait "${nap}" || exit 0
+        prune_logs
+    done
+) &
+PRUNE_PID=$!
+
 mkdir -p "${RUNTIME_DIR}"
 chmod 700 "${RUNTIME_DIR}"
 rm -f "${FIFO}"
@@ -160,6 +239,16 @@ else
     FASTDL_ARGS=()
 fi
 
+# File logs go to the state volume (cstrike/logs is a link into it). `log on`
+# must come after server.cfg, whose sv_log_onefile decides how files are cut.
+LOG_ARGS=()
+if [[ "${LOGS}" = "1" ]]; then
+    LOG_ARGS+=(+log on)
+    if [[ -n "${LOGADDRESS}" ]]; then
+        LOG_ARGS+=(+logaddress_add "${LOGADDRESS%:*}" "${LOGADDRESS##*:}")
+    fi
+fi
+
 # Use 'script' to give hlds a PTY — without a PTY, hlds_linux does
 # blocking reads on stdin which freezes the game loop.
 # hlds_run handles Steam API init (first crash + auto-restart creates
@@ -176,9 +265,12 @@ HLDS_ARGS=(
     +mapcyclefile "${MAPCYCLE}"
     +localinfo sk_mode "${MODE}"
     +exec server.cfg
+    +exec banned.cfg
+    +exec listip.cfg
     "${MASTER_ARGS[@]}"
     "${BOT_QUOTA_ARGS[@]}"
     "${FASTDL_ARGS[@]}"
+    "${LOG_ARGS[@]}"
 )
 # On non-x86 images (arm64), scripts/i386-compat.sh installs a launcher that
 # runs the i386 hlds_linux under qemu-i386; hand it to hlds_run as the binary.

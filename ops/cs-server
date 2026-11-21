@@ -23,9 +23,11 @@
 #   cs-server uninstall      remove agent, container and image (config kept)
 #   cs-server serve          foreground run; what the launchd agent executes
 #
-# Config lives in ~/.config/cs-server (same as install.sh on Linux). Optional
+# Config lives in ~/.config/cs-server (same as install.sh on Linux); what the
+# server writes (bans, admins, stats, logs) is kept in its state/ folder. Optional
 # ~/.config/cs-server/env holds KEY=VALUE overrides (MAP, MAXPLAYERS, BOTS,
-# MAPCYCLE, MODE, LAN_MODE, NOMASTER, FASTDL_URL). Network rcon is off: `cs-server
+# MAPCYCLE, MODE, LAN_MODE, NOMASTER, FASTDL_URL, LOGS, LOG_RETENTION_DAYS,
+# LOGADDRESS). Network rcon is off: `cs-server
 # rcon` uses the local console. CS_RCON=1 on `install` generates an
 # rcon_password for remote use. CS_MEMORY / CS_CPUS override the VM size
 # (640M / 2: HLDS + qemu-i386 hold ~240 MiB RSS with 10 bots, the rest is the
@@ -46,6 +48,7 @@ PORT=27015
 MEMORY="${CS_MEMORY:-640M}"
 CPUS="${CS_CPUS:-2}"
 CONFIG_DIR="${HOME}/.config/cs-server"
+STATE_DIR="${CONFIG_DIR}/state"
 LOGS="${HOME}/Library/Logs/cs-server"
 LA_DIR="${HOME}/Library/LaunchAgents"
 LABEL="com.kevintcoughlin.cs-server"
@@ -98,7 +101,7 @@ build_image() {
 }
 
 seed_config() {
-    mkdir -p "${CONFIG_DIR}" "${LOGS}"
+    mkdir -p "${CONFIG_DIR}" "${STATE_DIR}" "${LOGS}"
     chmod 700 "${CONFIG_DIR}"
     local f
     for f in "${CONFIG_FILES[@]}"; do
@@ -122,7 +125,8 @@ seed_config() {
         log "generated rcon_password in ${CONFIG_DIR}/server.cfg"
     fi
     chmod 700 "${CONFIG_DIR}/modes"
-    find "${CONFIG_DIR}" -type f -exec chmod 600 {} +
+    # The state directory belongs to the server; leave its files alone.
+    find "${CONFIG_DIR}" -path "${STATE_DIR}" -prune -o -type f -exec chmod 600 {} +
 }
 
 # Foreground server process, run by the launchd agent. KeepAlive restarts it
@@ -144,6 +148,8 @@ cmd_serve() {
         args+=(-v "${CONFIG_DIR}/${f}:/hlds/cstrike/${f}:ro")
     done
     args+=(-v "${CONFIG_DIR}/modes:/hlds/cstrike/modes:ro")
+    # Bans, admins, stats and logs: everything the server writes.
+    args+=(-v "${STATE_DIR}:/hlds/state")
     if [[ -f "${CONFIG_DIR}/env" ]]; then
         args+=(--env-file "${CONFIG_DIR}/env")
     fi
@@ -245,7 +251,7 @@ cmd_uninstall() {
     rm -f "${LA_DIR}/${LABEL}.plist" "${LA_DIR}/${FRIDAY_LABEL}.plist" "${HOME}/.local/bin/cs-server"
     container rm -f "${NAME}" >/dev/null 2>&1 || true
     container image delete "${IMAGE}" >/dev/null 2>&1 || true
-    log "uninstalled (config kept in ${CONFIG_DIR})"
+    log "uninstalled (config and saved state kept in ${CONFIG_DIR})"
 }
 
 cmd="${1:-}"
@@ -279,7 +285,7 @@ case "${cmd}" in
     friday) cmd_friday "$@" ;;
     uninstall) cmd_uninstall ;;
     *)
-        sed -n '5,32p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '5,34p' "$0" | sed 's/^# \{0,1\}//'
         exit 2
         ;;
 esac

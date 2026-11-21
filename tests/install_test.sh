@@ -42,6 +42,11 @@ case "$1" in
         esac
         ;;
     container) [ "${FAKE_CONTAINER:-0}" = 1 ] && echo true ;;
+    volume)
+        case "$2" in
+            inspect) [ "${FAKE_VOLUME:-0}" = 1 ] ;;
+        esac
+        ;;
     image)
         case "$*" in
             *RepoDigests*)
@@ -308,6 +313,8 @@ install FAKE_CONTAINER=1 FASTDL_URL=https://example.com/cstrike/
 expect_ok "docker install with FASTDL_URL"
 run_line=$(grep '^docker run -d ' "${LOG}")
 assert_contains "docker run carries the FastDL URL" "${run_line}" "-e FASTDL_URL=https://example.com/cstrike/ "
+assert_contains "docker run mounts the state volume" "${run_line}" " -v cs-server-state:/hlds/state "
+assert_contains "docker run: read-only root" "${run_line}" " --read-only --tmpfs /tmp "
 
 # --- Uninstall --------------------------------------------------------------
 use_runtimes podman
@@ -315,15 +322,18 @@ fresh_home
 install
 expect_ok "install before uninstall"
 
-ANSWERS=$'n\nn' install FAKE_IMAGE=1 -- --uninstall
+ANSWERS=$'n\nn\nn' install FAKE_IMAGE=1 FAKE_VOLUME=1 -- --uninstall
 expect_ok "podman uninstall, keep everything"
+assert_contains "asks about saved state" "${output}" "Keeping state volume cs-server-state"
+assert_not_contains "state kept after the answer was no" "${calls}" "podman volume rm"
 assert_contains "stops the service" "${calls}" "systemctl --user stop scoutzknivez"
 [[ ! -e "${UNIT}" ]] || fail "uninstall left the Quadlet unit behind"
 [[ -f "${CONFIG}/server.cfg" ]] || fail "uninstall removed config after the answer was no"
 assert_not_contains "image kept after the answer was no" "${calls}" "podman rmi"
 
-ANSWERS=$'y\ny' install FAKE_IMAGE=1 FAKE_ACTIVE=0 -- --uninstall
+ANSWERS=$'y\ny\ny' install FAKE_IMAGE=1 FAKE_VOLUME=1 FAKE_ACTIVE=0 -- --uninstall
 expect_ok "podman uninstall, remove everything"
+assert_contains "state removed after the answer was yes" "${calls}" "podman volume rm cs-server-state"
 assert_not_contains "a stopped service is not stopped again" "${calls}" "systemctl --user stop"
 [[ ! -e "${CONFIG}" ]] || fail "uninstall kept config after the answer was yes"
 assert_contains "image removed after the answer was yes" "${calls}" "podman rmi ghcr.io/kevintcoughlin/cs-server:latest"
@@ -333,5 +343,6 @@ ANSWERS="" install FAKE_CONTAINER=1 -- --uninstall
 expect_ok "docker uninstall"
 assert_contains "docker uninstall stops the container" "${calls}" "docker stop scoutzknivez"
 assert_contains "docker uninstall removes the container" "${calls}" "docker rm scoutzknivez"
+assert_not_contains "no state volume, no question about it" "${output}" "Remove saved server state"
 
 printf 'install tests passed\n'

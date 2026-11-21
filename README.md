@@ -359,10 +359,50 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
 | `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife) or `knife` (Nipper Friday) |
 | `FASTDL_URL` | empty | http(s) URL serving your `cstrike/` content (`sv_downloadurl`); see [FastDL](#fastdl-fast-downloads) |
+| `LOGS` | `1` | Write server log files (1=on, 0=off); see [Saved state and logs](#saved-state-and-logs) |
+| `LOG_RETENTION_DAYS` | `7` | Delete log files older than this many days (`0` keeps them all) |
+| `LOGADDRESS` | empty | `host:port` of a log receiver such as HLstatsX (`logaddress_add`); needs `LOGS=1` |
 
 Startup rejects invalid booleans, out-of-range ports/player counts, unsafe
-map or mapcycle filenames and malformed FastDL URLs instead of passing
-unchecked values to HLDS.
+map or mapcycle filenames and malformed FastDL URLs or log addresses instead
+of passing unchecked values to HLDS.
+
+## Saved state and logs
+
+Everything the server writes while it runs is kept in one place,
+`/hlds/state` in the container, and every deployment path mounts a volume
+there. Replacing the container (an upgrade, `just deploy`, a rollback) keeps:
+
+| In the volume | What it is |
+|---------------|------------|
+| `banned.cfg`, `listip.cfg` | Bans by SteamID and by address (`writeid`, `writeip`, AMX Mod X `amx_ban` / `amx_banip`); loaded at every start |
+| `amxmodx/users.ini` | AMX Mod X admins. Seeded with the stock file; edit it to add yourself |
+| `amxmodx/csstats.dat`, `amxmodx/vault*` | Player stats and plugin storage |
+| `logs/` | Server logs: joins, kills, chat, bans (`LOGS=1`) |
+| `amxmodx/logs/` | AMX Mod X logs: admin commands, plugin errors |
+
+On Podman, Docker and Compose the volume is named `cs-server-state`; on
+macOS it is the folder `~/.config/cs-server/state`.
+
+```bash
+podman volume inspect cs-server-state                # where it is on disk
+podman exec scoutzknivez ls /hlds/state/logs         # look inside
+podman volume export cs-server-state > state.tar     # back up
+podman volume import cs-server-state state.tar       # restore (server stopped)
+```
+
+A server installed before the volume existed picks it up when its unit is
+regenerated: run the installer again, or add
+`Volume=cs-server-state:/hlds/state` to the unit yourself. A container
+started without a volume still runs and keeps its state only until it is
+replaced.
+
+**Logs.** Log files are small (with only bots playing, under 2 MB a day in
+testing) but they record player names, SteamIDs and IP addresses, so files
+older than `LOG_RETENTION_DAYS` (default 7) are deleted at start and once a
+day. Set `LOGS=0` to write none.
+`LOGADDRESS=host:port` also streams the log lines over UDP to a stats
+collector.
 
 ## Bots
 
@@ -445,8 +485,7 @@ podman logs -f scoutzknivez             # follow logs
 ### Rebuild Workflow
 
 ```bash
-podman compose up --build -d && podman compose down
-systemctl --user restart scoutzknivez
+just deploy    # podman compose build && systemctl --user restart scoutzknivez
 ```
 
 ### Releases, upgrade and rollback
@@ -525,6 +564,13 @@ The Quadlet is configured with `WantedBy=default.target`, so the server starts a
   this also applies under `podman compose`). Every capability is still
   dropped and `no-new-privileges` still applies. The Quadlet unit keeps
   Podman's default profile, which allows the call
+- **Read-only root filesystem** — `ReadOnly=true` (Quadlet), `read_only: true`
+  (Compose), `--read-only` (`install.sh` on Docker). The server can write to
+  two places only: the [state volume](#saved-state-and-logs) and a tmpfs on
+  `/tmp` that holds the console pipe. Not set on macOS (`ops/cs-server`). One
+  side effect: on a map with no `.nav` file the bots' generated navigation
+  mesh cannot be saved, so it is rebuilt each time that map loads; ship the
+  `.nav` with the map (`maps/`) to avoid that
 - **System user with nologin shell** — HLDS runs as a system user (`-r`) with `/usr/sbin/nologin`, preventing interactive login
 - **Setuid/setgid bits stripped** — all setuid/setgid bits removed from the runtime image
 - **Resource limits** — `MemoryMax=512M`, `CPUQuota=200%` (2 cores max)
