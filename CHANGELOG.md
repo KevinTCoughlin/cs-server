@@ -5,7 +5,6 @@
 ### Fixed
 - `mapcycle-nipper-xmas.txt` was not bind-mounted anywhere and `config/modes/` was missing from the Quadlet unit, `install.sh` and `ops/cs-server`, so edits to them needed an image rebuild. All five mount lists (`compose.yml`, Quadlet, justfile, `ops/cs-server`, `install.sh`) now carry every mapcycle and `modes/`; `tests/mounts_test.sh` keeps them in sync
 - `install.sh` wrote its own `server.cfg` and mapcycles from heredocs that had drifted from `config/` (no FastDL URL, different rates). It now seeds missing files from the pulled image, so defaults match the image version; existing files are left alone
-||||||| parent of 0a69f9b (fix: keep pinned maps off FastDL unless the manifest allows it)
 - `just fastdl` copied every `maps/*.bsp` into `docs/cstrike/`, including NIPPER's maps after `just fetch-maps`, which must not be re-hosted without permission. `maps/manifest.tsv` gains a `fastdl` column (`yes`/`no`); the recipe skips pinned maps not marked `yes`, and `tests/mapcycle_test.sh` fails if one is found under `docs/cstrike/maps/`
 - `rtv.sma` read `mapcycle.txt` regardless of `MAPCYCLE`, so votes offered the wrong maps in the Dust 2 and community rotations; it now follows the `mapcyclefile` cvar
 - `mapcycle-nipper.txt` (repo and `install.sh`) named four maps that don't ship (`scoutzknivez2`, `_pro`, `_winter`, `_x`), so the map change at map end failed
@@ -13,6 +12,7 @@
 - `docker.yml` now starts the image and fails unless HLDS reports a Steam connection
 
 ### Changed
+- Health check now runs `scripts/healthcheck.sh` (`/healthcheck.sh` in the image): `hlds_linux` must be running and answer an A2S_INFO query on its port. The old check only looked for the process, so a hung server stayed healthy and Quadlet's `Notify=healthy` fired before the port was open. The Quadlet unit gets `TimeoutStartSec=180` to allow for that; `docker.yml` runs the check in its smoke test
 - `nightly.yml` image rebuild and Trivy scan now run weekly (Monday 00:00 UTC) instead of daily; the `nightly` tag name is unchanged
 - `ci.yml` and `docker.yml` cancel superseded pull request runs
 - justfile selects its engine via `CONTAINER_ENGINE` (default: Apple `container` on macOS, `podman` elsewhere). Every recipe has a `container` branch (build/run flags mirror `compose.yml`; service recipes delegate to `ops/cs-server`); the Podman commands are unchanged

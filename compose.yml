@@ -39,7 +39,7 @@ services:
     stop_grace_period: 50s
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "grep -qs hlds_linux /proc/[0-9]*/comm || exit 1"]
+      test: ["CMD", "/healthcheck.sh"]
       interval: 30s
       timeout: 5s
       start_period: 60s

@@ -203,6 +203,7 @@ COPY --chown=hlds:hlds config/modes/        /hlds/cstrike/modes/
 COPY --chown=hlds:hlds config/server.cfg    /hlds/cstrike/server.cfg
 
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
+COPY --chmod=755 scripts/healthcheck.sh /healthcheck.sh
 
 # Create Steam SDK symlink for steamclient.so (fixes Docker Desktop on Windows)
 RUN mkdir -p /home/hlds/.steam/sdk32 && \
@@ -221,6 +222,6 @@ WORKDIR /hlds
 EXPOSE 27015/udp 27015/tcp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD ["/bin/sh", "-c", "grep -qs hlds_linux /proc/[0-9]*/comm || exit 1"]
+    CMD ["/healthcheck.sh"]
 
 ENTRYPOINT ["/entrypoint.sh"]
