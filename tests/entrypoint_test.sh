@@ -169,6 +169,24 @@ case "${args}" in
     *) printf 'Expected LOGADDRESS as +logaddress_add host port, got: %s\n' "${args}" >&2; exit 1 ;;
 esac
 
+run_stub BOTS=0
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *" +bot_quota 0 +localinfo sk_bots 0 "*) ;;
+    *) printf 'Expected BOTS=0 to pass +bot_quota 0 and +localinfo sk_bots 0, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+if ! grep -q 'NOTE: .* is not a volume' "${WORK_DIR}/output"; then
+    printf 'Expected a note when the state directory is not a mounted volume\n' >&2
+    exit 1
+fi
+
+run_stub
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *sk_bots*) printf 'Expected no sk_bots with bots on, got: %s\n' "${args}" >&2; exit 1 ;;
+    *) ;;
+esac
+
 run_stub LOGS=0
 args=$(cat "${WORK_DIR}/args")
 case "${args}" in

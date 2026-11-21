@@ -170,6 +170,11 @@ trap graceful_shutdown SIGTERM SIGINT
 # missing; never overwrite. An unwritable directory is not fatal: the server
 # runs, but nothing it writes is kept.
 prepare_state() {
+    # A unit or command from before 1.1.0 mounts no volume here: the server
+    # runs, and what it saves goes with the container.
+    if [[ -d "${STATE_DIR}" ]] && command -v mountpoint >/dev/null 2>&1 && ! mountpoint -q "${STATE_DIR}"; then
+        echo "[entrypoint] NOTE: ${STATE_DIR} is not a volume, so bans, admins, stats and logs are lost when this container is replaced. Mount one (-v cs-server-state:${STATE_DIR}, or Volume=cs-server-state:${STATE_DIR} in a Quadlet unit), or run the installer again." >&2
+    fi
     if ! mkdir -p "${STATE_DIR}/logs" "${STATE_DIR}/amxmodx/logs" "${STATE_DIR}/amxmodx/vault" 2>/dev/null ||
        [[ ! -w "${STATE_DIR}" || ! -w "${STATE_DIR}/amxmodx" ]]; then
         echo "[entrypoint] WARNING: ${STATE_DIR} is not writable by uid $(id -u); bans, admins, stats and logs will not be saved" >&2
@@ -221,7 +226,9 @@ exec 3<> "${FIFO}"
 if [[ "${BOTS}" = "1" ]]; then
     BOT_QUOTA_ARGS=(+bot_quota 10)
 else
-    BOT_QUOTA_ARGS=(+bot_quota 0)
+    # server.cfg sets bot_quota and scoutzknivez.amxx re-runs it on every
+    # map; sk_bots tells the plugin to turn bots off again afterwards.
+    BOT_QUOTA_ARGS=(+bot_quota 0 +localinfo sk_bots 0)
 fi
 
 if [[ "${NOMASTER}" = "1" ]]; then
