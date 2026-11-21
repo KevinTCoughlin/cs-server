@@ -1,0 +1,71 @@
+# Temporary: finds which rule of Docker's default seccomp profile stops the
+# i386 HLDS binary from opening its socket (#78). Not for merging.
+name: seccomp probe
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/seccomp-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Versions
+        run: |
+          docker version --format 'docker {{.Server.Version}}'
+          runc --version || true
+          docker info --format '{{json .SecurityOptions}}'
+          uname -r
+      - name: Build candidate profiles
+        run: |
+          curl -fsSL -o default.json https://raw.githubusercontent.com/moby/profiles/main/seccomp/default.json
+          python3 - <<'PY'
+          import json, copy
+          d = json.load(open('default.json'))
+          print('defaultAction', d.get('defaultAction'), 'defaultErrnoRet', d.get('defaultErrnoRet'))
+          socket_rules = [s for s in d['syscalls'] if s['names'] == ['socket']]
+          print('socket rules with args:', len(socket_rules))
+          # A: every socket() allowed, whatever the address family.
+          a = copy.deepcopy(d)
+          a['syscalls'] = [s for s in a['syscalls'] if s['names'] != ['socket']]
+          a['syscalls'].insert(0, {'names': ['socket'], 'action': 'SCMP_ACT_ALLOW'})
+          json.dump(a, open('a-socket-any.json', 'w'))
+          # B: the default plus socketcall listed on its own (already allowed
+          # in the main list; checks whether order matters).
+          b = copy.deepcopy(d)
+          b['syscalls'].insert(0, {'names': ['socketcall'], 'action': 'SCMP_ACT_ALLOW'})
+          json.dump(b, open('b-socketcall-first.json', 'w'))
+          # C: default action LOG instead of ERRNO, to see what is denied.
+          c = copy.deepcopy(d)
+          c['defaultAction'] = 'SCMP_ACT_LOG'
+          c.pop('defaultErrnoRet', None)
+          json.dump(c, open('c-log.json', 'w'))
+          PY
+      - name: Run the server under each profile
+        run: |
+          image=ghcr.io/kevintcoughlin/cs-server:1.0.0
+          docker pull -q "$image"
+          try() {
+            label="$1"; shift
+            docker run -d --name probe --cap-drop ALL --security-opt no-new-privileges:true "$@" \
+              -e NOMASTER=1 -e LAN_MODE=1 -e BOTS=0 "$image" >/dev/null
+            sleep 45
+            if docker exec probe /healthcheck.sh >/dev/null 2>&1; then result=HEALTHY; else result=FAILED; fi
+            echo "::notice::${label}: ${result}"
+            docker logs probe 2>&1 | tr -d '\r' | grep -aiE 'socket|port|couldn|fatal|error' | sort | uniq -c | head -8 || true
+            docker rm -f probe >/dev/null
+          }
+          try "built-in default"
+          try "moby main default.json" --security-opt seccomp=default.json
+          try "A socket any family" --security-opt seccomp=a-socket-any.json
+          try "B socketcall first" --security-opt seccomp=b-socketcall-first.json
+          try "C default action LOG" --security-opt seccomp=c-log.json
+          try "unconfined" --security-opt seccomp=unconfined
+      - name: Kernel audit of logged syscalls (profile C)
+        if: always()
+        run: sudo dmesg | grep -i 'type=1326\|seccomp' | tail -40 || sudo journalctl -k --no-pager | grep -i seccomp | tail -40 || true
