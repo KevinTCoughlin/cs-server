@@ -19,7 +19,10 @@ de_dust2 de_inferno de_nuke de_piranesi de_prodigy de_storm de_survivor
 de_torn de_train de_vertigo "
 
 pinned=" "
-while IFS=$'\t' read -r name _url _sum license _attribution _extras fastdl; do
+# Split on a non-whitespace separator: with IFS=tab, `read` folds an empty
+# column away, so a missing license note would go unnoticed.
+while IFS= read -r row; do
+    IFS=$'\037' read -r name _url _sum license _attribution _extras fastdl <<< "${row//$'\t'/$'\037'}"
     [[ -z "${name}" || "${name}" == \#* ]] && continue
     if [[ -z "${license:-}" ]]; then
         printf 'maps/manifest.tsv: %s has no license note\n' "${name}" >&2

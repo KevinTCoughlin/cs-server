@@ -147,7 +147,10 @@ fetch_one() {
 [[ -f "${MANIFEST}" ]] || die "missing ${MANIFEST}"
 
 count=0
-while IFS=$'\t' read -r name url sum license _attribution extras _fastdl; do
+# Split on a non-whitespace separator: with IFS=tab, `read` folds an empty
+# column away and shifts the rest of the row left.
+while IFS= read -r row; do
+    IFS=$'\037' read -r name url sum license _attribution extras _fastdl <<< "${row//$'\t'/$'\037'}"
     [[ -z "${name}" || "${name}" == \#* ]] && continue
     wanted "${name}" "$@" || continue
     [[ -n "${license:-}" ]] || die "${name}: license column is empty"

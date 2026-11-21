@@ -96,13 +96,24 @@ shellcheck:
 # Run all checks
 check: lint shellcheck test
 
-# Run entrypoint regression tests (in a Debian container on Apple container:
-# they need util-linux `script`; compose.yml isn't used there)
+# On Apple container the two entrypoint tests run in a Debian container (they
+# need util-linux `script`) and the compose test is skipped.
+# Run the script tests: stubbed engines, no server needed
 test:
-    {{ if ENGINE == "container" { "container run --rm -m 512M -v " + justfile_directory() + ":/repo -w /repo debian:trixie-slim bash tests/entrypoint_test.sh" } else { "bash tests/entrypoint_test.sh" } }}
+    {{ if ENGINE == "container" { "container run --rm -m 512M -v " + justfile_directory() + ":/repo -w /repo debian:trixie-slim bash -c 'bash tests/entrypoint_test.sh && bash tests/shutdown_test.sh'" } else { "bash tests/entrypoint_test.sh && bash tests/shutdown_test.sh" } }}
     bash tests/mapcycle_test.sh
     bash tests/mounts_test.sh
+    bash tests/mode_test.sh
+    bash tests/fetch_maps_test.sh
+    bash tests/install_test.sh
+    bash tests/ops_test.sh
     {{ if ENGINE == "container" { "echo 'compose tests skipped: Apple container has no compose'" } else { "bash tests/compose_test.sh" } }}
+
+# Checks plugins, mode switching, every mapcycle map and graceful shutdown
+# through the console FIFO.
+# Build the image, boot it and test the live server (about 2 minutes)
+e2e: build
+    bash tests/e2e_test.sh {{ENGINE}} {{IMAGE}}
 
 # Exec into running container
 shell:
@@ -140,7 +151,8 @@ fastdl:
     # Maps pinned in maps/manifest.tsv stay off FastDL unless their row says
     # fastdl=yes (the author's terms allow re-hosting).
     blocked=" "
-    while IFS=$'\t' read -r name _url _sum _license _attribution _extras fastdl; do
+    while IFS= read -r row; do
+        IFS=$'\037' read -r name _url _sum _license _attribution _extras fastdl <<< "${row//$'\t'/$'\037'}"
         [[ -z "$name" || "$name" == \#* || "${fastdl:-no}" == yes ]] && continue
         blocked+="$name "
     done < maps/manifest.tsv

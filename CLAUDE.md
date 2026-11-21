@@ -23,8 +23,12 @@ The justfile picks its engine via `ENGINE := env("CONTAINER_ENGINE", ...)`: Appl
 ```bash
 just lint                           # hadolint on Containerfile
 just shellcheck                     # shellcheck on entrypoint.sh
-just check                          # both
+just test                           # script tests: stubbed engines, no server
+just check                          # lint + shellcheck + test
+just e2e                            # build, boot the image, test the live server (~2 min)
 ```
+
+`tests/e2e_test.sh <engine> <image>` drives a running server through its console FIFO (plugins all running, `sk_switchmode` both ways, every mapcycle map, graceful shutdown); `docker.yml` runs it on both architectures. Run `just e2e` after touching `plugins/`, `config/`, `entrypoint.sh` or the Containerfile. It cannot see player-only behaviour (loadouts, buy/pickup blocking, RTV, kickers). Bots only play maps that have a `.nav`, so rounds never end on stock `de_dust2`.
 
 ## Project Layout
 
@@ -70,6 +74,9 @@ sound/
   quake/                   Quake sound WAVs (gitignored, see README.md)
 quadlet/
   scoutzknivez.container   Systemd Quadlet unit (rootless Podman)
+tests/
+  e2e_test.sh              Live-server test through the console FIFO (`just e2e`)
+  *_test.sh, lib.sh        Script tests with stubbed engines (`just test`)
 .github/workflows/
   docker.yml               CI: build, Trivy scan, push to ghcr.io
   ci.yml                   CI: hadolint + shellcheck on every PR
@@ -106,8 +113,8 @@ quadlet/
 
 ## CI
 
-- **docker.yml**: Builds container image on push/PR (path-filtered), runs Trivy scan, pushes to ghcr.io with semantic tags, generates SBOM
-- **ci.yml**: Runs hadolint + shellcheck on every push/PR (no path filter) — fast lint gate
+- **docker.yml**: Builds container image on push/PR (path-filtered), smoke-tests and e2e-tests it, runs Trivy scan, pushes to ghcr.io with semantic tags, generates SBOM
+- **ci.yml**: Runs hadolint, shellcheck and the script tests on every push/PR (no path filter) — fast gate
 - **nightly.yml**: Weekly rebuild (Monday 00:00 UTC), Trivy scan, pushes `nightly` tag to ghcr.io
 - **pages.yml**: Builds `docs/` with Jekyll and deploys to GitHub Pages on push to main (Pages source must be "GitHub Actions")
 - **friday-dust2.yml**: Scheduled Friday at 00:00 PST (08:00 UTC), generates Dust 2 Friday announcements with gameplay rules

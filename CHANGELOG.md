@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- `scripts/fetch-maps.sh`, `tests/mapcycle_test.sh` and `just fastdl` split `maps/manifest.tsv` with `IFS=tab`, which folds an empty column away and shifts the rest of the row left: a row with an empty license column passed the license check with its attribution text. All three now keep empty columns
 - `mapcycle-nipper-xmas.txt` was not bind-mounted anywhere and `config/modes/` was missing from the Quadlet unit, `install.sh` and `ops/cs-server`, so edits to them needed an image rebuild. All five mount lists (`compose.yml`, Quadlet, justfile, `ops/cs-server`, `install.sh`) now carry every mapcycle and `modes/`; `tests/mounts_test.sh` keeps them in sync
 - `install.sh` wrote its own `server.cfg` and mapcycles from heredocs that had drifted from `config/` (no FastDL URL, different rates). It now seeds missing files from the pulled image, so defaults match the image version; existing files are left alone
 - `just fastdl` copied every `maps/*.bsp` into `docs/cstrike/`, including NIPPER's maps after `just fetch-maps`, which must not be re-hosted without permission. `maps/manifest.tsv` gains a `fastdl` column (`yes`/`no`); the recipe skips pinned maps not marked `yes`, and `tests/mapcycle_test.sh` fails if one is found under `docs/cstrike/maps/`
@@ -12,7 +13,7 @@
 - `docker.yml` now starts the image and fails unless HLDS reports a Steam connection
 
 ### Changed
-- Health check now runs `scripts/healthcheck.sh` (`/healthcheck.sh` in the image): `hlds_linux` must be running and answer an A2S_INFO query on its port. The old check only looked for the process, so a hung server stayed healthy and Quadlet's `Notify=healthy` fired before the port was open. The Quadlet unit gets `TimeoutStartSec=180` to allow for that; `docker.yml` runs the check in its smoke test
+- Health check now runs `scripts/healthcheck.sh` (`/healthcheck.sh` in the image): `hlds_linux` must be running and answer a ping query (A2A_PING) on its port, which the engine does in every configuration, `NOMASTER=1` included (it leaves A2S_INFO unanswered). The old check only looked for the process, so a hung server stayed healthy and Quadlet's `Notify=healthy` fired before the port was open. The Quadlet unit gets `TimeoutStartSec=180` to allow for that; `docker.yml` runs the check in its smoke test
 - `nightly.yml` image rebuild and Trivy scan now run weekly (Monday 00:00 UTC) instead of daily; the `nightly` tag name is unchanged
 - `ci.yml` and `docker.yml` cancel superseded pull request runs
 - justfile selects its engine via `CONTAINER_ENGINE` (default: Apple `container` on macOS, `podman` elsewhere). Every recipe has a `container` branch (build/run flags mirror `compose.yml`; service recipes delegate to `ops/cs-server`); the Podman commands are unchanged
@@ -32,6 +33,8 @@
 - Quadlet `Volume` paths updated from hardcoded `~/Development/cs-server/` to `~/.config/cs-server/` to match `install.sh` behaviour
 
 ### Added
+- `tests/e2e_test.sh` (`just e2e`, and a step in `docker.yml` on both architectures): boots the built image in LAN mode and drives the live server through its console FIFO. Checks that every Metamod and AMX Mod X plugin is running, the health check, bots joining, `sk_switchmode` in both directions (cvars, `mapcyclefile` and `localinfo sk_mode` after the changelevel) and its error paths, every mapcycle map present in the image, no AMX Mod X run-time errors, and a graceful shutdown. Player-only behaviour (loadouts, buy/pickup blocking, RTV, kickers) is not covered
+- Script tests in `just test` and `ci.yml`: `mode_test.sh` (Friday window, Christmas rotation, and the systemd/launchd schedule hours matching `mode.sh`), `shutdown_test.sh` (SIGTERM/SIGINT countdown, `quit`, exit 0, FIFO permissions), `fetch_maps_test.sh` (checksum pinning, zip extraction allow-list, manifest validation), `install_test.sh` (runtime detection, config seeding, `docker run` flags, uninstall, and the generated Quadlet unit matching `quadlet/scoutzknivez.container`) and `ops_test.sh` (the launchd wrapper). Engines, `systemctl`, `launchctl`, `curl` and `date` are stubbed
 - ghcr.io images are now multi-arch (`linux/amd64` + `linux/arm64`). `docker.yml` and the weekly build run one native job per architecture (arm64 on `ubuntu-24.04-arm`), smoke-test and Trivy-scan each, push by digest and publish one manifest list. The arm64 job is the first CI coverage of the `qemu-i386` path. `build-and-scan` remains as a single check that requires both
 - **Nipper Friday:** a knife-only mode on NIPPER's classic CS 1.6 maps, a tribute to the Friday knife nights his maps were made for. `scoutzknivez.sma` gains modes (`scoutz` | `knife`, kept in `localinfo sk_mode`) and `sk_switchmode`, which queues a mode or rotation change for the next round end with a chat announcement and no container restart. Knife mode blocks the scout, buying and weapon pickups; on `he_*` grenade maps the map's HE grenades can be picked up (`config/modes/knife_he.cfg`)
 - `config/modes/<mode>.cfg` and `<mode>_<prefix>.cfg` exec'd after `server.cfg` on every map; `MODE` env (default `scoutz`)

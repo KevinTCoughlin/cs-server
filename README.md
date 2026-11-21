@@ -453,7 +453,7 @@ The Quadlet is configured with `WantedBy=default.target`, so the server starts a
 - **Setuid/setgid bits stripped** — all setuid/setgid bits removed from the runtime image
 - **Resource limits** — `MemoryMax=512M`, `CPUQuota=200%` (2 cores max)
 - **Runtime health check** — the image, Compose and Quadlet run `/healthcheck.sh`:
-  `hlds_linux` must be running and answer a server query (A2S_INFO) on its port,
+  `hlds_linux` must be running and answer a ping query (A2A_PING) on its port,
   so a hung server turns unhealthy. Compose and Quadlet set it explicitly,
   independent of image-format health-check metadata
 
