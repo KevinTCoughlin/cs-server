@@ -22,6 +22,12 @@ curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/insta
 
 Requires [Podman](https://podman.io/getting-started/installation) (rootless) or [Docker](https://docs.docker.com/get-docker/). The script pulls the image from ghcr.io, creates config files, and starts the server on port 27015. With Podman it installs a systemd Quadlet unit for auto-start; with Docker it creates a container with restart policy. For production, set `CS_SERVER_IMAGE` to an immutable image digest instead of the mutable `latest` tag.
 
+That runs the newest build of `main` (`:latest`). To run a release instead, name it; see [Releases, upgrade and rollback](#releases-upgrade-and-rollback):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.0.0/install.sh | CS_SERVER_VERSION=1.0.0 bash
+```
+
 To uninstall: `curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash -s -- --uninstall`
 
 ## Zed
@@ -413,7 +419,7 @@ publish it. `sv_rcon_maxfailures` and `sv_rcon_banpenalty` (see
 
 The server runs as a rootless Podman Quadlet unit managed by systemd.
 
-The default configuration is public (`LAN_MODE=0`). Set `LAN_MODE=1` only for a private LAN server. Keep the image reference pinned to a release digest in production and update it through a reviewed change so rollback remains possible.
+The default configuration is public (`LAN_MODE=0`). Set `LAN_MODE=1` only for a private LAN server. In production, pin the image to a release or a digest and change it deliberately, so rollback remains possible: see [Releases, upgrade and rollback](#releases-upgrade-and-rollback).
 
 ### Setup
 
@@ -442,6 +448,49 @@ podman logs -f scoutzknivez             # follow logs
 podman compose up --build -d && podman compose down
 systemctl --user restart scoutzknivez
 ```
+
+### Releases, upgrade and rollback
+
+Each release is a git tag (`v1.0.0`), a [GitHub release](https://github.com/KevinTCoughlin/cs-server/releases) with the changelog, and a multi-arch image (`linux/amd64`, `linux/arm64`) on ghcr.io under these tags:
+
+| Tag | Moves? | Use it for |
+|-----|--------|------------|
+| `1.0.0` | No | A fixed version |
+| `1.0`, `1` | To the newest patch / minor release | Following a release line |
+| `latest` | With every change on `main` | Trying the newest build |
+| `nightly` | Weekly rebuild of `main` (fresh base image) | Testing |
+| `@sha256:…` | Never | Exactly one build, including its base image |
+
+**Pin** a version at install time with `CS_SERVER_VERSION` (as above), or any image reference with `CS_SERVER_IMAGE`. The installer prints the digest of what it pulled; note it down, because it is what you roll back to.
+
+**Upgrade** by running the installer again with the new version. Config in `~/.config/cs-server/` is kept, the unit is rewritten, and a running server is restarted onto the new image (players get the 30 second countdown):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.1.0/install.sh | CS_SERVER_VERSION=1.1.0 bash
+```
+
+Or by hand: change `Image=` in `~/.config/containers/systemd/scoutzknivez.container`, then
+
+```bash
+podman pull ghcr.io/kevintcoughlin/cs-server:1.1.0
+systemctl --user daemon-reload
+systemctl --user restart scoutzknivez
+```
+
+**Roll back** the same way, naming the previous version or the digest you noted:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.0.0/install.sh | CS_SERVER_VERSION=1.0.0 bash
+# or exactly the build you ran before
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.0.0/install.sh \
+  | CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:<digest> bash
+```
+
+Read the [changelog](CHANGELOG.md) before crossing a major version: a newer image may expect config that an older `server.cfg` lacks, and the installer never overwrites your files.
+
+With Docker the installer replaces the container, so the same commands upgrade and roll back. On macOS the image is built from your checkout: `git checkout v1.0.0 && cs-server update`.
+
+**Unattended updates (Podman, optional).** `CS_AUTO_UPDATE=1` adds `AutoUpdate=registry` to the unit and enables `podman-auto-update.timer`, which checks daily whether the tag points at a new image. Use it with a moving tag (`CS_SERVER_VERSION=1` or `1.0`), not `1.0.0`. The unit only counts as started once the server answers its health check, so if a new image does not come up, Podman puts the previous one back. An update restarts the server, countdown included, whenever the timer fires; skip this if restarts must be planned.
 
 ### Graceful Shutdown
 

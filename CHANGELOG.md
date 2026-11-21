@@ -2,12 +2,17 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-21
+
+First tagged release. Images for it are on ghcr.io as `1.0.0`, `1.0` and `1` (`linux/amd64`, `linux/arm64`).
+
 ### Changed (behaviour)
 - **FastDL URL is a setting.** `config/server.cfg` no longer sets `sv_downloadurl` to this project's site. The new `FASTDL_URL` environment variable (empty by default) sets it, on the HLDS command line so that the per-map re-run of `server.cfg` cannot override it; `entrypoint.sh` and `install.sh` reject anything that is not a plain http(s) URL. Wired into `compose.yml`, `.env.example`, `install.sh` (Quadlet unit and `docker run`) and the macOS env file. An install whose `server.cfg` already has the line keeps it. To keep the old behaviour on a rebuilt image, set `FASTDL_URL=https://kevintcoughlin.com/cs-server/cstrike/` (#75)
 - **No rcon password by default.** `install.sh` and `ops/cs-server` no longer generate an `rcon_password`: the engine refuses network rcon without one, and the console FIFO (`just rcon`, `cs-server rcon`) needs none. `CS_RCON=1` at install generates one as before. Existing `server.cfg` files are not touched (#76)
 - **27015/tcp is no longer published or exposed.** GoldSrc uses UDP for the game, queries and rcon; a running server has no TCP listener on the game port (checked in `tests/e2e_test.sh`). Removed from `compose.yml`, the Quadlet unit, `install.sh`, the justfile, `ops/cs-server`, `EXPOSE` and the docs. Firewall rules for 27015/tcp can go (#77)
 
 ### Fixed
+- `install.sh` pulled `ghcr.io/KevinTCoughlin/cs-server:latest` by default, which Podman and Docker reject (`repository name must be lowercase`), so the one-line install failed unless `CS_SERVER_IMAGE` was set. The default is now lowercase; the stubbed installer test had asserted the mixed-case name
 - `scripts/fetch-maps.sh`, `tests/mapcycle_test.sh` and `just fastdl` split `maps/manifest.tsv` with `IFS=tab`, which folds an empty column away and shifts the rest of the row left: a row with an empty license column passed the license check with its attribution text. All three now keep empty columns
 - `mapcycle-nipper-xmas.txt` was not bind-mounted anywhere and `config/modes/` was missing from the Quadlet unit, `install.sh` and `ops/cs-server`, so edits to them needed an image rebuild. All five mount lists (`compose.yml`, Quadlet, justfile, `ops/cs-server`, `install.sh`) now carry every mapcycle and `modes/`; `tests/mounts_test.sh` keeps them in sync
 - `install.sh` wrote its own `server.cfg` and mapcycles from heredocs that had drifted from `config/` (no FastDL URL, different rates). It now seeds missing files from the pulled image, so defaults match the image version; existing files are left alone
@@ -38,6 +43,8 @@
 - Quadlet `Volume` paths updated from hardcoded `~/Development/cs-server/` to `~/.config/cs-server/` to match `install.sh` behaviour
 
 ### Added
+- Releases: pushing a `v*.*.*` tag makes `docker.yml` tag the multi-arch image `X.Y.Z`, `X.Y` and `X` and create a GitHub release whose notes are that version's section of this file (`scripts/release-notes.sh`, tested in `tests/release_notes_test.sh`) plus the image digest, with the SBOM attached (#70)
+- `install.sh`: `CS_SERVER_VERSION` (`1.0.0`, `1.0` or `1`) pins a release; the installer prints the digest of the image it pulled, and re-running it on a running server restarts it onto the new image, which makes it the upgrade and rollback path. `CS_AUTO_UPDATE=1` (Podman) adds `AutoUpdate=registry` and enables `podman-auto-update.timer`. README gains "Releases, upgrade and rollback" (#70)
 - `tests/e2e_test.sh` (`just e2e`, and a step in `docker.yml` on both architectures): boots the built image in LAN mode and drives the live server through its console FIFO. Checks that every Metamod and AMX Mod X plugin is running, the health check, bots joining, `sk_switchmode` in both directions (cvars, `mapcyclefile` and `localinfo sk_mode` after the changelevel) and its error paths, every mapcycle map present in the image, no AMX Mod X run-time errors, and a graceful shutdown. Player-only behaviour (loadouts, buy/pickup blocking, RTV, kickers) is not covered
 - Script tests in `just test` and `ci.yml`: `mode_test.sh` (Friday window, Christmas rotation, and the systemd/launchd schedule hours matching `mode.sh`), `shutdown_test.sh` (SIGTERM/SIGINT countdown, `quit`, exit 0, FIFO permissions), `fetch_maps_test.sh` (checksum pinning, zip extraction allow-list, manifest validation), `install_test.sh` (runtime detection, config seeding, `docker run` flags, uninstall, and the generated Quadlet unit matching `quadlet/scoutzknivez.container`) and `ops_test.sh` (the launchd wrapper). Engines, `systemctl`, `launchctl`, `curl` and `date` are stubbed
 - ghcr.io images are now multi-arch (`linux/amd64` + `linux/arm64`). `docker.yml` and the weekly build run one native job per architecture (arm64 on `ubuntu-24.04-arm`), smoke-test and Trivy-scan each, push by digest and publish one manifest list. The arm64 job is the first CI coverage of the `qemu-i386` path. `build-and-scan` remains as a single check that requires both
@@ -76,3 +83,6 @@
 - .editorconfig for consistent formatting
 - .env.example documenting environment variables
 - Quadlet systemd unit file shipped in-repo
+
+[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/KevinTCoughlin/cs-server/releases/tag/v1.0.0
