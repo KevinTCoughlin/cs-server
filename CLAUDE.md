@@ -114,11 +114,17 @@ tests/
 
 ## CI
 
-- **docker.yml**: Builds container image on push/PR (path-filtered), smoke-tests and e2e-tests it, runs Trivy scan, pushes to ghcr.io with semantic tags, generates SBOM
+- **docker.yml**: Builds container image on push/PR (path-filtered), smoke-tests and e2e-tests it, runs Trivy scan, pushes to ghcr.io with semantic tags, generates SBOM. A `v*.*.*` tag push also tags the image `X.Y.Z`, `X.Y` and `X` and creates the GitHub release from that version's `CHANGELOG.md` section (`scripts/release-notes.sh`)
 - **ci.yml**: Runs hadolint, shellcheck and the script tests on every push/PR (no path filter) — fast gate
 - **nightly.yml**: Weekly rebuild (Monday 00:00 UTC), Trivy scan, pushes `nightly` tag to ghcr.io
 - **pages.yml**: Builds `docs/` with Jekyll and deploys to GitHub Pages on push to main (Pages source must be "GitHub Actions")
 - **friday-dust2.yml**: Scheduled Friday at 00:00 PST (08:00 UTC), generates Dust 2 Friday announcements with gameplay rules
+
+## Releasing
+
+1. In `CHANGELOG.md`, rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, add an empty `[Unreleased]` above it and update the links at the bottom. Merge that.
+2. `git tag vX.Y.Z <merge commit> && git push origin vX.Y.Z`. The release job fails if the changelog has no notes for the version.
+3. Check `gh release view vX.Y.Z` and `docker buildx imagetools inspect ghcr.io/kevintcoughlin/cs-server:X.Y.Z` (both architectures).
 
 ## Environment Variables
 
