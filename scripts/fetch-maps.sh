@@ -147,7 +147,7 @@ fetch_one() {
 [[ -f "${MANIFEST}" ]] || die "missing ${MANIFEST}"
 
 count=0
-while IFS=$'\t' read -r name url sum license _attribution extras; do
+while IFS=$'\t' read -r name url sum license _attribution extras _fastdl; do
     [[ -z "${name}" || "${name}" == \#* ]] && continue
     wanted "${name}" "$@" || continue
     [[ -n "${license:-}" ]] || die "${name}: license column is empty"

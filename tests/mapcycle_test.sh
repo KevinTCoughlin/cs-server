@@ -5,7 +5,8 @@
 # Every map named in config/mapcycle*.txt must be playable: bundled in
 # docs/cstrike/maps/ or maps/, shipped with HLDS, or pinned in
 # maps/manifest.tsv (with a license note). A missing map makes changelevel
-# fail at map end.
+# fail at map end. Pinned maps also stay off FastDL (docs/cstrike/maps/) unless
+# their manifest row says fastdl=yes.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -18,12 +19,27 @@ de_dust2 de_inferno de_nuke de_piranesi de_prodigy de_storm de_survivor
 de_torn de_train de_vertigo "
 
 pinned=" "
-while IFS=$'\t' read -r name _url _sum license _rest; do
+while IFS=$'\t' read -r name _url _sum license _attribution _extras fastdl; do
     [[ -z "${name}" || "${name}" == \#* ]] && continue
     if [[ -z "${license:-}" ]]; then
         printf 'maps/manifest.tsv: %s has no license note\n' "${name}" >&2
         exit 1
     fi
+    case "${fastdl:-no}" in
+        yes) ;;
+        no)
+            # Not cleared for re-hosting: nothing of it may be published.
+            for published in "${ROOT}/docs/cstrike/maps/${name}".*; do
+                [[ -e "${published}" ]] || continue
+                printf '%s is on FastDL but maps/manifest.tsv does not mark %s fastdl=yes\n' "${published#"${ROOT}"/}" "${name}" >&2
+                exit 1
+            done
+            ;;
+        *)
+            printf 'maps/manifest.tsv: %s fastdl must be yes or no\n' "${name}" >&2
+            exit 1
+            ;;
+    esac
     pinned+="${name} "
 done < "${MANIFEST}"
 
