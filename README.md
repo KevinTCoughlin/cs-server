@@ -602,6 +602,40 @@ firewall-cmd --permanent --zone=FedoraWorkstation --add-port=27015/udp
 firewall-cmd --reload
 ```
 
+#### Query floods
+
+A public GoldSrc server attracts floods of server-browser queries, often with
+a forged source address so that the server's replies land on someone else.
+`sv_max_queries_sec` (see [HLDS Anti-Abuse](#hlds-anti-abuse)) limits the
+replies, but the game thread still reads every packet.
+[`ops/firewall/cs-server.nft`](ops/firewall/cs-server.nft) drops the excess in
+the kernel: queries and connection attempts are limited to 10 a second per
+source address (burst 20); packets from players in the game are not touched.
+
+```bash
+# Try it (gone at reboot)
+sudo nft -f ops/firewall/cs-server.nft
+sudo nft list table inet cs_server      # the counter shows dropped packets
+
+# Keep it across reboots
+sudo install -Dm644 ops/firewall/cs-server.nft /etc/cs-server/firewall.nft
+sudo install -Dm644 ops/firewall/cs-server-firewall.service /etc/systemd/system/cs-server-firewall.service
+sudo systemctl daemon-reload && sudo systemctl enable --now cs-server-firewall.service
+
+# Remove
+sudo systemctl disable --now cs-server-firewall.service   # or: sudo nft delete table inet cs_server
+```
+
+**With firewalld** (Fedora, RHEL): use the same file. The rules live in their
+own nftables table, which firewalld leaves alone, and they run before
+firewalld's; open the port in firewalld as shown above. firewalld's own rich
+rules can only limit a port as a whole, not per source, so they would let one
+flooder lock everyone else out.
+
+The file limits port 27015; edit `define game_port` for another port. It
+works for rootless Podman and for Docker alike (it hooks in before NAT).
+Nothing installs or loads it for you: `install.sh` only points at it.
+
 ## Performance Tuning
 
 The server is preconfigured with HLDS/ReHLDS network and tick-rate optimizations:

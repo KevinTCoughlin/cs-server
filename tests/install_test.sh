@@ -316,6 +316,24 @@ assert_contains "docker run carries the FastDL URL" "${run_line}" "-e FASTDL_URL
 assert_contains "docker run mounts the state volume" "${run_line}" " -v cs-server-state:/hlds/state "
 assert_contains "docker run: read-only root" "${run_line}" " --read-only --tmpfs /tmp "
 
+# --- Firewall recipe: mentioned, never applied -------------------------------
+cat > "${STUBS}/nft" <<'EOF'
+#!/bin/sh
+printf 'nft %s\n' "$*" >> "${CALLS}"
+EOF
+chmod +x "${STUBS}/nft"
+use_runtimes podman
+fresh_home
+install
+expect_ok "install on a host with nftables"
+assert_contains "points at the query-flood recipe" "${output}" "#query-floods"
+assert_not_contains "never runs nft itself" "${calls}" "nft "
+rm -f "${STUBS}/nft"
+fresh_home
+install
+expect_ok "install on a host without nftables"
+assert_not_contains "no recipe hint without nft" "${output}" "#query-floods"
+
 # --- Uninstall --------------------------------------------------------------
 use_runtimes podman
 fresh_home

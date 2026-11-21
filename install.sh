@@ -595,6 +595,12 @@ check_host_tuning() {
         info "CPU governor: not available (VM, container, or no cpufreq — skipping)"
     fi
 
+    # --- Query-flood rate limit (never applied automatically) ---
+    if command -v nft >/dev/null 2>&1; then
+        info "Public server? An nftables recipe rate-limits query floods per source address:"
+        echo "      https://github.com/${REPO}#query-floods"
+    fi
+
     if [[ "${issues}" -eq 0 ]]; then
         ok "Host tuning looks good"
     else

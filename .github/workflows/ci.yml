@@ -45,5 +45,6 @@ jobs:
           bash tests/fetch_maps_test.sh
           bash tests/install_test.sh
           bash tests/release_notes_test.sh
+          bash tests/firewall_test.sh
           bash tests/ops_test.sh
           bash tests/compose_test.sh
