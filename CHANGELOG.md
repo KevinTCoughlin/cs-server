@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed (behaviour)
+- **FastDL URL is a setting.** `config/server.cfg` no longer sets `sv_downloadurl` to this project's site. The new `FASTDL_URL` environment variable (empty by default) sets it, on the HLDS command line so that the per-map re-run of `server.cfg` cannot override it; `entrypoint.sh` and `install.sh` reject anything that is not a plain http(s) URL. Wired into `compose.yml`, `.env.example`, `install.sh` (Quadlet unit and `docker run`) and the macOS env file. An install whose `server.cfg` already has the line keeps it. To keep the old behaviour on a rebuilt image, set `FASTDL_URL=https://kevintcoughlin.com/cs-server/cstrike/` (#75)
+- **No rcon password by default.** `install.sh` and `ops/cs-server` no longer generate an `rcon_password`: the engine refuses network rcon without one, and the console FIFO (`just rcon`, `cs-server rcon`) needs none. `CS_RCON=1` at install generates one as before. Existing `server.cfg` files are not touched (#76)
+- **27015/tcp is no longer published or exposed.** GoldSrc uses UDP for the game, queries and rcon; a running server has no TCP listener on the game port (checked in `tests/e2e_test.sh`). Removed from `compose.yml`, the Quadlet unit, `install.sh`, the justfile, `ops/cs-server`, `EXPOSE` and the docs. Firewall rules for 27015/tcp can go (#77)
+
 ### Fixed
 - `scripts/fetch-maps.sh`, `tests/mapcycle_test.sh` and `just fastdl` split `maps/manifest.tsv` with `IFS=tab`, which folds an empty column away and shifts the rest of the row left: a row with an empty license column passed the license check with its attribution text. All three now keep empty columns
 - `mapcycle-nipper-xmas.txt` was not bind-mounted anywhere and `config/modes/` was missing from the Quadlet unit, `install.sh` and `ops/cs-server`, so edits to them needed an image rebuild. All five mount lists (`compose.yml`, Quadlet, justfile, `ops/cs-server`, `install.sh`) now carry every mapcycle and `modes/`; `tests/mounts_test.sh` keeps them in sync

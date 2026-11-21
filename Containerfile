@@ -219,7 +219,7 @@ LABEL org.opencontainers.image.title="CS 1.6 ScoutzKnivez Server" \
 USER 10001:10001
 WORKDIR /hlds
 
-EXPOSE 27015/udp 27015/tcp
+EXPOSE 27015/udp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD ["/healthcheck.sh"]

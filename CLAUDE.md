@@ -107,6 +107,7 @@ tests/
 - All component versions pinned as `ARG` in Containerfile (ReHLDS, ReGameDLL, Metamod, AMX Mod X, ReAPI)
 - Config files bind-mounted read-only in compose.yml and Quadlet (server.cfg, mapcycle.txt)
 - All Linux capabilities dropped (`cap_drop: ALL`, `NoNewPrivileges=true`)
+- Only 27015/udp is published (GoldSrc has no TCP listener on the game port); no `rcon_password` by default, the console FIFO is the admin path (`CS_RCON=1` opts in)
 - Container runs as non-root `hlds` system user
 - Scripts must be shellcheck-clean, Containerfile must be hadolint-clean
 - SPDX license headers on source files
@@ -129,3 +130,4 @@ tests/
 | `BOTS` | `1` | Enable ZBots (1=on, 0=off) |
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `MODE` | `scoutz` | Startup game mode: `scoutz` or `knife` |
+| `FASTDL_URL` | empty | http(s) URL for `sv_downloadurl`; passed on the HLDS command line, never set in `server.cfg` (re-exec'd every map) |

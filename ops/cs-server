@@ -25,7 +25,9 @@
 #
 # Config lives in ~/.config/cs-server (same as install.sh on Linux). Optional
 # ~/.config/cs-server/env holds KEY=VALUE overrides (MAP, MAXPLAYERS, BOTS,
-# MAPCYCLE, MODE, LAN_MODE, NOMASTER). CS_MEMORY / CS_CPUS override the VM size
+# MAPCYCLE, MODE, LAN_MODE, NOMASTER, FASTDL_URL). Network rcon is off: `cs-server
+# rcon` uses the local console. CS_RCON=1 on `install` generates an
+# rcon_password for remote use. CS_MEMORY / CS_CPUS override the VM size
 # (640M / 2: HLDS + qemu-i386 hold ~240 MiB RSS with 10 bots, the rest is the
 # guest kernel and page cache; the game loop is one thread, steamclient's
 # threads take the second vCPU). The image builder VM (6 GB on first use) is
@@ -112,7 +114,8 @@ seed_config() {
             log "seeded ${CONFIG_DIR}/modes/${f##*/}"
         fi
     done
-    if ! grep -q '^rcon_password' "${CONFIG_DIR}/server.cfg"; then
+    # Network rcon is opt-in; the console FIFO (`cs-server rcon`) needs none.
+    if [[ "${CS_RCON:-0}" == "1" ]] && ! grep -q '^rcon_password' "${CONFIG_DIR}/server.cfg"; then
         local pw
         pw=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
         printf 'rcon_password "%s"\n' "${pw}" >> "${CONFIG_DIR}/server.cfg"
@@ -132,7 +135,7 @@ cmd_serve() {
 
     local args=(
         --name "${NAME}" --rm
-        -p "${PORT}:${PORT}/udp" -p "${PORT}:${PORT}/tcp"
+        -p "${PORT}:${PORT}/udp"
         -m "${MEMORY}" -c "${CPUS}"
         --cap-drop ALL
     )
@@ -276,7 +279,7 @@ case "${cmd}" in
     friday) cmd_friday "$@" ;;
     uninstall) cmd_uninstall ;;
     *)
-        sed -n '5,30p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '5,32p' "$0" | sed 's/^# \{0,1\}//'
         exit 2
         ;;
 esac

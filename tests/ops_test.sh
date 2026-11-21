@@ -143,7 +143,7 @@ done
 for f in "${ROOT}"/config/modes/*.cfg; do
     cmp -s "${f}" "${CONFIG}/modes/${f##*/}" || fail "mode config not seeded: ${f##*/}"
 done
-for flag in "--name scoutzknivez --rm" "-p 27015:27015/udp" "-p 27015:27015/tcp" "-m 640M -c 2" \
+for flag in "--name scoutzknivez --rm" "-p 27015:27015/udp" "-m 640M -c 2" \
     "--cap-drop ALL" "-v ${CONFIG}/modes:/hlds/cstrike/modes:ro"; do
     assert_contains "container run flag" "${run_line}" "${flag}"
 done
@@ -154,13 +154,19 @@ fi
 assert_contains "a stale container is removed first" "${calls}" "container rm -f scoutzknivez"
 perms=$(mode_of "${CONFIG}")
 assert_eq "config dir permissions" 700 "${perms}"
-password=$(sed -n 's/^rcon_password "\([0-9a-f]*\)"$/\1/p' "${CONFIG}/server.cfg")
-assert_eq "RCON password is 48 hex chars" 48 "${#password}"
+assert_not_contains "no TCP port is published" "${run_line}" "/tcp"
+count=$(count_lines "${CONFIG}/server.cfg" "rcon_password")
+assert_eq "no RCON password unless asked for" 0 "${count}"
 
-# Restarts keep the operator's edits, the password, the env file and sizing.
+# Restarts keep the operator's edits, the env file and sizing; CS_RCON=1 adds
+# a password once.
 printf 'de_dust2\n' > "${CONFIG}/mapcycle.txt"
 printf 'MODE=knife\n' > "${CONFIG}/env"
-ops CS_MEMORY=1G CS_CPUS=4 -- serve
+ops CS_RCON=1 -- serve
+expect_ok "serve with CS_RCON=1"
+password=$(sed -n 's/^rcon_password "\([0-9a-f]*\)"$/\1/p' "${CONFIG}/server.cfg")
+assert_eq "RCON password is 48 hex chars" 48 "${#password}"
+ops CS_RCON=1 CS_MEMORY=1G CS_CPUS=4 -- serve
 expect_ok "serve again"
 kept=$(cat "${CONFIG}/mapcycle.txt")
 assert_eq "restart keeps an edited mapcycle" "de_dust2" "${kept}"
