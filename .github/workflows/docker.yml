@@ -112,6 +112,8 @@ jobs:
           for _ in $(seq 60); do
             if docker logs hlds-smoke 2>&1 | grep -q 'Connection to Steam servers successful'; then
               docker logs hlds-smoke 2>&1 | grep -E 'Connection to Steam|VAC secure'
+              docker exec hlds-smoke /healthcheck.sh
+              echo 'health check: server answers A2S_INFO'
               docker rm -f hlds-smoke >/dev/null
               exit 0
             fi

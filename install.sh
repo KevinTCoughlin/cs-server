@@ -302,7 +302,7 @@ Sysctl=net.core.rmem_max=26214400
 Sysctl=net.core.wmem_max=26214400
 DropCapability=ALL
 NoNewPrivileges=true
-HealthCmd=grep -qs hlds_linux /proc/[0-9]*/comm
+HealthCmd=/healthcheck.sh
 HealthInterval=30s
 HealthTimeout=5s
 HealthStartPeriod=60s
@@ -311,6 +311,7 @@ Notify=healthy
 
 [Service]
 Restart=on-failure
+TimeoutStartSec=180
 RestartSec=10
 TimeoutStopSec=50
 MemoryMax=512M
