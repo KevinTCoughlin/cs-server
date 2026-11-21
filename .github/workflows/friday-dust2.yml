@@ -40,7 +40,7 @@ jobs:
 
           # Docker
           docker run -d --security-opt seccomp=unconfined \
-            -p 27015:27015/udp -p 27015:27015/tcp \
+            -p 27015:27015/udp \
             -e MAP=de_dust2 \
             -e MAPCYCLE=mapcycle-dust2.txt \
             ghcr.io/kevintcoughlin/cs-server:latest

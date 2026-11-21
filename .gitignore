@@ -17,3 +17,6 @@ sound/*.wav
 
 # Environment variables
 .env
+
+# Scratch directories of the script tests
+tests/.*-work.*/
