@@ -215,84 +215,7 @@ do_install() {
     mkdir -p "${CONFIG_DIR}"
     chmod 700 "${CONFIG_DIR}"
 
-    if [[ ! -f "${CONFIG_DIR}/server.cfg" ]]; then
-        local rcon_password
-        rcon_password=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n') || error "Unable to generate an RCON password"
-        cat > "${CONFIG_DIR}/server.cfg" << 'SERVER_CFG'
-// CS 1.6 ScoutzKnivez Server Configuration
-// Edit this file to customize your server
-
-hostname "ScoutzKnivez Server"
-
-// Gameplay — ScoutzKnivez settings
-sv_gravity 240
-sv_airaccelerate 100
-mp_freezetime 0
-mp_buytime 0
-mp_roundtime 3
-mp_startmoney 16000
-mp_autoteambalance 1
-mp_friendlyfire 0
-
-// Network
-sv_maxrate 25000
-sv_minrate 5000
-sv_maxupdaterate 102
-sv_minupdaterate 30
-
-// Bots
-bot_quota 10
-bot_quota_mode "fill"
-bot_difficulty 1
-bot_join_after_player 0
-bot_auto_vacate 1
-
-// Anti-abuse
-sv_max_queries_sec 3
-sv_max_queries_window 30
-sv_rcon_maxfailures 5
-sv_rcon_banpenalty 60
-SERVER_CFG
-        printf 'rcon_password "%s"\n' "${rcon_password}" >> "${CONFIG_DIR}/server.cfg"
-        ok "Default server.cfg created"
-    else
-        ok "server.cfg already exists, skipping"
-    fi
-
-    if [[ ! -f "${CONFIG_DIR}/mapcycle.txt" ]]; then
-        cat > "${CONFIG_DIR}/mapcycle.txt" << 'MAPCYCLE'
-scoutzknivez
-scoutzknivez_2k
-scoutzknivez_bender
-MAPCYCLE
-        ok "Default mapcycle.txt created"
-    else
-        ok "mapcycle.txt already exists, skipping"
-    fi
-
-    if [[ ! -f "${CONFIG_DIR}/mapcycle-dust2.txt" ]]; then
-        cat > "${CONFIG_DIR}/mapcycle-dust2.txt" << 'DUST2MAPCYCLE'
-de_dust2
-DUST2MAPCYCLE
-        ok "Default mapcycle-dust2.txt created"
-    else
-        ok "mapcycle-dust2.txt already exists, skipping"
-    fi
-
-    if [[ ! -f "${CONFIG_DIR}/mapcycle-nipper.txt" ]]; then
-        cat > "${CONFIG_DIR}/mapcycle-nipper.txt" << 'NIPPERMAPCYCLE'
-nipperhouse
-ka_beams
-nippers100
-he_dodgeball2
-hamsters
-de_westwood
-NIPPERMAPCYCLE
-        ok "Default mapcycle-nipper.txt created"
-    else
-        ok "mapcycle-nipper.txt already exists, skipping"
-    fi
-    chmod 600 "${CONFIG_DIR}"/*.cfg "${CONFIG_DIR}"/*.txt
+    seed_config
 
     # --- Start server --------------------------------------------------------
 
@@ -301,6 +224,48 @@ NIPPERMAPCYCLE
     else
         install_docker
     fi
+}
+
+# --- Default config ---------------------------------------------------------
+
+# Files bind-mounted into the container. Keep in sync with compose.yml and
+# quadlet/scoutzknivez.container (tests/mounts_test.sh checks all of them).
+CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt mapcycle-nipper-xmas.txt)
+
+# Seed missing config files from the image itself, so the defaults always
+# match the image version. Existing files are never overwritten.
+seed_config() {
+    local tmp f rel rcon_password
+    tmp=$(mktemp -d) || error "Unable to create a temporary directory"
+    if ! ${RUNTIME} run --rm --network none --entrypoint sh "${IMAGE}" -c \
+        'cd /hlds/cstrike && tar -cf - server.cfg mapcycle*.txt modes' |
+        tar -C "${tmp}" --no-same-owner -xf -; then
+        rm -rf "${tmp}"
+        error "Unable to read the default config from ${IMAGE}"
+    fi
+
+    mkdir -p "${CONFIG_DIR}/modes"
+    for f in "${tmp}"/*.cfg "${tmp}"/*.txt "${tmp}"/modes/*.cfg; do
+        [[ -f "${f}" ]] || continue
+        rel="${f#"${tmp}"/}"
+        if [[ -e "${CONFIG_DIR}/${rel}" ]]; then
+            ok "${rel} already exists, skipping"
+            continue
+        fi
+        cp "${f}" "${CONFIG_DIR}/${rel}"
+        if [[ "${rel}" == server.cfg ]]; then
+            rcon_password=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n') || error "Unable to generate an RCON password"
+            printf 'rcon_password "%s"\n' "${rcon_password}" >> "${CONFIG_DIR}/server.cfg"
+        fi
+        ok "Default ${rel} created"
+    done
+    rm -rf "${tmp}"
+
+    for f in "${CONFIG_FILES[@]}"; do
+        [[ -f "${CONFIG_DIR}/${f}" ]] || error "${IMAGE} does not provide ${f}; use a newer image"
+    done
+    chmod 700 "${CONFIG_DIR}/modes"
+    find "${CONFIG_DIR}" -type f -exec chmod 600 {} +
 }
 
 # --- Podman install (Quadlet) -----------------------------------------------
@@ -324,6 +289,8 @@ Volume=${CONFIG_DIR}/server.cfg:/hlds/cstrike/server.cfg:ro,Z
 Volume=${CONFIG_DIR}/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro,Z
 Volume=${CONFIG_DIR}/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro,Z
 Volume=${CONFIG_DIR}/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro,Z
+Volume=${CONFIG_DIR}/mapcycle-nipper-xmas.txt:/hlds/cstrike/mapcycle-nipper-xmas.txt:ro,Z
+Volume=${CONFIG_DIR}/modes:/hlds/cstrike/modes:ro,Z
 Environment=MAP=scoutzknivez
 Environment=MAXPLAYERS=20
 Environment=PORT=27015
@@ -413,12 +380,15 @@ install_docker() {
         -v "${CONFIG_DIR}/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro" \
         -v "${CONFIG_DIR}/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro" \
         -v "${CONFIG_DIR}/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro" \
+        -v "${CONFIG_DIR}/mapcycle-nipper-xmas.txt:/hlds/cstrike/mapcycle-nipper-xmas.txt:ro" \
+        -v "${CONFIG_DIR}/modes:/hlds/cstrike/modes:ro" \
         -e MAP=scoutzknivez \
         -e MAXPLAYERS=20 \
         -e PORT=27015 \
         -e BOTS=1 \
         -e MAPCYCLE=mapcycle.txt \
         -e LAN_MODE=0 \
+        -e MODE=scoutz \
         --sysctl net.core.rmem_max=26214400 \
         --sysctl net.core.wmem_max=26214400 \
         --cap-drop ALL \

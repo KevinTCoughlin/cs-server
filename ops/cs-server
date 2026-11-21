@@ -49,7 +49,7 @@ LA_DIR="${HOME}/Library/LaunchAgents"
 LABEL="com.kevintcoughlin.cs-server"
 FRIDAY_LABEL="${LABEL}.friday"
 GUI="gui/$(id -u)"
-CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt)
+CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt mapcycle-nipper-xmas.txt)
 
 log() {
     local ts
@@ -105,13 +105,21 @@ seed_config() {
             log "seeded ${CONFIG_DIR}/${f}"
         fi
     done
+    mkdir -p "${CONFIG_DIR}/modes"
+    for f in "${REPO}"/config/modes/*.cfg; do
+        if [[ ! -f "${CONFIG_DIR}/modes/${f##*/}" ]]; then
+            cp "${f}" "${CONFIG_DIR}/modes/${f##*/}"
+            log "seeded ${CONFIG_DIR}/modes/${f##*/}"
+        fi
+    done
     if ! grep -q '^rcon_password' "${CONFIG_DIR}/server.cfg"; then
         local pw
         pw=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
         printf 'rcon_password "%s"\n' "${pw}" >> "${CONFIG_DIR}/server.cfg"
         log "generated rcon_password in ${CONFIG_DIR}/server.cfg"
     fi
-    chmod 600 "${CONFIG_DIR}"/*
+    chmod 700 "${CONFIG_DIR}/modes"
+    find "${CONFIG_DIR}" -type f -exec chmod 600 {} +
 }
 
 # Foreground server process, run by the launchd agent. KeepAlive restarts it
@@ -132,6 +140,7 @@ cmd_serve() {
     for f in "${CONFIG_FILES[@]}"; do
         args+=(-v "${CONFIG_DIR}/${f}:/hlds/cstrike/${f}:ro")
     done
+    args+=(-v "${CONFIG_DIR}/modes:/hlds/cstrike/modes:ro")
     if [[ -f "${CONFIG_DIR}/env" ]]; then
         args+=(--env-file "${CONFIG_DIR}/env")
     fi

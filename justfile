@@ -14,7 +14,7 @@ CTR_MEMORY := env("CS_MEMORY", "640M")
 CTR_CPUS := env("CS_CPUS", "2")
 CTR_BUILD := "container build --platform linux/arm64 -t " + IMAGE + " -f Containerfile ."
 CTR_ENV_FILE := if path_exists(justfile_directory() / ".env") == "true" { "--env-file " + justfile_directory() / ".env" } else { "" }
-CTR_RUN := "container run --name scoutzknivez --rm -p 27015:27015/udp -p 27015:27015/tcp -m " + CTR_MEMORY + " -c " + CTR_CPUS + " --cap-drop ALL " + CTR_ENV_FILE + " -v " + justfile_directory() / "config/server.cfg" + ":/hlds/cstrike/server.cfg:ro -v " + justfile_directory() / "config/mapcycle.txt" + ":/hlds/cstrike/mapcycle.txt:ro -v " + justfile_directory() / "config/mapcycle-dust2.txt" + ":/hlds/cstrike/mapcycle-dust2.txt:ro -v " + justfile_directory() / "config/mapcycle-nipper.txt" + ":/hlds/cstrike/mapcycle-nipper.txt:ro -v " + justfile_directory() / "config/modes" + ":/hlds/cstrike/modes:ro"
+CTR_RUN := "container run --name scoutzknivez --rm -p 27015:27015/udp -p 27015:27015/tcp -m " + CTR_MEMORY + " -c " + CTR_CPUS + " --cap-drop ALL " + CTR_ENV_FILE + " -v " + justfile_directory() / "config/server.cfg" + ":/hlds/cstrike/server.cfg:ro -v " + justfile_directory() / "config/mapcycle.txt" + ":/hlds/cstrike/mapcycle.txt:ro -v " + justfile_directory() / "config/mapcycle-dust2.txt" + ":/hlds/cstrike/mapcycle-dust2.txt:ro -v " + justfile_directory() / "config/mapcycle-nipper.txt" + ":/hlds/cstrike/mapcycle-nipper.txt:ro -v " + justfile_directory() / "config/mapcycle-nipper-xmas.txt" + ":/hlds/cstrike/mapcycle-nipper-xmas.txt:ro -v " + justfile_directory() / "config/modes" + ":/hlds/cstrike/modes:ro"
 
 default:
     @just --list
@@ -72,7 +72,18 @@ status:
 
 # Install Quadlet unit file (launchd agent on Apple container)
 install:
-    {{ if ENGINE == "container" { "ops/cs-server install" } else { "mkdir -p ~/.config/containers/systemd && cp quadlet/scoutzknivez.container ~/.config/containers/systemd/ && systemctl --user daemon-reload" } }}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "{{ENGINE}}" = container ]; then exec ops/cs-server install; fi
+    cfg="${HOME}/.config/cs-server"
+    mkdir -p "${cfg}/modes" ~/.config/containers/systemd
+    # Seed any config file the unit mounts that isn't there yet.
+    for f in config/server.cfg config/mapcycle*.txt config/modes/*.cfg; do
+        dest="${cfg}/${f#config/}"
+        [ -e "${dest}" ] || cp "${f}" "${dest}"
+    done
+    cp quadlet/scoutzknivez.container ~/.config/containers/systemd/
+    systemctl --user daemon-reload
 
 # Lint Containerfile with hadolint
 lint:
@@ -90,6 +101,7 @@ check: lint shellcheck test
 test:
     {{ if ENGINE == "container" { "container run --rm -m 512M -v " + justfile_directory() + ":/repo -w /repo debian:trixie-slim bash tests/entrypoint_test.sh" } else { "bash tests/entrypoint_test.sh" } }}
     bash tests/mapcycle_test.sh
+    bash tests/mounts_test.sh
     {{ if ENGINE == "container" { "echo 'compose tests skipped: Apple container has no compose'" } else { "bash tests/compose_test.sh" } }}
 
 # Exec into running container
