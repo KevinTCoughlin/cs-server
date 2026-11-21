@@ -29,7 +29,7 @@ just check                          # both
 ## Project Layout
 
 ```
-Containerfile              Multi-stage Debian 13 build (builder + runtime)
+Containerfile              Multi-stage Debian 13 build (builder + plugins + runtime)
 compose.yml                Podman Compose service definition
 entrypoint.sh              Container startup: FIFO control, graceful shutdown, PTY
 scripts/i386-compat.sh     Per-arch i386 libs + qemu-i386 emulation (arm64)
@@ -80,7 +80,8 @@ quadlet/
 
 ## Architecture
 
-- **Multi-stage container build**: Stage 1 (builder) downloads SteamCMD, HLDS, and the full ReHLDS stack, compiles all AMX Mod X plugins via a `for` loop, copies configs. Stage 2 (runtime) is a clean Debian 13-slim with only i386 runtime libs.
+- **Multi-stage container build**: `builder` downloads SteamCMD, HLDS, the full ReHLDS stack and bot profiles (only pinned versions, no repo content, so it stays cached); `plugins` (FROM builder) compiles the AMX Mod X plugins via a `for` loop; `runtime` is a clean Debian 13-slim with only i386 runtime libs that copies the ~1 GB `/hlds` as one stable layer, then maps, sounds, `.amxx` and configs as small layers on top. Keep repo content out of `builder`, or every edit re-copies all of `/hlds`. The i386-compat `RUN`s bind only `i386-compat.sh` and `i386-qemu-shim.c` (a bind mount's contents are part of the cache key).
+- **Apple container VM sizing**: 640M / 2 CPUs (`CS_MEMORY` / `CS_CPUS`); measured ~240 MiB HLDS+qemu RSS and ~250 server FPS with 10 bots. `ops/cs-server` stops the builder VM after a build it started.
 - **Aggressive image optimization**: dpkg configured to exclude documentation, man pages, locales, bug templates, lintian overrides, MIME database, and info pages during package installation. Runtime cleanup removes all APT caches, logs, and temporary files. Combined with setuid/setgid bit removal for security hardening.
 - **Runtime base image**: Debian 13 "Trixie" chosen for optimal security and performance in 2026:
   - 5-year security support (until ~2030) for long-term maintenance

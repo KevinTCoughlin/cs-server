@@ -35,8 +35,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # i386 libraries are arch-specific. --runner adds run-i386, which executes
 # build-time i386 tools (SteamCMD, amxxpc): a plain exec on x86, qemu-i386
-# with the Steam compatibility shim on arm64 (see scripts/i386-compat.sh)
-RUN --mount=type=bind,source=scripts,target=/usr/local/src/cs-server \
+# with the Steam compatibility shim on arm64 (see scripts/i386-compat.sh).
+# Bind only the two files it reads: a bind mount's contents are part of the
+# cache key, so mounting all of scripts/ made an edit to mode.sh or
+# fetch-maps.sh re-run SteamCMD and the whole HLDS download below.
+RUN --mount=type=bind,source=scripts/i386-compat.sh,target=/usr/local/src/cs-server/i386-compat.sh \
+    --mount=type=bind,source=scripts/i386-qemu-shim.c,target=/usr/local/src/cs-server/i386-qemu-shim.c \
     bash /usr/local/src/cs-server/i386-compat.sh install --runner \
         ca-certificates \
         curl \
@@ -118,43 +122,33 @@ RUN curl -fsSL "https://github.com/rehlds/ReAPI/releases/download/${REAPI_VERSIO
        cstrike/addons/amxmodx/scripting/include/ 2>/dev/null || true && \
     rm -rf /tmp/reapi /tmp/reapi.zip
 
-# Copy bundled default maps, then overlay any local custom maps.
-COPY docs/cstrike/maps/*.bsp docs/cstrike/maps/*.nav cstrike/maps/
-COPY maps/ cstrike/maps/
-
-# Compile custom AMX Mod X plugins
-COPY plugins/amxmodx/scripting/*.sma cstrike/addons/amxmodx/scripting/
-WORKDIR /hlds/cstrike/addons/amxmodx/scripting
-RUN chmod +x amxxpc compile.sh && \
-    for sma in scoutzknivez.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma; do \
-        run-i386 ./amxxpc "$sma" || exit 1; \
-        mv "${sma%.sma}.amxx" ../plugins/ || exit 1; \
-    done
-WORKDIR /hlds
-
-# Copy AQS config and quake sound files
-COPY plugins/amxmodx/AQS.ini cstrike/addons/amxmodx/configs/AQS.ini
-COPY sound/ cstrike/sound/
-
 # --- CZ Bots (ZBot profiles + sounds from ReGameDLL_CS) ---
 RUN curl -fsSL "https://raw.githubusercontent.com/rehlds/ReGameDLL_CS/${REGAMEDLL_VERSION}/regamedll/extra/zBot/bot_profiles.zip" \
         -o /tmp/bot_profiles.zip && \
     unzip -o /tmp/bot_profiles.zip -d . && \
     rm -f /tmp/bot_profiles.zip
 
-# Copy config files into image
-COPY config/server.cfg     cstrike/server.cfg
-COPY config/mapcycle*.txt  cstrike/
-COPY config/modes/         cstrike/modes/
-COPY config/autoexec.cfg   cstrike/autoexec.cfg
-COPY config/game_init.cfg  cstrike/game_init.cfg
-COPY config/liblist.gam    cstrike/liblist.gam
-COPY plugins/metamod/plugins.ini   cstrike/addons/metamod/plugins.ini
-COPY plugins/amxmodx/plugins.ini   cstrike/addons/amxmodx/configs/plugins.ini
-
 # Ensure binaries are executable and set Steam app ID
 RUN chmod +x hlds_linux hlds_run && \
     echo 70 > steam_appid.txt
+
+# The builder stage ends here: /hlds is the ~1 GB engine + game payload and
+# only changes with the pinned versions above. Repo content (maps, sounds,
+# plugins, configs) is layered on top in the runtime stage, so editing it
+# rebuilds a few small layers instead of re-copying all of /hlds.
+
+# ---------------------------------------------------------------------------
+# Stage 1b: Plugins — compile custom AMX Mod X plugins with the pinned amxxpc
+# ---------------------------------------------------------------------------
+FROM builder AS plugins
+
+COPY plugins/amxmodx/scripting/*.sma /hlds/cstrike/addons/amxmodx/scripting/
+WORKDIR /hlds/cstrike/addons/amxmodx/scripting
+RUN chmod +x amxxpc && mkdir -p /out && \
+    for sma in scoutzknivez.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma; do \
+        run-i386 ./amxxpc "$sma" || exit 1; \
+        mv "${sma%.sma}.amxx" /out/ || exit 1; \
+    done
 
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime — clean slim image, no build tools
@@ -170,7 +164,8 @@ RUN printf 'path-exclude=/usr/share/doc/*\npath-include=/usr/share/doc/*/copyrig
 
 # i386 runtime libraries for this architecture; on non-x86 (arm64) also a
 # static qemu-i386 + hlds_linux launcher (see scripts/i386-compat.sh)
-RUN --mount=type=bind,source=scripts,target=/usr/local/src/cs-server \
+RUN --mount=type=bind,source=scripts/i386-compat.sh,target=/usr/local/src/cs-server/i386-compat.sh \
+    --mount=type=bind,source=scripts/i386-qemu-shim.c,target=/usr/local/src/cs-server/i386-qemu-shim.c \
     bash /usr/local/src/cs-server/i386-compat.sh install \
     && rm -rf /var/lib/apt/lists/* \
               /var/cache/apt/archives/* \
@@ -186,7 +181,27 @@ RUN --mount=type=bind,source=scripts,target=/usr/local/src/cs-server \
 RUN groupadd --system --gid 10001 hlds && \
     useradd --no-log-init --system --uid 10001 --gid 10001 -s /usr/sbin/nologin hlds
 
+# Stable ~1 GB base first, then repo content ordered from least to most
+# often edited, each its own small layer (see the end of the builder stage).
 COPY --from=builder --chown=hlds:hlds /hlds /hlds
+
+# Bundled default maps, then any local custom maps overlaid on top.
+COPY --chown=hlds:hlds docs/cstrike/maps/*.bsp docs/cstrike/maps/*.nav /hlds/cstrike/maps/
+COPY --chown=hlds:hlds maps/ /hlds/cstrike/maps/
+COPY --chown=hlds:hlds sound/ /hlds/cstrike/sound/
+
+COPY --from=plugins --chown=hlds:hlds /out/ /hlds/cstrike/addons/amxmodx/plugins/
+COPY --chown=hlds:hlds plugins/amxmodx/AQS.ini     /hlds/cstrike/addons/amxmodx/configs/AQS.ini
+COPY --chown=hlds:hlds plugins/amxmodx/plugins.ini /hlds/cstrike/addons/amxmodx/configs/plugins.ini
+COPY --chown=hlds:hlds plugins/metamod/plugins.ini /hlds/cstrike/addons/metamod/plugins.ini
+
+COPY --chown=hlds:hlds config/liblist.gam   /hlds/cstrike/liblist.gam
+COPY --chown=hlds:hlds config/game_init.cfg /hlds/cstrike/game_init.cfg
+COPY --chown=hlds:hlds config/autoexec.cfg  /hlds/cstrike/autoexec.cfg
+COPY --chown=hlds:hlds config/mapcycle*.txt /hlds/cstrike/
+COPY --chown=hlds:hlds config/modes/        /hlds/cstrike/modes/
+COPY --chown=hlds:hlds config/server.cfg    /hlds/cstrike/server.cfg
+
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 
 # Create Steam SDK symlink for steamclient.so (fixes Docker Desktop on Windows)

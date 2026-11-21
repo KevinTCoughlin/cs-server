@@ -158,7 +158,9 @@ just lan            # restart with sv_lan 1 so non-Steam (Xash3D) clients can jo
 
 `just install` uses `ops/cs-server`, the macOS counterpart of the Quadlet unit: a launchd agent (`ops/launchd/com.kevintcoughlin.cs-server.plist`) that starts at login, restarts on crashes, and stops gracefully with the in-game countdown. `ops/cs-server` also has `update`, `restart`, `stop`, `start` and `uninstall`. Put `MAP=…`, `BOTS=…` etc. in `~/.config/cs-server/env`.
 
-**Performance** (M-series, 2 vCPUs, 20 slots, 10 bots, `sys_ticrate 1000`, `pingboost 2`): ~250 server FPS, ~80% of the VM's CPU, ~340 MiB RAM. That is plenty for a LAN or friends server; for a busy public server, use a Linux x86 host. `CS_MEMORY` / `CS_CPUS` change the VM size (default 1 GB / 2 CPUs).
+**Performance** (M-series, 2 vCPUs, 20 slots, 10 bots, `sys_ticrate 1000`, `pingboost 2`): ~250 server FPS, ~80% of the VM's CPU, ~340 MiB RAM. That is plenty for a LAN or friends server; for a busy public server, use a Linux x86 host. `CS_MEMORY` / `CS_CPUS` change the VM size (default 640 MB / 2 CPUs: HLDS under qemu holds ~240 MiB RSS, and the game loop is one thread). `ops/cs-server build`/`update` stop the image builder VM afterwards unless it was already running (`CS_KEEP_BUILDER=1` keeps it).
+
+Rebuilds are incremental: the ~1 GB HLDS payload is one cached layer that only changes with the pinned versions, and maps, sounds, plugins and configs are small layers on top, so `just up` / `cs-server update` after a config or plugin edit take seconds, not a SteamCMD run.
 
 `install.sh` (systemd/Quadlet, amd64 image from ghcr.io) does not support macOS and points you here instead.
 
