@@ -137,9 +137,22 @@ fastdl:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p docs/cstrike/sound/quake docs/cstrike/maps
+    # Maps pinned in maps/manifest.tsv stay off FastDL unless their row says
+    # fastdl=yes (the author's terms allow re-hosting).
+    blocked=" "
+    while IFS=$'\t' read -r name _url _sum _license _attribution _extras fastdl; do
+        [[ -z "$name" || "$name" == \#* || "${fastdl:-no}" == yes ]] && continue
+        blocked+="$name "
+    done < maps/manifest.tsv
     count=0
+    skipped=0
     for f in sound/quake/*.wav maps/*.bsp maps/*.nav; do
         [ -f "$f" ] || continue
+        base=${f##*/}
+        if [[ "$f" == maps/* && "$blocked" == *" ${base%.*} "* ]]; then
+            skipped=$((skipped + 1))
+            continue
+        fi
         dest="docs/cstrike/$f"
         mkdir -p "$(dirname "$dest")"
         cp "$f" "$dest"
@@ -149,6 +162,9 @@ fastdl:
         count=$((count + 1))
     done
     echo "[fastdl] Synced $count file(s) to docs/cstrike/"
+    if [ "$skipped" -gt 0 ]; then
+        echo "[fastdl] Skipped $skipped file(s) of maps not cleared for FastDL in maps/manifest.tsv"
+    fi
     echo "[fastdl] Commit and push to deploy via GitHub Pages"
 
 # Fetch third-party maps pinned in maps/manifest.tsv (sha256-checked)
