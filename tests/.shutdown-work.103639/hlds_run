@@ -1,8 +1,0 @@
-#!/bin/sh
-: > "${RECORD}.ready"
-while IFS= read -r line; do
-    printf '%s\n' "${line}" >> "${RECORD}"
-    if [ "${line}" = quit ] && [ "${IGNORE_QUIT:-0}" != 1 ]; then
-        exit 0
-    fi
-done

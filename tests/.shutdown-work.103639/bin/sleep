@@ -1,2 +1,0 @@
-#!/bin/sh
-exec /usr/bin/sleep 0.5
