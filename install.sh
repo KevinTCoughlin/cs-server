@@ -16,18 +16,31 @@
 #   5. Starts the server
 #
 # Optional settings (environment):
-#   CS_SERVER_IMAGE  image to run instead of :latest (a tag or a digest)
-#   CS_RCON=1        generate an rcon_password for network rcon (off by default;
-#                    the local console needs none)
-#   FASTDL_URL       http(s) URL that serves your cstrike/ content
+#   CS_SERVER_VERSION  release to run instead of :latest: 1.0.0 (exact), 1.0 or
+#                      1 (newest patch / minor of that line)
+#   CS_SERVER_IMAGE    full image reference instead, e.g. one pinned by digest
+#   CS_AUTO_UPDATE=1   Podman only: let podman-auto-update pull new images for
+#                      the tag (use with CS_SERVER_VERSION=1 or 1.0)
+#   CS_RCON=1          generate an rcon_password for network rcon (off by
+#                      default; the local console needs none)
+#   FASTDL_URL         http(s) URL that serves your cstrike/ content
 #
 set -euo pipefail
 umask 077
 
 REPO="KevinTCoughlin/cs-server"
 REGISTRY="ghcr.io"
-IMAGE="${REGISTRY}/${REPO}:latest"
+# Image names are lowercase; engines reject the repository's mixed case.
+IMAGE_REPO="${REGISTRY}/kevintcoughlin/cs-server"
+VERSION="${CS_SERVER_VERSION:-}"
+VERSION="${VERSION#v}"
+if [[ -n "${VERSION}" && ! "${VERSION}" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+    printf '[error] Invalid CS_SERVER_VERSION: %s (expected 1.0.0, 1.0 or 1)\n' "${CS_SERVER_VERSION}" >&2
+    exit 1
+fi
+IMAGE="${IMAGE_REPO}:${VERSION:-latest}"
 IMAGE="${CS_SERVER_IMAGE:-${IMAGE}}"
+AUTO_UPDATE="${CS_AUTO_UPDATE:-0}"
 SERVICE_NAME="scoutzknivez"
 CONFIG_DIR="${HOME}/.config/cs-server"
 QUADLET_DIR="${HOME}/.config/containers/systemd"
@@ -35,6 +48,12 @@ RUNTIME=""
 
 if [[ -z "${IMAGE}" || "${IMAGE}" =~ [[:space:]] ]]; then
     printf '[error] Invalid CS_SERVER_IMAGE: %s\n' "${IMAGE}" >&2
+    exit 1
+fi
+
+# Auto-update follows a tag; a digest never changes.
+if [[ "${AUTO_UPDATE}" == "1" && "${IMAGE}" == *@sha256:* ]]; then
+    printf '[error] CS_AUTO_UPDATE=1 needs a tag, not a digest: %s\n' "${IMAGE}" >&2
     exit 1
 fi
 
@@ -66,9 +85,14 @@ Supports Podman (preferred) and Docker. The script auto-detects
 which runtime is available, preferring Podman when both are present.
 
 Environment:
-  CS_SERVER_IMAGE=<image>  Run this image (tag or digest) instead of :latest
+  CS_SERVER_VERSION=<v>    Run a release instead of :latest: 1.0.0, 1.0 or 1
+  CS_SERVER_IMAGE=<image>  Run this image reference instead (e.g. a digest)
+  CS_AUTO_UPDATE=1         Podman: pull new images for the tag automatically
   CS_RCON=1                Generate an rcon_password (network rcon is off by default)
   FASTDL_URL=<url>         http(s) URL that serves your cstrike/ content
+
+Upgrade or roll back: run the installer again with another CS_SERVER_VERSION
+(or CS_SERVER_IMAGE). Config files are kept.
 
 Install:
   curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash
@@ -228,6 +252,19 @@ do_install() {
     ${RUNTIME} pull "${IMAGE}"
     ok "Image pulled"
 
+    # The digest names exactly this build: keep it to come back to.
+    local digest
+    digest=$(${RUNTIME} image inspect --format '{{index .RepoDigests 0}}' "${IMAGE}" 2>/dev/null) || digest=""
+    if [[ "${digest}" == *@sha256:* ]]; then
+        info "This build: ${digest}"
+        info "To return to it later: CS_SERVER_IMAGE=${digest}"
+    fi
+
+    if [[ "${AUTO_UPDATE}" == "1" && "${RUNTIME}" != "podman" ]]; then
+        warn "CS_AUTO_UPDATE=1 is only supported with Podman; ignoring it"
+        AUTO_UPDATE=0
+    fi
+
     # --- Create config directory ---------------------------------------------
 
     info "Creating config directory: ${CONFIG_DIR}"
@@ -294,6 +331,12 @@ seed_config() {
 # --- Podman install (Quadlet) -----------------------------------------------
 
 install_podman() {
+    # A running server keeps its old image until restarted (upgrade, rollback).
+    local was_active=0
+    if systemctl --user is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+        was_active=1
+    fi
+
     info "Installing Quadlet systemd unit"
     mkdir -p "${QUADLET_DIR}"
 
@@ -301,6 +344,13 @@ install_podman() {
     local fastdl_env=""
     if [[ -n "${FASTDL_URL}" ]]; then
         fastdl_env=$'\n'"Environment=FASTDL_URL=${FASTDL_URL//%/%%}"
+    fi
+    # podman-auto-update pulls the tag, restarts the unit and, because the
+    # unit only counts as started once healthy (Notify=healthy), puts the
+    # previous image back when the new one does not come up.
+    local auto_update=""
+    if [[ "${AUTO_UPDATE}" == "1" ]]; then
+        auto_update=$'\n'"AutoUpdate=registry"
     fi
 
     cat > "${QUADLET_DIR}/${SERVICE_NAME}.container" << QUADLET
@@ -310,7 +360,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Container]
-Image=${IMAGE}
+Image=${IMAGE}${auto_update}
 ContainerName=${SERVICE_NAME}
 PublishPort=27015:27015/udp
 Volume=${CONFIG_DIR}/server.cfg:/hlds/cstrike/server.cfg:ro,Z
@@ -354,6 +404,14 @@ QUADLET
     info "Reloading systemd and starting server"
     systemctl --user daemon-reload
     systemctl --user enable --now "${SERVICE_NAME}"
+    if [[ "${was_active}" == "1" ]]; then
+        info "Restarting the running server on ${IMAGE} (in-game countdown, about 35 s)"
+        systemctl --user restart "${SERVICE_NAME}"
+    fi
+    if [[ "${AUTO_UPDATE}" == "1" ]]; then
+        systemctl --user enable --now podman-auto-update.timer
+        ok "Automatic updates enabled (podman-auto-update.timer, daily)"
+    fi
 
     sleep 3
 
@@ -371,6 +429,7 @@ QUADLET
     server_ip=$(hostname -I 2>/dev/null | awk '{print $1}') || server_ip=""
     server_ip="${server_ip:-your-ip}"
     echo "  Server address:  ${server_ip}:27015"
+    echo "  Image:           ${IMAGE}"
     echo "  Config files:    ${CONFIG_DIR}/"
     echo "  Quadlet unit:    ${QUADLET_DIR}/${SERVICE_NAME}.container"
     echo ""
@@ -447,6 +506,7 @@ install_docker() {
     server_ip=$(hostname -I 2>/dev/null | awk '{print $1}') || server_ip=""
     server_ip="${server_ip:-your-ip}"
     echo "  Server address:  ${server_ip}:27015"
+    echo "  Image:           ${IMAGE}"
     echo "  Config files:    ${CONFIG_DIR}/"
     echo ""
     echo "  Useful commands:"

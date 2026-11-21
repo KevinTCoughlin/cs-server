@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: MIT
 name: Docker Image Build & Scan
 
+# A `v*.*.*` tag is a release: the same build and tests, then the version tags
+# on the image and a GitHub release. Path filters do not apply to tag pushes.
 on:
   push:
     branches: [main]
+    tags: ['v*.*.*']
     paths:
       - 'Containerfile'
       - '.containerignore'
@@ -254,6 +257,7 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
 
@@ -281,3 +285,61 @@ jobs:
           name: sbom
           path: sbom.spdx.json
           retention-days: 30
+
+  # Tag pushes only: a GitHub release whose notes are the tag's CHANGELOG.md
+  # section plus the image references, with the SBOM attached.
+  release:
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Lowercase image name
+        run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      - name: Download SBOM
+        uses: actions/download-artifact@v8
+        with:
+          name: sbom
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write release notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          image="${REGISTRY}/${IMAGE_NAME}"
+          digest=$(docker buildx imagetools inspect "${image}:${version}" --format '{{json .Manifest}}' | jq -r .digest)
+          [[ "${digest}" == sha256:* ]] || { echo "::error::no digest for ${image}:${version}"; exit 1; }
+          # shellcheck disable=SC2016 # the backticks are Markdown
+          {
+            bash scripts/release-notes.sh "${version}"
+            printf '\n### Image\n\n'
+            printf 'Multi-arch (`linux/amd64`, `linux/arm64`):\n\n'
+            printf -- '- `%s:%s`\n' "${image}" "${version}"
+            printf -- '- `%s@%s`\n\n' "${image}" "${digest}"
+            printf 'Install or upgrade to this release:\n\n'
+            printf '```bash\ncurl -fsSL https://raw.githubusercontent.com/%s/%s/install.sh | CS_SERVER_VERSION=%s bash\n```\n' "${GITHUB_REPOSITORY}" "${TAG}" "${version}"
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "${TAG}" --verify-tag --title "${TAG}" --notes-file release-notes.md sbom.spdx.json

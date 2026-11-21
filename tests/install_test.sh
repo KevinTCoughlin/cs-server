@@ -42,7 +42,16 @@ case "$1" in
         esac
         ;;
     container) [ "${FAKE_CONTAINER:-0}" = 1 ] && echo true ;;
-    image) [ "${FAKE_IMAGE:-0}" = 1 ] ;;
+    image)
+        case "$*" in
+            *RepoDigests*)
+                [ -n "${FAKE_DIGEST:-}" ] || exit 1
+                echo "${FAKE_DIGEST}"
+                exit 0
+                ;;
+        esac
+        [ "${FAKE_IMAGE:-0}" = 1 ]
+        ;;
 esac
 EOF
 cat > "${STUBS}/systemctl" <<'EOF'
@@ -202,6 +211,51 @@ assert_contains "unit carries the FastDL URL" "${unit}" 'Environment=FASTDL_URL=
 install 'FASTDL_URL=https://example.com/";quit'
 expect_die "bad FASTDL_URL" "Invalid FASTDL_URL"
 
+# --- Pinning, upgrade and rollback ------------------------------------------
+# Default image: lowercase (engines reject the repository's mixed case).
+fresh_home
+install FAKE_ACTIVE=0
+expect_ok "default install"
+assert_contains "pulls the default image" "${calls}" "podman pull ghcr.io/kevintcoughlin/cs-server:latest"
+unit=$(cat "${UNIT}")
+assert_contains "unit runs the default image" "${unit}" "Image=ghcr.io/kevintcoughlin/cs-server:latest"
+assert_not_contains "no auto-update unless asked for" "${unit}" "AutoUpdate"
+assert_not_contains "no auto-update timer unless asked for" "${calls}" "podman-auto-update.timer"
+assert_not_contains "a stopped server is started, not restarted" "${calls}" "systemctl --user restart"
+
+# CS_SERVER_VERSION pins a release; with the server running it is restarted
+# onto the new image, and the build's digest is printed for a later rollback.
+install CS_SERVER_VERSION=v1.2.3 FAKE_DIGEST=ghcr.io/kevintcoughlin/cs-server@sha256:abc123
+expect_ok "pinned upgrade"
+assert_contains "pulls the pinned release" "${calls}" "podman pull ghcr.io/kevintcoughlin/cs-server:1.2.3"
+unit=$(cat "${UNIT}")
+assert_contains "unit runs the pinned release" "${unit}" "Image=ghcr.io/kevintcoughlin/cs-server:1.2.3"
+assert_contains "a running server is restarted onto it" "${calls}" "systemctl --user restart scoutzknivez"
+assert_contains "prints the digest to roll back to" "${output}" "CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:abc123"
+
+install CS_SERVER_VERSION=1
+expect_ok "floating major"
+assert_contains "pulls the floating major tag" "${calls}" "podman pull ghcr.io/kevintcoughlin/cs-server:1"
+install CS_SERVER_VERSION=latest
+expect_die "bad version" "Invalid CS_SERVER_VERSION"
+install "CS_SERVER_VERSION=1.0.0;x"
+expect_die "bad version" "Invalid CS_SERVER_VERSION"
+
+# Rollback: a digest reference wins over a version.
+install CS_SERVER_VERSION=1.2.3 CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:abc123
+expect_ok "rollback to a digest"
+unit=$(cat "${UNIT}")
+assert_contains "unit runs the digest" "${unit}" "Image=ghcr.io/kevintcoughlin/cs-server@sha256:abc123"
+
+# Auto-update: a label on the unit plus Podman's timer; needs a tag.
+install CS_SERVER_VERSION=1 CS_AUTO_UPDATE=1
+expect_ok "auto-update"
+unit=$(cat "${UNIT}")
+assert_contains "unit opts in to auto-update" "${unit}" "AutoUpdate=registry"
+assert_contains "auto-update timer is enabled" "${calls}" "systemctl --user enable --now podman-auto-update.timer"
+install CS_AUTO_UPDATE=1 CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:abc123
+expect_die "auto-update with a digest" "needs a tag, not a digest"
+
 # An image too old to carry a mounted file is refused, not half-installed.
 fresh_home
 mkdir -p "${WORK}/old-image"
@@ -231,7 +285,7 @@ for flag in "--name scoutzknivez" "--restart on-failure:10" "--security-opt secc
     "-v ${CONFIG}/modes:/hlds/cstrike/modes:ro" "--memory 512m" "--cpus 2" "-e MODE=scoutz"; do
     assert_contains "docker run flag" "${run_line}" "${flag}"
 done
-if [[ "${run_line}" != *" ghcr.io/KevinTCoughlin/cs-server:latest" ]]; then
+if [[ "${run_line}" != *" ghcr.io/kevintcoughlin/cs-server:latest" ]]; then
     fail "docker run: the default image must be the last argument: ${run_line}"
 fi
 assert_not_contains "docker path uses no systemd" "${calls}" "systemctl"
@@ -239,6 +293,15 @@ assert_not_contains "docker publishes no TCP port" "${run_line}" "/tcp"
 assert_not_contains "docker: no FastDL URL unless asked for" "${run_line}" "FASTDL_URL"
 count=$(count_lines "${CONFIG}/server.cfg" "rcon_password")
 assert_eq "docker: no RCON password unless asked for" 0 "${count}"
+
+fresh_home
+install FAKE_CONTAINER=1 CS_SERVER_VERSION=1.2.3 CS_AUTO_UPDATE=1
+expect_ok "docker pinned install"
+run_line=$(grep '^docker run -d ' "${LOG}")
+if [[ "${run_line}" != *" ghcr.io/kevintcoughlin/cs-server:1.2.3" ]]; then
+    fail "docker run: the pinned release must be the last argument: ${run_line}"
+fi
+assert_contains "docker: auto-update is declined" "${output}" "only supported with Podman"
 
 fresh_home
 install FAKE_CONTAINER=1 FASTDL_URL=https://example.com/cstrike/
@@ -263,7 +326,7 @@ ANSWERS=$'y\ny' install FAKE_IMAGE=1 FAKE_ACTIVE=0 -- --uninstall
 expect_ok "podman uninstall, remove everything"
 assert_not_contains "a stopped service is not stopped again" "${calls}" "systemctl --user stop"
 [[ ! -e "${CONFIG}" ]] || fail "uninstall kept config after the answer was yes"
-assert_contains "image removed after the answer was yes" "${calls}" "podman rmi ghcr.io/KevinTCoughlin/cs-server:latest"
+assert_contains "image removed after the answer was yes" "${calls}" "podman rmi ghcr.io/kevintcoughlin/cs-server:latest"
 
 use_runtimes docker
 ANSWERS="" install FAKE_CONTAINER=1 -- --uninstall
