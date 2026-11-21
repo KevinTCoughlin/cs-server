@@ -5,9 +5,10 @@
 # ops/firewall/cs-server.nft: loads (twice, it replaces itself), drops a
 # burst of query packets from one source and leaves in-game packets alone.
 #
-# Runs in a private network namespace (unshare -rn), so it needs no root and
-# touches no host rule. Skips when nft, unshare or python3 is missing or the
-# host does not allow unprivileged namespaces.
+# Runs in a private network namespace, so it touches no host rule: an
+# unprivileged one (unshare -rn) where the host allows it, otherwise one made
+# with passwordless sudo. Skips when nft, unshare or python3 is missing or
+# neither kind of namespace is available.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -22,9 +23,15 @@ if [[ "${1:-}" != "--inside" ]]; then
     for tool in nft unshare python3; do
         command -v "${tool}" >/dev/null 2>&1 || skip "${tool} not installed"
     done
-    unshare -rn true 2>/dev/null || skip "unprivileged network namespaces are not available"
-    unshare -rn nft list tables >/dev/null 2>&1 || skip "nftables is not usable in a user namespace"
-    exec unshare -rn bash "${BASH_SOURCE[0]}" --inside
+    if unshare -rn nft list tables >/dev/null 2>&1; then
+        exec unshare -rn bash "${BASH_SOURCE[0]}" --inside
+    fi
+    # Hosts that forbid unprivileged namespaces (GitHub's runners): a root
+    # network namespace, when sudo needs no password.
+    if sudo -n true 2>/dev/null; then
+        exec sudo -n env "PATH=${PATH}" unshare -n bash "${BASH_SOURCE[0]}" --inside
+    fi
+    skip "no network namespace available (unprivileged namespaces are off and sudo needs a password)"
 fi
 
 # shellcheck disable=SC1091 # lib.sh is linted on its own
