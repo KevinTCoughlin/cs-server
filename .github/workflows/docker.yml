@@ -13,6 +13,8 @@ on:
       - 'plugins/**'
       - 'maps/**'
       - 'docs/cstrike/maps/**'
+      - 'tests/e2e_test.sh'
+      - 'tests/lib.sh'
       - '.github/workflows/docker.yml'
   pull_request:
     branches: [main]
@@ -25,6 +27,8 @@ on:
       - 'plugins/**'
       - 'maps/**'
       - 'docs/cstrike/maps/**'
+      - 'tests/e2e_test.sh'
+      - 'tests/lib.sh'
       - '.github/workflows/docker.yml'
   workflow_dispatch:
 
@@ -56,9 +60,11 @@ jobs:
           - arch: amd64
             runner: ubuntu-24.04
             steam_timeout: 180
+            e2e_timeout_scale: 1
           - arch: arm64
             runner: ubuntu-24.04-arm
             steam_timeout: 300
+            e2e_timeout_scale: 2
     env:
       LOCAL_IMAGE: local/cs-server:ci
 
@@ -126,7 +132,7 @@ jobs:
             if docker logs hlds-smoke 2>&1 | grep -q 'Connection to Steam servers successful'; then
               docker logs hlds-smoke 2>&1 | grep -E 'Connection to Steam|VAC secure'
               docker exec hlds-smoke /healthcheck.sh
-              echo 'health check: server answers A2S_INFO'
+              echo 'health check: server answers a ping on its game port'
               docker rm -f hlds-smoke >/dev/null
               exit 0
             fi
@@ -136,6 +142,14 @@ jobs:
           docker logs hlds-smoke 2>&1 | tail -40
           docker rm -f hlds-smoke >/dev/null
           exit 1
+
+      # Drives the running server through its console FIFO: every plugin
+      # loads, mode switching in both directions, each mapcycle map in the
+      # image, graceful shutdown. NOMASTER + LAN mode: no dependency on Steam.
+      - name: End-to-end test — plugins, mode switching, maps, shutdown
+        env:
+          CS_E2E_TIMEOUT_SCALE: ${{ matrix.e2e_timeout_scale }}
+        run: bash tests/e2e_test.sh docker "${LOCAL_IMAGE}"
 
       - name: Run Trivy vulnerability scanner
         id: trivy
