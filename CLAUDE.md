@@ -43,6 +43,8 @@ scripts/fetch-maps.sh      Fetch sha256-pinned maps from maps/manifest.tsv
 ops/cs-server              macOS launchd service wrapper (Apple container)
 ops/launchd/               launchd agent templates (server + Nipper Friday)
 ops/systemd/               Nipper Friday systemd user timer (Linux)
+ops/seccomp/               Docker's upstream default seccomp profile (vendored; Docker 29's built-in one breaks i386 socket())
+ops/firewall/              nftables query-flood rate limit + boot unit (opt-in, never auto-applied)
 config/
   server.cfg               Game server settings (gravity, air control, rounds)
   mapcycle.txt             Map rotation (3 scoutzknivez variants)

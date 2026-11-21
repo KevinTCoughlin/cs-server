@@ -64,12 +64,14 @@ connect <your-lan-ip>:27015
 ```
 
 > **Docker users:** replace `podman` with `docker` in the commands below, and
-> add `--security-opt seccomp=unconfined` on x86_64 hosts. Docker's default
-> seccomp profile (seen with Docker 29) rejects HLDS's 32-bit `socket()` call
-> with `ENOSYS`, so the server can't open its port and crash-loops
-> (`UDP_OpenSocket … Function not implemented`). Podman's default profile and
-> Apple `container` are unaffected; `compose.yml` and `install.sh` already set
-> it. See [Container Hardening](#container-hardening).
+> on x86_64 hosts add
+> `--security-opt seccomp=ops/seccomp/docker-default.json` (the file is in
+> this repository). The seccomp profile built into Docker 29 rejects HLDS's
+> 32-bit `socket()` call with `ENOSYS`, so the server can't open its port and
+> crash-loops (`UDP_OpenSocket … Function not implemented`); that file is
+> Docker's own upstream default profile, which works. Podman's default
+> profile and Apple `container` are unaffected; `compose.yml` and
+> `install.sh` already set it. See [Container Hardening](#container-hardening).
 
 ### Option 2: Build from source
 
@@ -201,8 +203,8 @@ systemctl --user edit scoutzknivez
 # Environment=MAP=de_dust2
 systemctl --user restart scoutzknivez
 
-# Docker
-docker run -d --security-opt seccomp=unconfined \
+# Docker (from a checkout; see "Docker users" above for the profile)
+docker run -d --security-opt seccomp=ops/seccomp/docker-default.json \
   -p 27015:27015/udp \
   -e MAP=de_dust2 \
   -e MAPCYCLE=mapcycle-dust2.txt \
@@ -558,12 +560,16 @@ The Quadlet is configured with `WantedBy=default.target`, so the server starts a
 
 - **No Linux capabilities** — all capabilities dropped via `DropCapability=ALL`
 - **No privilege escalation** — `NoNewPrivileges=true` prevents gaining new privileges via setuid/setgid binaries
-- **Seccomp (Docker only)** — Docker's default seccomp profile blocks the
-  32-bit `socket()` syscall the i386 HLDS binary needs, so `compose.yml` and
-  `install.sh` run it with `seccomp=unconfined` (`compose.yml` is shared, so
-  this also applies under `podman compose`). Every capability is still
-  dropped and `no-new-privileges` still applies. The Quadlet unit keeps
-  Podman's default profile, which allows the call
+- **Seccomp** — the server always runs under a default-deny seccomp profile.
+  The Quadlet unit uses Podman's default. On Docker, the profile built into
+  Docker 29 blocks the 32-bit `socket()` syscall the i386 HLDS binary needs,
+  so `compose.yml` and `install.sh` pass Docker's own upstream default
+  profile as a file instead
+  ([`ops/seccomp/docker-default.json`](ops/seccomp/README.md); `compose.yml`
+  is shared, so this also applies under `podman compose`). Earlier versions
+  ran Docker with `seccomp=unconfined`; `install.sh` still falls back to
+  that, with a warning, for an image older than 1.1.0, which carries no
+  profile
 - **Read-only root filesystem** — `ReadOnly=true` (Quadlet), `read_only: true`
   (Compose), `--read-only` (`install.sh` on Docker). The server can write to
   two places only: the [state volume](#saved-state-and-logs) and a tmpfs on
@@ -601,6 +607,40 @@ a public server, a hosting provider with UDP DDoS protection:
 firewall-cmd --permanent --zone=FedoraWorkstation --add-port=27015/udp
 firewall-cmd --reload
 ```
+
+#### Query floods
+
+A public GoldSrc server attracts floods of server-browser queries, often with
+a forged source address so that the server's replies land on someone else.
+`sv_max_queries_sec` (see [HLDS Anti-Abuse](#hlds-anti-abuse)) limits the
+replies, but the game thread still reads every packet.
+[`ops/firewall/cs-server.nft`](ops/firewall/cs-server.nft) drops the excess in
+the kernel: queries and connection attempts are limited to 10 a second per
+source address (burst 20); packets from players in the game are not touched.
+
+```bash
+# Try it (gone at reboot)
+sudo nft -f ops/firewall/cs-server.nft
+sudo nft list table inet cs_server      # the counter shows dropped packets
+
+# Keep it across reboots
+sudo install -Dm644 ops/firewall/cs-server.nft /etc/cs-server/firewall.nft
+sudo install -Dm644 ops/firewall/cs-server-firewall.service /etc/systemd/system/cs-server-firewall.service
+sudo systemctl daemon-reload && sudo systemctl enable --now cs-server-firewall.service
+
+# Remove
+sudo systemctl disable --now cs-server-firewall.service   # or: sudo nft delete table inet cs_server
+```
+
+**With firewalld** (Fedora, RHEL): use the same file. The rules live in their
+own nftables table, which firewalld leaves alone, and they run before
+firewalld's; open the port in firewalld as shown above. firewalld's own rich
+rules can only limit a port as a whole, not per source, so they would let one
+flooder lock everyone else out.
+
+The file limits port 27015; edit `define game_port` for another port. It
+works for rootless Podman and for Docker alike (it hooks in before NAT).
+Nothing installs or loads it for you: `install.sh` only points at it.
 
 ## Performance Tuning
 

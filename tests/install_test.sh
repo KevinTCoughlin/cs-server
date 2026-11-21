@@ -24,7 +24,7 @@ UNIT="${HOME_DIR}/.config/containers/systemd/scoutzknivez.container"
 BASH_BIN=$(command -v bash)
 mkdir -p "${TOOLS}" "${STUBS}"
 
-for tool in cat mktemp tar mkdir cp od tr chmod find rm grep awk cut sed; do
+for tool in cat mktemp tar mkdir cp mv od tr chmod find rm grep awk cut sed; do
     path=$(command -v "${tool}") || fail "missing tool: ${tool}"
     ln -s "${path}" "${TOOLS}/${tool}"
 done
@@ -39,6 +39,10 @@ case "$1" in
     run)
         case "$*" in
             *"--entrypoint sh"*) cd "${FAKE_IMAGE_CONFIG}" && tar -cf - server.cfg mapcycle*.txt modes ;;
+            *"--entrypoint cat"*)
+                [ "${FAKE_SECCOMP:-1}" = 1 ] || exit 1
+                echo '{"defaultAction":"SCMP_ACT_ERRNO"}'
+                ;;
         esac
         ;;
     container) [ "${FAKE_CONTAINER:-0}" = 1 ] && echo true ;;
@@ -285,7 +289,7 @@ run_line=$(grep '^docker run -d ' "${LOG}")
 for name in "${CONFIG_NAMES[@]}"; do
     assert_contains "docker mounts ${name}" "${run_line}" "-v ${CONFIG}/${name}:/hlds/cstrike/${name}:ro"
 done
-for flag in "--name scoutzknivez" "--restart on-failure:10" "--security-opt seccomp=unconfined" \
+for flag in "--name scoutzknivez" "--restart on-failure:10" "--security-opt seccomp=${CONFIG}/seccomp.json" \
     "--security-opt no-new-privileges" "--cap-drop ALL" "-p 27015:27015/udp" \
     "-v ${CONFIG}/modes:/hlds/cstrike/modes:ro" "--memory 512m" "--cpus 2" "-e MODE=scoutz"; do
     assert_contains "docker run flag" "${run_line}" "${flag}"
@@ -294,6 +298,17 @@ if [[ "${run_line}" != *" ghcr.io/kevintcoughlin/cs-server:latest" ]]; then
     fail "docker run: the default image must be the last argument: ${run_line}"
 fi
 assert_not_contains "docker path uses no systemd" "${calls}" "systemctl"
+assert_contains "reads the seccomp profile out of the image" "${calls}" \
+    "docker run --rm --network none --entrypoint cat ghcr.io/kevintcoughlin/cs-server:latest /usr/local/share/cs-server/seccomp.json"
+assert_eq "the profile is saved for docker run" '{"defaultAction":"SCMP_ACT_ERRNO"}' "$(cat "${CONFIG}/seccomp.json")"
+
+fresh_home
+install FAKE_CONTAINER=1 FAKE_SECCOMP=0
+expect_ok "docker install of an image without a seccomp profile"
+run_line=$(grep '^docker run -d ' "${LOG}")
+assert_contains "falls back to unconfined" "${run_line}" "--security-opt seccomp=unconfined "
+assert_contains "and says so" "${output}" "has no seccomp profile"
+[[ ! -e "${CONFIG}/seccomp.json" ]] || fail "a failed profile read left a seccomp.json behind"
 assert_not_contains "docker publishes no TCP port" "${run_line}" "/tcp"
 assert_not_contains "docker: no FastDL URL unless asked for" "${run_line}" "FASTDL_URL"
 count=$(count_lines "${CONFIG}/server.cfg" "rcon_password")
@@ -315,6 +330,24 @@ run_line=$(grep '^docker run -d ' "${LOG}")
 assert_contains "docker run carries the FastDL URL" "${run_line}" "-e FASTDL_URL=https://example.com/cstrike/ "
 assert_contains "docker run mounts the state volume" "${run_line}" " -v cs-server-state:/hlds/state "
 assert_contains "docker run: read-only root" "${run_line}" " --read-only --tmpfs /tmp "
+
+# --- Firewall recipe: mentioned, never applied -------------------------------
+cat > "${STUBS}/nft" <<'EOF'
+#!/bin/sh
+printf 'nft %s\n' "$*" >> "${CALLS}"
+EOF
+chmod +x "${STUBS}/nft"
+use_runtimes podman
+fresh_home
+install
+expect_ok "install on a host with nftables"
+assert_contains "points at the query-flood recipe" "${output}" "#query-floods"
+assert_not_contains "never runs nft itself" "${calls}" "nft "
+rm -f "${STUBS}/nft"
+fresh_home
+install
+expect_ok "install on a host without nftables"
+assert_not_contains "no recipe hint without nft" "${output}" "#query-floods"
 
 # --- Uninstall --------------------------------------------------------------
 use_runtimes podman

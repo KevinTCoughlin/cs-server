@@ -1,0 +1,52 @@
+#!/usr/sbin/nft -f
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Rate-limit server queries to a CS 1.6 (GoldSrc) server, per source address.
+#
+# Public servers receive floods of A2S queries, often with a forged source
+# address so that the replies hit a third party (reflection). In-engine
+# limits (sv_max_queries_sec) still cost the game thread a look at every
+# packet; this drops the excess in the kernel before it reaches the server.
+#
+# What is limited: "connectionless" packets, whose UDP payload starts with
+# ff ff ff ff. Server-browser queries, pings, rcon and the first packets of a
+# connection are all of this kind. Packets of players who are in the game
+# never start with those bytes and are not touched.
+#
+# The limit: 10 packets a second per source address, with a burst of 20.
+# A server browser refresh or a player connecting sends a handful.
+#
+# Load:    sudo nft -f cs-server.nft        (replaces an earlier copy)
+# Inspect: sudo nft list table inet cs_server
+# Remove:  sudo nft delete table inet cs_server
+#
+# The table is its own, so it sits beside firewalld, ufw or your own rules
+# without changing them; it does not open the port (see the README). The
+# prerouting hook sees packets before NAT, so one rule covers rootless Podman
+# (the port is a host socket) and Docker (the port is forwarded).
+#
+# Another port: change `define game_port`. Several servers: { 27015, 27016 }.
+
+define game_port = 27015
+
+table inet cs_server
+delete table inet cs_server
+
+table inet cs_server {
+    set query_sources {
+        type ipv4_addr
+        size 65536
+        flags dynamic,timeout
+        timeout 1m
+    }
+
+    chain prerouting {
+        type filter hook prerouting priority raw; policy accept;
+
+        # @th,64,32: the 4 bytes after the 8-byte UDP header.
+        udp dport $game_port @th,64,32 0xffffffff \
+            update @query_sources { ip saddr limit rate over 10/second burst 20 packets } \
+            counter drop
+    }
+}

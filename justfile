@@ -108,6 +108,7 @@ test:
     bash tests/fetch_maps_test.sh
     bash tests/install_test.sh
     bash tests/release_notes_test.sh
+    bash tests/firewall_test.sh
     bash tests/ops_test.sh
     {{ if ENGINE == "container" { "echo 'compose tests skipped: Apple container has no compose'" } else { "bash tests/compose_test.sh" } }}
 

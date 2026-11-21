@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Loads ops/firewall/cs-server.nft at boot. System unit (nftables needs root):
+#
+#   sudo install -Dm644 cs-server.nft /etc/cs-server/firewall.nft
+#   sudo install -Dm644 cs-server-firewall.service /etc/systemd/system/cs-server-firewall.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now cs-server-firewall.service
+#
+# Works beside firewalld: the rules live in their own table.
+
+[Unit]
+Description=Rate-limit queries to the CS 1.6 server (nftables)
+Documentation=https://github.com/KevinTCoughlin/cs-server#firewall
+Wants=network-pre.target
+Before=network-pre.target
+After=nftables.service firewalld.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/cs-server/firewall.nft
+ExecReload=/usr/sbin/nft -f /etc/cs-server/firewall.nft
+ExecStop=/usr/sbin/nft delete table inet cs_server
+
+[Install]
+WantedBy=multi-user.target

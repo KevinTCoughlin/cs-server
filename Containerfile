@@ -229,6 +229,10 @@ RUN cs=/hlds/cstrike && amx="${cs}/addons/amxmodx" && \
     ln -s /hlds/state/amxmodx/vault         "${amx}/data/vault" && \
     ln -s /tmp/hlds-runtime                 /hlds/.runtime
 
+# Docker's upstream default seccomp profile; install.sh reads it out of the
+# image for `docker run` (see ops/seccomp/README.md).
+COPY --chmod=644 ops/seccomp/docker-default.json /usr/local/share/cs-server/seccomp.json
+
 # Create Steam SDK symlink for steamclient.so (fixes Docker Desktop on Windows)
 RUN mkdir -p /home/hlds/.steam/sdk32 && \
     ln -s /hlds/steamclient.so /home/hlds/.steam/sdk32/steamclient.so && \

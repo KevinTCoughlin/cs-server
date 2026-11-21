@@ -77,5 +77,15 @@ expect install.sh 1 "ReadOnly=true"
 expect install.sh 1 "--read-only"
 expect install.sh 2 "/tmp"
 
+# Docker runs under the vendored upstream default seccomp profile; nothing
+# runs unconfined except install.sh's fallback for images without the file.
+expect compose.yml 1 "seccomp:./ops/seccomp/docker-default.json"
+expect Containerfile 1 "ops/seccomp/docker-default.json /usr/local/share/cs-server/seccomp.json"
+expect ops/seccomp/docker-default.json 1 '"defaultAction": "SCMP_ACT_ERRNO"'
+if grep -n 'seccomp[=:]unconfined' compose.yml quadlet/scoutzknivez.container justfile tests/e2e_test.sh .github/workflows/*.yml >&2; then
+    printf 'no deployment path or test may run with seccomp=unconfined\n' >&2
+    failed=1
+fi
+
 [[ "${failed}" -eq 0 ]] || exit 1
 printf 'mount tests passed\n'
