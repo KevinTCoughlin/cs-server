@@ -12,6 +12,7 @@ NOMASTER="${NOMASTER:-0}"
 MAPCYCLE="${MAPCYCLE:-mapcycle.txt}"
 LAN_MODE="${LAN_MODE:-0}"
 MODE="${MODE:-scoutz}"
+FASTDL_URL="${FASTDL_URL:-}"
 
 validate_boolean() {
     local name="$1" value="$2"
@@ -51,6 +52,20 @@ validate_filename() {
     fi
 }
 
+# The URL reaches the HLDS console, so it may hold nothing the console treats
+# as syntax (quotes, semicolons, whitespace). The engine sends clients a URL
+# of up to 128 characters and silently drops a longer one.
+validate_url() {
+    local name="$1" value="$2"
+    if [[ -z "${value}" ]]; then
+        return 0
+    fi
+    if [[ "${#value}" -gt 128 || ! "${value}" =~ ^https?://[A-Za-z0-9._~:/?#@!\&=+,%-]+$ ]]; then
+        echo "[entrypoint] ${name} must be an http(s) URL of at most 128 characters without spaces, quotes or semicolons" >&2
+        exit 1
+    fi
+}
+
 validate_boolean "BOTS" "${BOTS}"
 validate_boolean "NOMASTER" "${NOMASTER}"
 validate_boolean "LAN_MODE" "${LAN_MODE}"
@@ -58,6 +73,7 @@ validate_integer "MAXPLAYERS" "${MAXPLAYERS}" 1 32
 validate_integer "PORT" "${PORT}" 1 65535
 validate_filename "MAP" "${MAP}"
 validate_filename "MAPCYCLE" "${MAPCYCLE}"
+validate_url "FASTDL_URL" "${FASTDL_URL}"
 case "${MODE}" in
     scoutz | knife) ;;
     *)
@@ -135,6 +151,15 @@ else
     MASTER_ARGS=()
 fi
 
+# FastDL: set on the command line, not in server.cfg, so each deployment names
+# its own host. The quotes are part of the argument: the console would read
+# the `//` of a bare URL as the start of a comment.
+if [[ -n "${FASTDL_URL}" ]]; then
+    FASTDL_ARGS=(+sv_downloadurl "\"${FASTDL_URL}\"")
+else
+    FASTDL_ARGS=()
+fi
+
 # Use 'script' to give hlds a PTY — without a PTY, hlds_linux does
 # blocking reads on stdin which freezes the game loop.
 # hlds_run handles Steam API init (first crash + auto-restart creates
@@ -153,6 +178,7 @@ HLDS_ARGS=(
     +exec server.cfg
     "${MASTER_ARGS[@]}"
     "${BOT_QUOTA_ARGS[@]}"
+    "${FASTDL_ARGS[@]}"
 )
 # On non-x86 images (arm64), scripts/i386-compat.sh installs a launcher that
 # runs the i386 hlds_linux under qemu-i386; hand it to hlds_run as the binary.

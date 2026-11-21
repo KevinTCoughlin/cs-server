@@ -35,6 +35,12 @@ expect_invalid "MAP must be a filename" "MAP=scoutzknivez;quit"
 expect_invalid "MAPCYCLE must be a filename" MAPCYCLE=../server.cfg
 expect_invalid "MODE must be scoutz or knife" MODE=nipper
 expect_invalid "MODE must be scoutz or knife" "MODE=knife;quit"
+expect_invalid "FASTDL_URL must be an http(s) URL" FASTDL_URL=ftp://example.com/cstrike/
+expect_invalid "FASTDL_URL must be an http(s) URL" FASTDL_URL=example.com/cstrike/
+expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.com/;quit"
+expect_invalid "FASTDL_URL must be an http(s) URL" 'FASTDL_URL=https://example.com/";quit'
+expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.com/a b"
+expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.com/$(printf 'a%.0s' {1..120})"
 
 cat > "${WORK_DIR}/hlds_run" <<'EOF'
 #!/bin/sh
@@ -97,6 +103,41 @@ fi
 run_stub HLDS_EMULATOR="${WORK_DIR}/missing" EXPECTED_BINARY="${WORK_DIR}/missing"
 if [[ "${status}" -ne 17 ]]; then
     printf 'Expected no -binary without an emulated launcher, got %d\n' "${status}" >&2
+    exit 1
+fi
+
+# FASTDL_URL becomes +sv_downloadurl with the quotes inside the argument (a
+# bare URL's `//` would start a console comment); unset, nothing is passed.
+cat > "${WORK_DIR}/hlds_run" <<'EOF'
+#!/bin/sh
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "+sv_downloadurl" ]; then
+        if [ "$2" = "\"${EXPECTED_URL}\"" ]; then
+            exit 19
+        fi
+        exit 20
+    fi
+    shift
+done
+exit 17
+EOF
+chmod +x "${WORK_DIR}/hlds_run"
+
+url='https://example.com/cs/cstrike/?a=1&b=%20'
+run_stub FASTDL_URL="${url}" EXPECTED_URL="${url}"
+if [[ "${status}" -ne 19 ]]; then
+    printf 'Expected FASTDL_URL to reach HLDS as a quoted +sv_downloadurl, got %d\n' "${status}" >&2
+    exit 1
+fi
+
+run_stub FASTDL_URL=
+if [[ "${status}" -ne 17 ]]; then
+    printf 'Expected no +sv_downloadurl without FASTDL_URL, got %d\n' "${status}" >&2
+    exit 1
+fi
+
+if grep -q '^sv_downloadurl' "${ROOT}/config/server.cfg"; then
+    printf 'config/server.cfg must not set sv_downloadurl: it is re-run on every map and would override FASTDL_URL\n' >&2
     exit 1
 fi
 
