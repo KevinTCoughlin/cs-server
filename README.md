@@ -659,7 +659,7 @@ Nothing installs or loads it for you: `install.sh` only points at it.
 
 The server is preconfigured with HLDS/ReHLDS network and tick-rate optimizations:
 
-- **Network buffer sysctls** (`net.core.rmem_max`, `net.core.wmem_max`) — applied automatically per-container via compose, Quadlet, and install.sh. No admin action required.
+- **Network buffers** — the container sets no sysctls. `net.core.rmem_max` and `net.core.wmem_max` belong to the host, and a rootless container that asks for them does not start. A busy host can raise them itself (`sudo sysctl -w net.core.rmem_max=26214400 net.core.wmem_max=26214400`); a single server does not need it.
 - **Host kernel timer and CPU governor** — detected automatically by `install.sh` during installation. The script checks the current state and prints actionable commands if changes are recommended.
 
 ### Host Kernel (optional)

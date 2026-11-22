@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **The Quadlet unit did not start on rootless Podman.** The unit, `install.sh` (Quadlet and `docker run`) and `compose.yml` asked for `net.core.rmem_max` / `net.core.wmem_max`, which belong to the host: the runtime refused with `open /proc/sys/net/core/rmem_max: Permission denied` and the service never came up. The sysctls are gone from every deployment path; the README shows how to raise them on the host. **Run the installer again** to get a unit without them (#92)
+
 ## [1.1.0] - 2026-11-21
 
 State and hardening. What the server saves now survives a replaced container, and the container runs read-only under a seccomp profile on every engine. **Upgrading from 1.0.x: run the installer again** (or add the volume to your unit by hand, see the README); the new settings live in the unit, not in the image.

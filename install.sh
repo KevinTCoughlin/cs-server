@@ -395,8 +395,6 @@ Environment=LAN_MODE=0
 Environment=MODE=scoutz
 Environment=LOGS=1
 Environment=LOG_RETENTION_DAYS=7${fastdl_env}
-Sysctl=net.core.rmem_max=26214400
-Sysctl=net.core.wmem_max=26214400
 ReadOnly=true
 Tmpfs=/tmp
 DropCapability=ALL
@@ -520,8 +518,6 @@ install_docker() {
         -e LOGS=1 \
         -e LOG_RETENTION_DAYS=7 \
         ${fastdl_args[@]+"${fastdl_args[@]}"} \
-        --sysctl net.core.rmem_max=26214400 \
-        --sysctl net.core.wmem_max=26214400 \
         --read-only \
         --tmpfs /tmp \
         --cap-drop ALL \

@@ -87,5 +87,12 @@ if grep -n 'seccomp[=:]unconfined' compose.yml quadlet/scoutzknivez.container ju
     failed=1
 fi
 
+# net.core.* sysctls belong to the host: a rootless container that asks for
+# them does not start (crun: open /proc/sys/net/core/rmem_max: Permission denied).
+if grep -n -i 'sysctl' compose.yml compose.windows.yml quadlet/scoutzknivez.container justfile ops/cs-server install.sh >&2; then
+    printf 'no deployment path may set sysctls\n' >&2
+    failed=1
+fi
+
 [[ "${failed}" -eq 0 ]] || exit 1
 printf 'mount tests passed\n'
