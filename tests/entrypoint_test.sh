@@ -223,7 +223,7 @@ for path in banned.cfg listip.cfg amxmodx/users.ini; do
         exit 1
     fi
 done
-for path in logs amxmodx/logs amxmodx/vault; do
+for path in logs nav amxmodx/logs amxmodx/vault; do
     if [[ ! -d "${state}/${path}" ]]; then
         printf 'Expected the entrypoint to create %s/ in the state directory\n' "${path}" >&2
         exit 1

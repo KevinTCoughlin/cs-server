@@ -9,6 +9,7 @@
 - `SERVER_IP`: IPv4 address for HLDS to bind and report (`+ip`). The health check queries that address.
 
 ### Fixed
+- **Maps without a `.nav` file reloaded over and over with bots on** (`scoutzknivez_2k` and `scoutzknivez_bender` in the default map cycle). Since the read-only root of 1.1.0 the bots could not save the navigation mesh they build, so each load analysed the map, restarted it and analysed it again. The mesh is now saved in the state volume (`nav/`) and built once per map (#96)
 - `compose.windows.yml` claimed to remove the bind mounts, capabilities and security options with empty lists, which Compose ignores when merging. The file now holds the one setting it ever applied (`NOMASTER=1`) and says so; `tests/compose_test.sh` renders the pair. Not run on Docker Desktop for Windows (#100)
 - **A public server on host networking could not reach Steam** when the host's name resolved to a VPN or bridge address (seen with Tailscale): HLDS reported that address and Steam never answered, so the server was not VAC secured or listed. `SERVER_IP` names the right one; the README shows how to spot it (#98)
 

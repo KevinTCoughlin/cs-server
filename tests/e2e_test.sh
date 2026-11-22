@@ -372,6 +372,36 @@ assert_contains "writeip lands in the state volume" "${saved}" "addip 0 192.0.2.
     fail "users.ini was not seeded into the state volume"
 step "ban list, logs and users.ini are in the state volume"
 
+# --- Generated navigation meshes are kept -------------------------------------
+# A map that ships without a .nav has a link into the state volume. The bots
+# analyse it on first load and save the mesh there; the next load must read it
+# back instead of analysing again.
+# shellcheck disable=SC2016 # expands inside the container's sh
+navless=$("${ENGINE}" exec "${NAME}" sh -c 'for n in /hlds/cstrike/maps/scoutzknivez*.nav; do [ -L "$n" ] && basename "$n" .nav && break; done; true')
+if [[ -n "${navless}" ]]; then
+    mark
+    send "changelevel ${navless}"
+    wait_log '\[SK\] mode: ' 90 >/dev/null || fail "changelevel ${navless}: the map did not load"
+    saved=0
+    for _ in $(seq $((120 * SCALE))); do
+        if "${ENGINE}" exec "${NAME}" test -s "/hlds/state/nav/${navless}.nav"; then
+            saved=1
+            break
+        fi
+        sleep 1
+    done
+    assert_eq "generated ${navless}.nav is in the state volume" 1 "${saved}"
+    sleep $((5 * SCALE))
+    mark
+    send "changelevel ${navless}"
+    wait_log '\[SK\] mode: ' 90 >/dev/null || fail "changelevel ${navless}: the map did not reload"
+    sleep $((5 * SCALE))
+    if since_mark 'Failed to load .*navigation map|Merging navigation areas' >/dev/null; then
+        fail "${navless} was analysed again although its mesh is saved"
+    fi
+    step "the mesh for ${navless} was generated once and reused"
+fi
+
 # --- Nothing went wrong along the way ---------------------------------------
 if errors=$(tr -d '\r' < "${LOG}" | grep -aiE 'run time error|bad load|plugin file open error|Segmentation fault'); then
     fail "the server log has plugin or engine errors:
