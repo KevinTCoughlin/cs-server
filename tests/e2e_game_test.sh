@@ -73,13 +73,17 @@ send() {
 
 # The image's row of scripts/game-env.sh.
 row=$("${ENGINE}" run --rm --entrypoint cat "${IMAGE}" "${GAME_ENV}")
-GAME="" GAME_MAP="" GAME_STATS="" GAME_BOTS=0
-eval "$(grep -E '^GAME(_MAP|_STATS|_BOTS)?=[A-Za-z0-9_.-]*$' <<< "${row}")"
+GAME="" GAME_MAP="" GAME_STATS="" GAME_BOTS=0 GAME_APPID=""
+eval "$(grep -E '^GAME(_MAP|_STATS|_BOTS|_APPID)?=[A-Za-z0-9_.-]*$' <<< "${row}")"
 [[ -n "${GAME}" && -n "${GAME_MAP}" ]] || fail "the image has no usable ${GAME_ENV}"
 label=$("${ENGINE}" image inspect -f '{{index .Config.Labels "io.github.kevintcoughlin.cs-server.game"}}' "${IMAGE}")
 assert_eq "the image label names its game" "${GAME}" "${label}"
 expected=$(bash "${ROOT}/scripts/game-env.sh" "${GAME}")
 assert_eq "game.env in the image matches scripts/game-env.sh" "${expected}" "${row}"
+# The engine cannot write this on a read-only root, and with another game's
+# id Steam turns every player away ("STEAM validation rejected").
+appid=$("${ENGINE}" run --rm --network none --entrypoint cat "${IMAGE}" /hlds/steam_appid.txt)
+assert_eq "steam_appid.txt is ${GAME}'s Steam app id" "${GAME_APPID}" "${appid}"
 
 step "starting ${IMAGE} with ${ENGINE} as ${NAME}"
 "${ENGINE}" run -d --name "${NAME}" "${RUN_FLAGS[@]}" -e NOMASTER=1 -e LAN_MODE=1 "${IMAGE}" >/dev/null
