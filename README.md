@@ -178,12 +178,12 @@ Edit files in `config/` — they're bind-mounted into the container:
 
 | File | Purpose |
 |------|---------|
-| `config/server.cfg` | Game settings (gravity, round time, etc.) |
+| `config/server.cfg` | Settings shared by every mode (rates, bots, limits, hostname) |
 | `config/mapcycle.txt` | Map rotation (default scoutzknivez variants) |
 | `config/mapcycle-dust2.txt` | Dust 2 rotation (classic de_dust2) |
 | `config/mapcycle-nipper.txt` | Nipper Friday (knife mode) rotation |
 | `config/mapcycle-nipper-xmas.txt` | Nipper Friday Christmas rotation (Dec 1 to Jan 6) |
-| `config/modes/*.cfg` | Per-mode settings, run after `server.cfg` (`knife.cfg` = Nipper Friday; `knife_he.cfg` for grenade maps) |
+| `config/modes/*.cfg` | Per-mode gameplay (gravity, round time, money), run after `server.cfg`: `scoutz.cfg`, `knife.cfg` (Nipper Friday; `knife_he.cfg` for grenade maps), `vanilla.cfg` |
 | `config/autoexec.cfg` | Runs on server start |
 
 Changes to `server.cfg` take effect on the next map or via `just rcon "exec server.cfg"`.
@@ -244,6 +244,25 @@ stopped and never restarts it. To start in knife mode instead, set `MODE=knife`
 
 Mode settings live in `config/modes/<mode>.cfg`. On every map the plugin runs
 `server.cfg` and then the mode cfg. Mode switches happen at runtime, so a container restart goes back to `MODE`.
+
+### Vanilla (stock Counter-Strike)
+
+`MODE=vanilla` is the game as it shipped: normal gravity, buying, the map's
+objectives, $800 start money, and no scout-and-knife loadout. It starts on
+`de_dust2` with `mapcycle-dust2.txt` unless `MAP` and `MAPCYCLE` say
+otherwise (the Compose file, Quadlet unit and installer set both, so change
+them there). Switch a running server the same way as the other modes:
+
+```bash
+just mode vanilla         # stock rules on mapcycle-dust2.txt, at the next round end
+just mode scoutz          # back to ScoutzKnivez
+```
+
+Vanilla has its own plugin list, `plugins/amxmodx/modes/vanilla.ini`: the
+admin and map-vote plugins without bunny hop, kill sounds and advertisements.
+A mode without such a file uses `plugins.ini`. Bots need a navigation mesh for
+each map; on a stock map they build one the first time it is played (a
+minute or two) and it is kept in the state volume.
 
 #### NIPPER's maps
 
@@ -359,7 +378,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `NOMASTER` | `0` | Disable master server (1=on, 0=off). Enable for Docker Desktop on Windows |
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
-| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife) or `knife` (Nipper Friday) |
+| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday) or `vanilla` (stock Counter-Strike) |
 | `FASTDL_URL` | empty | http(s) URL serving your `cstrike/` content (`sv_downloadurl`); see [FastDL](#fastdl-fast-downloads) |
 | `LOGS` | `1` | Write server log files (1=on, 0=off); see [Saved state and logs](#saved-state-and-logs) |
 | `LOG_RETENTION_DAYS` | `7` | Delete log files older than this many days (`0` keeps them all) |

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- **Vanilla mode.** `MODE=vanilla` (or `just mode vanilla` on a running server) is stock Counter-Strike: normal gravity, buying, objectives, no scout-and-knife loadout, and its own plugin list without bunny hop, kill sounds and advertisements (`plugins/amxmodx/modes/vanilla.ini`). A mode can now carry a plugin list as well as settings (#73)
+
+### Changed
+- **Gameplay settings moved from `server.cfg` to the mode files.** Gravity, air acceleration, freeze, buy and round time and start money are now in `config/modes/scoutz.cfg` (and every other mode file sets them too), so `server.cfg` holds what all modes share. Nothing changes for an existing install: its `server.cfg` keeps the ScoutzKnivez values and its mode files are not overwritten
+- **One definition of the Quadlet unit.** `install.sh` is the only place the unit is written; `quadlet/scoutzknivez.container` is its output (`install.sh --print-unit`, `just quadlet`) and a test fails when the two differ (#94)
+
 ## [1.2.1] - 2026-11-22
 
 ### Added

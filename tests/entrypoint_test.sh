@@ -33,8 +33,8 @@ expect_invalid "PORT must be an integer from 1 to 65535" PORT=0
 expect_invalid "PORT must be an integer from 1 to 65535" PORT=18446744073709551616
 expect_invalid "MAP must be a filename" "MAP=scoutzknivez;quit"
 expect_invalid "MAPCYCLE must be a filename" MAPCYCLE=../server.cfg
-expect_invalid "MODE must be scoutz or knife" MODE=nipper
-expect_invalid "MODE must be scoutz or knife" "MODE=knife;quit"
+expect_invalid "MODE must be scoutz, knife or vanilla" MODE=nipper
+expect_invalid "MODE must be scoutz, knife or vanilla" "MODE=knife;quit"
 expect_invalid "FASTDL_URL must be an http(s) URL" FASTDL_URL=ftp://example.com/cstrike/
 expect_invalid "FASTDL_URL must be an http(s) URL" FASTDL_URL=example.com/cstrike/
 expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.com/;quit"
@@ -195,6 +195,30 @@ case "${args}" in
     "-game cstrike +map scoutzknivez "*"+localinfo sk_mode scoutz +exec server.cfg"*"+bot_quota 10"*) ;;
     *) printf 'Expected the Counter-Strike defaults, got: %s\n' "${args}" >&2; exit 1 ;;
 esac
+
+# Vanilla: a stock map and rotation by default, and the mode's plugin list
+# when the image has one.
+run_stub MODE=vanilla
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *amxx_plugins*) printf 'No plugin list without a modes/vanilla.ini, got: %s\n' "${args}" >&2; exit 1 ;;
+    *"+map de_dust2 "*"+mapcyclefile mapcycle-dust2.txt "*"+localinfo sk_mode vanilla"*) ;;
+    *) printf 'Expected the vanilla defaults, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+mkdir -p "${WORK_DIR}/cstrike/addons/amxmodx/configs/modes"
+: > "${WORK_DIR}/cstrike/addons/amxmodx/configs/modes/vanilla.ini"
+run_stub MODE=vanilla MAP=de_inferno MAPCYCLE=mapcycle.txt
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"+map de_inferno "*"+mapcyclefile mapcycle.txt "*"+localinfo sk_mode vanilla +localinfo amxx_plugins addons/amxmodx/configs/modes/vanilla.ini"*) ;;
+    *) printf 'Expected MAP, MAPCYCLE and the vanilla plugin list, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+run_stub MODE=knife
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *amxx_plugins*) printf 'A mode without its own list uses plugins.ini, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+rm -rf "${WORK_DIR}/cstrike/addons"
 case "${args}" in
     *"+exec server.cfg +exec banned.cfg +exec listip.cfg "*" +log on") ;;
     *) printf 'Expected the ban lists to be loaded and +log on by default, got: %s\n' "${args}" >&2; exit 1 ;;

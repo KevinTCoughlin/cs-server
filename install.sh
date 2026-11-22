@@ -159,6 +159,7 @@ CS 1.6 ScoutzKnivez Server — Installer
 Usage:
   install.sh              Install and start the server
   install.sh --uninstall  Stop and remove the server
+  install.sh --print-unit Print the Quadlet unit it would install; change nothing
   install.sh --help       Show this help message
 
 Supports Podman (preferred) and Docker. The script auto-detects
@@ -198,6 +199,8 @@ confirm() {
 ACTION="install"
 if [[ "${1:-}" == "--uninstall" ]]; then
     ACTION="uninstall"
+elif [[ "${1:-}" == "--print-unit" ]]; then
+    ACTION="print-unit"
 elif [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
     usage
     exit 0
@@ -448,18 +451,12 @@ seed_config() {
     find "${CONFIG_DIR}" -type f -exec chmod 644 {} +
 }
 
-# --- Podman install (Quadlet) -----------------------------------------------
+# --- Quadlet unit -----------------------------------------------------------
 
-install_podman() {
-    # A running server keeps its old image until restarted (upgrade, rollback).
-    local was_active=0
-    if systemctl --user is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
-        was_active=1
-    fi
-
-    info "Installing Quadlet systemd unit"
-    mkdir -p "${QUADLET_DIR}"
-
+# The one definition of the unit. quadlet/scoutzknivez.container in the
+# repository is this function's output for the defaults (`--print-unit`,
+# `just quadlet`); tests/install_test.sh fails when the two differ.
+quadlet_unit() {
     # systemd expands % specifiers in unit files; a URL may carry %XX escapes.
     local fastdl_env=""
     if [[ -n "${FASTDL_URL}" ]]; then
@@ -495,7 +492,7 @@ install_podman() {
         mode_env="Environment=MODE=scoutz"$'\n'
     fi
 
-    cat > "${QUADLET_DIR}/${SERVICE_NAME}.container" << QUADLET
+    cat << QUADLET
 [Unit]
 Description=${GAME_TITLE} Server${INSTANCE:+ (${INSTANCE})}
 Wants=network-online.target
@@ -535,6 +532,21 @@ CPUQuota=200%
 [Install]
 WantedBy=default.target
 QUADLET
+}
+
+# --- Podman install (Quadlet) -----------------------------------------------
+
+install_podman() {
+    # A running server keeps its old image until restarted (upgrade, rollback).
+    local was_active=0
+    if systemctl --user is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+        was_active=1
+    fi
+
+    info "Installing Quadlet systemd unit"
+    mkdir -p "${QUADLET_DIR}"
+
+    quadlet_unit > "${QUADLET_DIR}/${SERVICE_NAME}.container"
 
     ok "Quadlet unit installed to ${QUADLET_DIR}/${SERVICE_NAME}.container"
 
@@ -761,7 +773,11 @@ check_host_tuning() {
 
 # --- Main -------------------------------------------------------------------
 
-if [[ "${ACTION}" == "uninstall" ]]; then
+if [[ "${ACTION}" == "print-unit" ]]; then
+    # %h is systemd's specifier for the home directory.
+    CONFIG_DIR="%h/.config/${CONFIG_DIR##*/}"
+    quadlet_unit
+elif [[ "${ACTION}" == "uninstall" ]]; then
     do_uninstall
 else
     do_install

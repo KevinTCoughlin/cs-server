@@ -167,6 +167,17 @@ use_runtimes
 install
 expect_die "no container engine" "Neither podman nor docker found"
 
+# --- The repository's unit is the installer's (`just quadlet`) ----------------
+use_runtimes
+install CS_SERVER_IMAGE=localhost/cs-server:latest -- --print-unit
+expect_ok "--print-unit"
+assert_eq "--print-unit touches nothing" "" "${calls}"
+assert_eq "quadlet/scoutzknivez.container is out of date: run \`just quadlet\`" \
+    "$(cat "${ROOT}/quadlet/scoutzknivez.container")" "${output}"
+install CS_GAME=dod CS_INSTANCE=two CS_PORT=27017 -- --print-unit
+expect_ok "--print-unit for a game instance"
+assert_contains "--print-unit: home-relative config path" "${output}" "Volume=%h/.config/dod-server-two/server.cfg:/hlds/dod/server.cfg:ro,Z"
+
 # --- Podman: Quadlet unit ---------------------------------------------------
 use_runtimes podman docker
 fresh_home
