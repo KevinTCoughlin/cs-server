@@ -430,4 +430,33 @@ fi
 expect_cvar bot_quota 0 "BOTS=0 survives server.cfg being re-run"
 step "BOTS=0 keeps bots off"
 
+# --- Offline LAN server -------------------------------------------------------
+# A LAN box may have no uplink: with no network at all the server must come
+# up and answer the server-browser query (A2S_INFO), which is how the LAN tab
+# finds it. NOMASTER=1 would silence that reply, so it is not set here.
+if [[ "${ENGINE}" != "container" ]]; then
+    "${ENGINE}" rm -f "${NAME}" >/dev/null
+    kill "${LOG_PID}" 2>/dev/null || true
+    : > "${LOG}"
+    MARK=0
+    "${ENGINE}" run -d --name "${NAME}" "${RUN_FLAGS[@]}" --network none \
+        -e LAN_MODE=1 -e BOTS=0 "${IMAGE}" >/dev/null
+    "${ENGINE}" logs -f "${NAME}" > "${LOG}" 2>&1 &
+    LOG_PID=$!
+    wait_log '\[SK\] mode: scoutz' 240 >/dev/null || fail "the server did not load its first map with no network"
+    "${ENGINE}" exec "${NAME}" /healthcheck.sh || fail "health check failed with no network"
+    # Reply type: I (info) or A (challenge). Either means the query is served.
+    # shellcheck disable=SC2016 # runs inside the container
+    reply=$("${ENGINE}" exec "${NAME}" bash -c '
+        exec 3<>/dev/udp/127.0.0.1/27015
+        printf "\377\377\377\377TSource Engine Query\0" >&3
+        LC_ALL=C IFS= read -r -t 5 -N 5 -u 3 head 2>/dev/null
+        printf %s "${head:4:1}"') || true
+    case "${reply}" in
+        I | A) ;;
+        *) fail "no A2S_INFO reply offline with LAN_MODE=1 (got: '${reply}')" ;;
+    esac
+    step "offline: boots and answers the server-browser query"
+fi
+
 printf 'e2e tests passed\n'

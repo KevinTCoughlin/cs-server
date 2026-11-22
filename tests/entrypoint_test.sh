@@ -42,6 +42,11 @@ expect_invalid "FASTDL_URL must be an http(s) URL" 'FASTDL_URL=https://example.c
 expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.com/a b"
 expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.com/$(printf 'a%.0s' {1..120})"
 
+expect_invalid "SERVER_IP must be an IPv4 address" SERVER_IP=example.com
+expect_invalid "SERVER_IP must be an IPv4 address" SERVER_IP=192.168.1.256
+expect_invalid "SERVER_IP must be an IPv4 address" SERVER_IP=192.168.1
+expect_invalid "SERVER_IP must be an IPv4 address" "SERVER_IP=192.168.1.5;quit"
+
 expect_invalid "LOGS must be 0 or 1" LOGS=on
 expect_invalid "LOG_RETENTION_DAYS must be an integer from 0 to 3650" LOG_RETENTION_DAYS=-1
 expect_invalid "LOG_RETENTION_DAYS must be an integer from 0 to 3650" LOG_RETENTION_DAYS=forever
@@ -167,6 +172,17 @@ args=$(cat "${WORK_DIR}/args")
 case "${args}" in
     *" +log on +logaddress_add stats.example.com 27500") ;;
     *) printf 'Expected LOGADDRESS as +logaddress_add host port, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+
+case "${args}" in
+    *"+ip "*) printf 'Expected no +ip without SERVER_IP, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+
+run_stub SERVER_IP=192.168.1.5
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *" +port 27015 +ip 192.168.1.5 "*) ;;
+    *) printf 'Expected SERVER_IP as +ip after +port, got: %s\n' "${args}" >&2; exit 1 ;;
 esac
 
 run_stub BOTS=0

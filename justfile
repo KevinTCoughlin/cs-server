@@ -32,6 +32,10 @@ up:
 up-d:
     {{ if ENGINE == "container" { CTR_BUILD + " && " + CTR_RUN + " -d " + IMAGE } else { "podman compose up --build -d" } }}
 
+# Start a LAN party server: host networking + sv_lan 1, listed in the LAN tab (Podman/Docker only)
+lan-party:
+    {{ if ENGINE == "container" { "echo 'Apple container has no host networking: clients connect by address (connect <mac-ip>:27015)' >&2; exit 1" } else { "podman compose -f compose.yml -f compose.lan.yml up --build -d" } }}
+
 # Stop server
 down:
     {{ if ENGINE == "container" { "container stop -t 50 scoutzknivez" } else { "podman compose down" } }}

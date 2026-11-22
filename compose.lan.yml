@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# LAN party override: the server sits on the host's network and runs with
+# sv_lan 1, so clients find it in the LAN tab (found by broadcast, which a
+# published port never sees). No Steam, no VAC, no master-server listing.
+#
+#   podman compose -f compose.yml -f compose.lan.yml up -d     (or: just lan-party)
+#
+# Do not add NOMASTER=1 (the server then answers no browser queries at all)
+# or SERVER_IP (a socket bound to one address hears no broadcasts).
+# Open 27015/udp in the host firewall for the LAN.
+services:
+  cstrike:
+    network_mode: host
+    ports: !reset []
+    environment:
+      LAN_MODE: "1"
