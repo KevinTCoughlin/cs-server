@@ -370,6 +370,35 @@ Startup rejects invalid booleans, out-of-range ports/player counts, unsafe
 map or mapcycle filenames and malformed FastDL URLs or log addresses instead
 of passing unchecked values to HLDS.
 
+## Several servers on one host
+
+Each extra server is an **instance** with its own name, port, config directory
+and saved state. The first (unnamed) one keeps the names it always had.
+
+```bash
+# A second server on port 27016
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | CS_INSTANCE=match2 CS_PORT=27016 bash
+```
+
+| | Default | `CS_INSTANCE=match2` |
+|---|---|---|
+| Service / container | `scoutzknivez` | `cs-server-match2` |
+| Config | `~/.config/cs-server/` | `~/.config/cs-server-match2/` |
+| Saved state (volume) | `cs-server-state` | `cs-server-state-match2` |
+| Port | `27015/udp` | `CS_PORT` (required to differ) |
+
+- The port is the same inside and outside the container, because GoldSrc tells
+  clients its own port. Open each one in the firewall.
+- Manage an instance by its name: `systemctl --user restart cs-server-match2`,
+  `podman logs -f cs-server-match2`. `scripts/mode.sh` takes
+  `CS_CONTAINER_NAME=cs-server-match2`.
+- Uninstall one with the same variable: `CS_INSTANCE=match2 bash install.sh --uninstall`.
+  The others are left alone.
+- Budget about 350 MB of RAM and one busy CPU thread per server with bots.
+- From a checkout, Compose takes the same three values and a project name:
+  `CS_CONTAINER_NAME=cs-b PORT=27016 CS_STATE_VOLUME=cs-server-state-b podman compose -p cs-b up -d`.
+- macOS (`ops/cs-server`) runs one server; instances there are not supported yet.
+
 ## LAN party
 
 A LAN server has to be found in the game's **LAN** tab, and the tab finds
