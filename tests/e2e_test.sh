@@ -230,16 +230,22 @@ metrics_body() {
 }
 # This boot has NOMASTER=1, where the server-browser query goes unanswered:
 # the numbers come from the game through metrics.amxx.
-metrics=""
-for _ in $(seq $((30 * SCALE))); do
-    metrics=$(metrics_body 2>/dev/null) || metrics=""
-    if grep -q '^hlds_up 1$' <<< "${metrics}" && grep -qE '^hlds_players\{type="bot"\} [1-9]' <<< "${metrics}"; then
-        break
-    fi
-    sleep 2
-done
+# wait_metrics [ERE]: poll until the game reports (hlds_up 1; the plugin
+# writes a second or so after a map loads) and a line matches; sets $metrics.
+wait_metrics() {
+    local pattern="${1:-^hlds_up 1\$}"
+    metrics=""
+    for _ in $(seq $((30 * SCALE))); do
+        metrics=$(metrics_body 2>/dev/null) || metrics=""
+        if grep -q '^hlds_up 1$' <<< "${metrics}" && grep -qE -- "${pattern}" <<< "${metrics}"; then
+            return 0
+        fi
+        sleep 2
+    done
+    fail "metrics: the server did not report (waiting for /${pattern}/): ${metrics}"
+}
+wait_metrics '^hlds_players\{type="bot"\} [1-9]'
 assert_contains "metrics: Prometheus content type" "${metrics}" "Content-Type: text/plain; version=0.0.4"
-assert_contains "metrics: the server reports" "${metrics}" "hlds_up 1"
 assert_contains "metrics: the running map" "${metrics}" 'hlds_map_info{map="scoutzknivez"} 1'
 assert_contains "metrics: slots" "${metrics}" "hlds_max_players 20"
 grep -qE '^hlds_players\{type="bot"\} [1-9]' <<< "${metrics}" || fail "metrics: no bots counted: ${metrics}"
@@ -641,8 +647,7 @@ if [[ "${ENGINE}" != "container" ]]; then
         *) fail "no A2S_INFO reply offline with LAN_MODE=1 (got: '${reply}')" ;;
     esac
     # The same endpoint without NOMASTER (and without a network).
-    metrics=$(metrics_body)
-    assert_contains "metrics without NOMASTER: the server reports" "${metrics}" "hlds_up 1"
+    wait_metrics
     assert_contains "metrics without NOMASTER: the running map" "${metrics}" 'hlds_map_info{map="scoutzknivez"} 1'
     step "offline: boots, answers the server-browser query and reports metrics"
 fi

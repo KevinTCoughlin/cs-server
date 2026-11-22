@@ -41,7 +41,7 @@ sub metrics {
     }
     $body = '' unless $up;
     return $body
-        . "# HELP hlds_up 1 while the game server is running and reporting.\n"
+        . "# HELP hlds_up Whether the game server is running and reporting.\n"
         . "# TYPE hlds_up gauge\nhlds_up $up\n";
 }
 
