@@ -211,7 +211,10 @@ COPY --chmod=755 scripts/healthcheck.sh /healthcheck.sh
 # AMX Mod X only know their own paths, so those become symlinks into it;
 # entrypoint.sh creates the targets. users.ini is the one file with shipped
 # content: its default is kept aside to seed a new volume. /hlds/.runtime
-# (console FIFO) points into /tmp for the same reason.
+# (console FIFO) points into /tmp for the same reason. The bots write a
+# navigation mesh for any map that ships without one, straight to
+# cstrike/maps/<map>.nav: each such map gets a link, so the mesh is built
+# once and kept. Without it the save fails and the map reloads in a loop.
 RUN cs=/hlds/cstrike && amx="${cs}/addons/amxmodx" && \
     install -d -o hlds -g hlds /hlds/state && \
     install -d /usr/local/share/cs-server && \
@@ -227,7 +230,11 @@ RUN cs=/hlds/cstrike && amx="${cs}/addons/amxmodx" && \
     ln -s /hlds/state/amxmodx/csstats.dat   "${amx}/data/csstats.dat" && \
     ln -s /hlds/state/amxmodx/vault.ini     "${amx}/data/vault.ini" && \
     ln -s /hlds/state/amxmodx/vault         "${amx}/data/vault" && \
-    ln -s /tmp/hlds-runtime                 /hlds/.runtime
+    ln -s /tmp/hlds-runtime                 /hlds/.runtime && \
+    for bsp in "${cs}"/maps/*.bsp; do \
+        nav="${bsp%.bsp}.nav"; \
+        [ -e "${nav}" ] || ln -s "/hlds/state/nav/${nav##*/}" "${nav}"; \
+    done
 
 # Docker's upstream default seccomp profile; install.sh reads it out of the
 # image for `docker run` (see ops/seccomp/README.md).

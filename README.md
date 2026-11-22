@@ -470,6 +470,7 @@ there. Replacing the container (an upgrade, `just deploy`, a rollback) keeps:
 | `banned.cfg`, `listip.cfg` | Bans by SteamID and by address (`writeid`, `writeip`, AMX Mod X `amx_ban` / `amx_banip`); loaded at every start |
 | `amxmodx/users.ini` | AMX Mod X admins. Seeded with the stock file; edit it to add yourself |
 | `amxmodx/csstats.dat`, `amxmodx/vault*` | Player stats and plugin storage |
+| `nav/` | Bot navigation meshes built for maps that ship without a `.nav` |
 | `logs/` | Server logs: joins, kills, chat, bans (`LOGS=1`) |
 | `amxmodx/logs/` | AMX Mod X logs: admin commands, plugin errors |
 
@@ -676,10 +677,9 @@ The Quadlet is configured with `WantedBy=default.target`, so the server starts a
 - **Read-only root filesystem** — `ReadOnly=true` (Quadlet), `read_only: true`
   (Compose), `--read-only` (`install.sh` on Docker). The server can write to
   two places only: the [state volume](#saved-state-and-logs) and a tmpfs on
-  `/tmp` that holds the console pipe. Not set on macOS (`ops/cs-server`). One
-  side effect: on a map with no `.nav` file the bots' generated navigation
-  mesh cannot be saved, so it is rebuilt each time that map loads; ship the
-  `.nav` with the map (`maps/`) to avoid that
+  `/tmp` that holds the console pipe. Not set on macOS (`ops/cs-server`). For a
+  map with no `.nav` file the bots build a navigation mesh on first load; it
+  is saved in the state volume (`nav/`) and reused
 - **System user with nologin shell** — HLDS runs as a system user (`-r`) with `/usr/sbin/nologin`, preventing interactive login
 - **Setuid/setgid bits stripped** — all setuid/setgid bits removed from the runtime image
 - **Resource limits** — `MemoryMax=512M`, `CPUQuota=200%` (2 cores max)

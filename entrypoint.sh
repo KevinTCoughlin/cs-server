@@ -195,7 +195,7 @@ prepare_state() {
     if [[ -d "${STATE_DIR}" ]] && command -v mountpoint >/dev/null 2>&1 && ! mountpoint -q "${STATE_DIR}"; then
         echo "[entrypoint] NOTE: ${STATE_DIR} is not a volume, so bans, admins, stats and logs are lost when this container is replaced. Mount one (-v cs-server-state:${STATE_DIR}, or Volume=cs-server-state:${STATE_DIR} in a Quadlet unit), or run the installer again." >&2
     fi
-    if ! mkdir -p "${STATE_DIR}/logs" "${STATE_DIR}/amxmodx/logs" "${STATE_DIR}/amxmodx/vault" 2>/dev/null ||
+    if ! mkdir -p "${STATE_DIR}/logs" "${STATE_DIR}/nav" "${STATE_DIR}/amxmodx/logs" "${STATE_DIR}/amxmodx/vault" 2>/dev/null ||
        [[ ! -w "${STATE_DIR}" || ! -w "${STATE_DIR}/amxmodx" ]]; then
         echo "[entrypoint] WARNING: ${STATE_DIR} is not writable by uid $(id -u); bans, admins, stats and logs will not be saved" >&2
         return 0
