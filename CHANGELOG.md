@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+- **LAN profile.** `CS_PROFILE=lan` for `install.sh` (Quadlet and Docker) and `compose.lan.yml` (`just lan-party`) run the server on the host's network with `sv_lan 1`, so the LAN tab's broadcast query reaches it. Verified between two containers on one network; `NOMASTER=1` and `SERVER_IP` both hide a server from the LAN tab and the README says why (#81)
+- **Offline start and install.** The server boots and answers server-browser queries with no network (new `--network none` case in `tests/e2e_test.sh`). `install.sh` uses an image already loaded with `podman load` / `docker load` when the registry cannot be reached; the README has the `save` / `load` steps (#82)
+- `SERVER_IP`: IPv4 address for HLDS to bind and report (`+ip`). The health check queries that address.
+
+### Fixed
+- `compose.windows.yml` claimed to remove the bind mounts, capabilities and security options with empty lists, which Compose ignores when merging. The file now holds the one setting it ever applied (`NOMASTER=1`) and says so; `tests/compose_test.sh` renders the pair. Not run on Docker Desktop for Windows (#100)
+- **A public server on host networking could not reach Steam** when the host's name resolved to a VPN or bridge address (seen with Tailscale): HLDS reported that address and Steam never answered, so the server was not VAC secured or listed. `SERVER_IP` names the right one; the README shows how to spot it (#98)
+
 ## [1.1.1] - 2026-11-21
 
 Installer fixes. **A fresh install with rootless Podman did not start the server on 1.0.0 and 1.1.0.** Use the installer from this release; the image itself is unchanged apart from the version.
