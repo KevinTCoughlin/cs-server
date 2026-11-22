@@ -4,7 +4,17 @@
 # shellcheck disable=SC2329 # Signal/EXIT traps invoke these functions indirectly.
 set -euo pipefail
 
-MAP="${MAP:-scoutzknivez}"
+# The image sets GAME (cstrike or dod): the game directory under /hlds.
+GAME="${GAME:-cstrike}"
+case "${GAME}" in
+    cstrike) DEFAULT_MAP=scoutzknivez ;;
+    dod) DEFAULT_MAP=dod_anzio ;;
+    *)
+        echo "[entrypoint] GAME must be cstrike or dod" >&2
+        exit 1
+        ;;
+esac
+MAP="${MAP:-${DEFAULT_MAP}}"
 MAXPLAYERS="${MAXPLAYERS:-20}"
 PORT="${PORT:-27015}"
 BOTS="${BOTS:-1}"
@@ -243,9 +253,16 @@ mkfifo "${FIFO}"
 chmod 600 "${FIFO}"
 exec 3<> "${FIFO}"
 
-if [[ "${BOTS}" = "1" ]]; then
+# Modes and bots belong to the ScoutzKnivez plugin and ReGameDLL; a Day of
+# Defeat server has neither, and MODE and BOTS do nothing there.
+if [[ "${GAME}" != "cstrike" ]]; then
+    MODE_ARGS=()
+    BOT_QUOTA_ARGS=()
+elif [[ "${BOTS}" = "1" ]]; then
+    MODE_ARGS=(+localinfo sk_mode "${MODE}")
     BOT_QUOTA_ARGS=(+bot_quota 10)
 else
+    MODE_ARGS=(+localinfo sk_mode "${MODE}")
     # server.cfg sets bot_quota and scoutzknivez.amxx re-runs it on every
     # map; sk_bots tells the plugin to turn bots off again afterwards.
     BOT_QUOTA_ARGS=(+bot_quota 0 +localinfo sk_bots 0)
@@ -275,7 +292,7 @@ else
     IP_ARGS=()
 fi
 
-# File logs go to the state volume (cstrike/logs is a link into it). `log on`
+# File logs go to the state volume (<game>/logs is a link into it). `log on`
 # must come after server.cfg, whose sv_log_onefile decides how files are cut.
 LOG_ARGS=()
 if [[ "${LOGS}" = "1" ]]; then
@@ -291,7 +308,7 @@ fi
 # the IPC state needed for the second run to accept players).
 HLDS_ARGS=(
     ./hlds_run
-    -game cstrike
+    -game "${GAME}"
     +map "${MAP}"
     +maxplayers "${MAXPLAYERS}"
     +port "${PORT}"
@@ -300,7 +317,7 @@ HLDS_ARGS=(
     -pingboost 2
     +sys_ticrate 1000
     +mapcyclefile "${MAPCYCLE}"
-    +localinfo sk_mode "${MODE}"
+    "${MODE_ARGS[@]}"
     +exec server.cfg
     +exec banned.cfg
     +exec listip.cfg

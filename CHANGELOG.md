@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- **Day of Defeat build.** `podman build --build-arg GAME=dod` (`just dod`) builds a Day of Defeat server from the same Containerfile: ReHLDS, Metamod-R and AMX Mod X with the DoD stats module around Valve's `dod.so`, with the state volume, read-only root, console pipe and graceful shutdown of the Counter-Strike image. No bots, modes or ScoutzKnivez plugins. Checked by `tests/e2e_dod_test.sh` on Podman; not yet published, built in CI, or known to the installer (#106)
+
 ## [1.2.0] - 2026-11-21
 
 Several servers and LAN play. One host can run more than one server, a LAN-party profile shows the server in the LAN tab, and install and start work with no internet. **Upgrading from 1.1.x: pull the new image**; it also fixes a map-reload loop on two default maps.

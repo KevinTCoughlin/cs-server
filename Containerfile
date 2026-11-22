@@ -4,7 +4,14 @@
 # =============================================================================
 # CS 1.6 ScoutzKnivez Server — Multi-stage Debian 13 Build
 # ReHLDS + ReGameDLL_CS + Metamod-R + AMX Mod X + ReAPI
+#
+# --build-arg GAME=dod builds a Day of Defeat server instead: the same
+# engine, Metamod-R and AMX Mod X around Valve's dod.so, without the
+# Counter-Strike parts (ReGameDLL_CS, ReAPI, bots, the ScoutzKnivez plugins).
 # =============================================================================
+
+# The game directory under /hlds: cstrike or dod.
+ARG GAME=cstrike
 
 # Pinned versions
 ARG REHLDS_VERSION=3.15.0.896
@@ -56,6 +63,10 @@ RUN mkdir -p /opt/steamcmd && \
     tar -xzf /opt/steamcmd/steamcmd_linux.tar.gz -C /opt/steamcmd && \
     rm -f /opt/steamcmd/steamcmd_linux.tar.gz
 
+# Declared here, not at the top of the stage, so the layers above are shared
+# by both games.
+ARG GAME
+
 # Download HLDS (app 90, steam_legacy beta)
 # Run app_update multiple times — app 90 has a known bug where it doesn't
 # download all files in a single pass
@@ -65,7 +76,7 @@ RUN mkdir -p /opt/steamcmd && \
 RUN DEBUGGER=run-i386 STEAM_PLATFORM=linux32 /opt/steamcmd/steamcmd.sh \
         +force_install_dir /hlds \
         +login anonymous \
-        +app_set_config 90 mod cstrike \
+        +app_set_config 90 mod "${GAME}" \
         +app_update 90 -beta steam_legacy validate \
         +app_update 90 -beta steam_legacy validate \
         +app_update 90 -beta steam_legacy validate \
@@ -87,46 +98,52 @@ RUN curl -fsSL "https://github.com/rehlds/ReHLDS/releases/download/${REHLDS_VERS
     patchelf --clear-execstack core.so && \
     rm -rf /tmp/rehlds /tmp/rehlds.zip
 
-# --- ReGameDLL_CS (game DLL replacement) ---
-RUN curl -fsSL "https://github.com/rehlds/ReGameDLL_CS/releases/download/${REGAMEDLL_VERSION}/regamedll-bin-${REGAMEDLL_VERSION}.zip" \
+# --- ReGameDLL_CS (game DLL replacement; Counter-Strike only) ---
+RUN [ "${GAME}" != cstrike ] || { curl -fsSL "https://github.com/rehlds/ReGameDLL_CS/releases/download/${REGAMEDLL_VERSION}/regamedll-bin-${REGAMEDLL_VERSION}.zip" \
         -o /tmp/regamedll.zip && \
     unzip -o /tmp/regamedll.zip -d /tmp/regamedll && \
     cp /tmp/regamedll/bin/linux32/cstrike/dlls/cs.so cstrike/dlls/cs.so && \
-    rm -rf /tmp/regamedll /tmp/regamedll.zip
+    rm -rf /tmp/regamedll /tmp/regamedll.zip; }
 
 # --- Metamod-R ---
 RUN curl -fsSL "https://github.com/rehlds/Metamod-R/releases/download/${METAMOD_VERSION}/metamod-bin-${METAMOD_VERSION}.zip" \
         -o /tmp/metamod.zip && \
     unzip -o /tmp/metamod.zip -d /tmp/metamod && \
-    mkdir -p cstrike/addons/metamod && \
-    cp /tmp/metamod/addons/metamod/metamod_i386.so cstrike/addons/metamod/ && \
-    cp /tmp/metamod/addons/metamod/config.ini cstrike/addons/metamod/ && \
+    mkdir -p "${GAME}/addons/metamod" && \
+    cp /tmp/metamod/addons/metamod/metamod_i386.so "${GAME}/addons/metamod/" && \
+    cp /tmp/metamod/addons/metamod/config.ini "${GAME}/addons/metamod/" && \
     rm -rf /tmp/metamod /tmp/metamod.zip
 
-# --- AMX Mod X (base + cstrike addon) ---
+# --- AMX Mod X (base + the game's addon) ---
 RUN curl -fsSL "https://www.amxmodx.org/amxxdrop/1.10/amxmodx-1.10.0-git${AMXMODX_BUILD}-base-linux.tar.gz" \
         -o /tmp/amxmodx-base.tar.gz && \
-    curl -fsSL "https://www.amxmodx.org/amxxdrop/1.10/amxmodx-1.10.0-git${AMXMODX_BUILD}-cstrike-linux.tar.gz" \
-        -o /tmp/amxmodx-cs.tar.gz && \
-    tar -xzf /tmp/amxmodx-base.tar.gz -C cstrike/ && \
-    tar -xzf /tmp/amxmodx-cs.tar.gz -C cstrike/ && \
-    rm -f /tmp/amxmodx-base.tar.gz /tmp/amxmodx-cs.tar.gz
+    curl -fsSL "https://www.amxmodx.org/amxxdrop/1.10/amxmodx-1.10.0-git${AMXMODX_BUILD}-${GAME}-linux.tar.gz" \
+        -o /tmp/amxmodx-game.tar.gz && \
+    tar -xzf /tmp/amxmodx-base.tar.gz -C "${GAME}/" && \
+    tar -xzf /tmp/amxmodx-game.tar.gz -C "${GAME}/" && \
+    rm -f /tmp/amxmodx-base.tar.gz /tmp/amxmodx-game.tar.gz
 
-# --- ReAPI (AMX Mod X module for ReHLDS/ReGameDLL API) ---
-RUN curl -fsSL "https://github.com/rehlds/ReAPI/releases/download/${REAPI_VERSION}/reapi-bin-${REAPI_VERSION}.zip" \
+# --- ReAPI (AMX Mod X module for ReHLDS/ReGameDLL API; Counter-Strike only) ---
+RUN [ "${GAME}" != cstrike ] || { curl -fsSL "https://github.com/rehlds/ReAPI/releases/download/${REAPI_VERSION}/reapi-bin-${REAPI_VERSION}.zip" \
         -o /tmp/reapi.zip && \
     unzip -o /tmp/reapi.zip -d /tmp/reapi && \
     cp /tmp/reapi/addons/amxmodx/modules/reapi_amxx_i386.so \
        cstrike/addons/amxmodx/modules/ && \
     cp /tmp/reapi/addons/amxmodx/scripting/include/*.inc \
        cstrike/addons/amxmodx/scripting/include/ 2>/dev/null || true && \
-    rm -rf /tmp/reapi /tmp/reapi.zip
+    rm -rf /tmp/reapi /tmp/reapi.zip; }
 
-# --- CZ Bots (ZBot profiles + sounds from ReGameDLL_CS) ---
-RUN curl -fsSL "https://raw.githubusercontent.com/rehlds/ReGameDLL_CS/${REGAMEDLL_VERSION}/regamedll/extra/zBot/bot_profiles.zip" \
+# --- CZ Bots (ZBot profiles + sounds from ReGameDLL_CS; Counter-Strike only) ---
+RUN [ "${GAME}" != cstrike ] || { curl -fsSL "https://raw.githubusercontent.com/rehlds/ReGameDLL_CS/${REGAMEDLL_VERSION}/regamedll/extra/zBot/bot_profiles.zip" \
         -o /tmp/bot_profiles.zip && \
     unzip -o /tmp/bot_profiles.zip -d . && \
-    rm -f /tmp/bot_profiles.zip
+    rm -f /tmp/bot_profiles.zip; }
+
+# Day of Defeat ships its own liblist.gam; point it at Metamod, which finds
+# dod.so itself. (Counter-Strike's comes from config/liblist.gam.)
+RUN [ "${GAME}" != dod ] || { \
+    sed -i 's|^gamedll_linux .*|gamedll_linux "addons/metamod/metamod_i386.so"|' dod/liblist.gam && \
+    grep -q '^gamedll_linux "addons/metamod/metamod_i386.so"' dod/liblist.gam; }
 
 # Ensure binaries are executable and set Steam app ID
 RUN chmod +x hlds_linux hlds_run && \
@@ -142,9 +159,14 @@ RUN chmod +x hlds_linux hlds_run && \
 # ---------------------------------------------------------------------------
 FROM builder AS plugins
 
-COPY plugins/amxmodx/scripting/*.sma /hlds/cstrike/addons/amxmodx/scripting/
-WORKDIR /hlds/cstrike/addons/amxmodx/scripting
+ARG GAME
+
+# The custom plugins are Counter-Strike plugins; the Day of Defeat image runs
+# the stock AMX Mod X set and gets an empty /out.
+COPY plugins/amxmodx/scripting/*.sma /usr/local/src/cs-server/scripting/
+WORKDIR /hlds/${GAME}/addons/amxmodx/scripting
 RUN chmod +x amxxpc && mkdir -p /out && \
+    if [ "${GAME}" = cstrike ]; then cp /usr/local/src/cs-server/scripting/*.sma . || exit 1; else exit 0; fi && \
     for sma in scoutzknivez.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma; do \
         run-i386 ./amxxpc "$sma" || exit 1; \
         mv "${sma%.sma}.amxx" /out/ || exit 1; \
@@ -154,7 +176,7 @@ RUN chmod +x amxxpc && mkdir -p /out && \
 # Stage 2: Runtime — clean slim image, no build tools
 # ---------------------------------------------------------------------------
 # Using trixie-slim for minimal attack surface and optimal security posture
-FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS runtime
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS runtime-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -185,6 +207,11 @@ RUN groupadd --system --gid 10001 hlds && \
 # often edited, each its own small layer (see the end of the builder stage).
 COPY --from=builder --chown=hlds:hlds /hlds /hlds
 
+# ---------------------------------------------------------------------------
+# Stage 2a: repo content for Counter-Strike
+# ---------------------------------------------------------------------------
+FROM runtime-base AS game-cstrike
+
 # Bundled default maps, then any local custom maps overlaid on top.
 COPY --chown=hlds:hlds docs/cstrike/maps/*.bsp docs/cstrike/maps/*.nav /hlds/cstrike/maps/
 COPY --chown=hlds:hlds maps/ /hlds/cstrike/maps/
@@ -202,6 +229,26 @@ COPY --chown=hlds:hlds config/mapcycle*.txt /hlds/cstrike/
 COPY --chown=hlds:hlds config/modes/        /hlds/cstrike/modes/
 COPY --chown=hlds:hlds config/server.cfg    /hlds/cstrike/server.cfg
 
+# ---------------------------------------------------------------------------
+# Stage 2b: repo content for Day of Defeat (stock maps and AMX Mod X plugins)
+# ---------------------------------------------------------------------------
+FROM runtime-base AS game-dod
+
+COPY --chown=hlds:hlds plugins/metamod/plugins.ini /hlds/dod/addons/metamod/plugins.ini
+COPY --chown=hlds:hlds config/dod/mapcycle.txt     /hlds/dod/mapcycle.txt
+COPY --chown=hlds:hlds config/dod/server.cfg       /hlds/dod/server.cfg
+
+# ---------------------------------------------------------------------------
+# Stage 3: the image — the chosen game's content plus what both share
+# ---------------------------------------------------------------------------
+# A stage of this file, not a registry image.
+# hadolint ignore=DL3006
+FROM game-${GAME} AS runtime
+
+# entrypoint.sh reads GAME to pick the game directory and its defaults.
+ARG GAME
+ENV GAME=${GAME}
+
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 COPY --chmod=755 scripts/healthcheck.sh /healthcheck.sh
 
@@ -215,7 +262,8 @@ COPY --chmod=755 scripts/healthcheck.sh /healthcheck.sh
 # navigation mesh for any map that ships without one, straight to
 # cstrike/maps/<map>.nav: each such map gets a link, so the mesh is built
 # once and kept. Without it the save fails and the map reloads in a loop.
-RUN cs=/hlds/cstrike && amx="${cs}/addons/amxmodx" && \
+RUN cs="/hlds/${GAME}" && amx="${cs}/addons/amxmodx" && \
+    case "${GAME}" in dod) stats=dodstats.dat ;; *) stats=csstats.dat ;; esac && \
     install -d -o hlds -g hlds /hlds/state && \
     install -d /usr/local/share/cs-server && \
     mv "${amx}/configs/users.ini" /usr/local/share/cs-server/users.ini && \
@@ -227,14 +275,16 @@ RUN cs=/hlds/cstrike && amx="${cs}/addons/amxmodx" && \
     ln -s /hlds/state/amxmodx/users.ini     "${amx}/configs/users.ini" && \
     ln -s /hlds/state/amxmodx/cmdaccess.ini "${amx}/configs/cmdaccess.ini" && \
     ln -s /hlds/state/amxmodx/logs          "${amx}/logs" && \
-    ln -s /hlds/state/amxmodx/csstats.dat   "${amx}/data/csstats.dat" && \
+    ln -s "/hlds/state/amxmodx/${stats}"    "${amx}/data/${stats}" && \
     ln -s /hlds/state/amxmodx/vault.ini     "${amx}/data/vault.ini" && \
     ln -s /hlds/state/amxmodx/vault         "${amx}/data/vault" && \
     ln -s /tmp/hlds-runtime                 /hlds/.runtime && \
-    for bsp in "${cs}"/maps/*.bsp; do \
-        nav="${bsp%.bsp}.nav"; \
-        [ -e "${nav}" ] || ln -s "/hlds/state/nav/${nav##*/}" "${nav}"; \
-    done
+    if [ "${GAME}" = cstrike ]; then \
+        for bsp in "${cs}"/maps/*.bsp; do \
+            nav="${bsp%.bsp}.nav"; \
+            [ -e "${nav}" ] || ln -s "/hlds/state/nav/${nav##*/}" "${nav}"; \
+        done; \
+    fi
 
 # Docker's upstream default seccomp profile; install.sh reads it out of the
 # image for `docker run` (see ops/seccomp/README.md).
@@ -245,7 +295,8 @@ RUN mkdir -p /home/hlds/.steam/sdk32 && \
     ln -s /hlds/steamclient.so /home/hlds/.steam/sdk32/steamclient.so && \
     chown -R hlds:hlds /home/hlds
 
-LABEL org.opencontainers.image.title="CS 1.6 ScoutzKnivez Server" \
+LABEL io.github.kevintcoughlin.cs-server.game="${GAME}" \
+      org.opencontainers.image.title="CS 1.6 ScoutzKnivez Server" \
       org.opencontainers.image.description="Containerized Counter-Strike 1.6 ScoutzKnivez server using the ReHLDS stack" \
       org.opencontainers.image.source="https://github.com/KevinTCoughlin/cs-server" \
       org.opencontainers.image.licenses="MIT" \

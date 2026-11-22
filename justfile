@@ -122,6 +122,11 @@ test:
 e2e: build
     bash tests/e2e_test.sh {{ENGINE}} {{IMAGE}}
 
+# Build the Day of Defeat image (localhost/cs-server:dod) and test it
+dod:
+    podman build --build-arg GAME=dod -t localhost/cs-server:dod .
+    bash tests/e2e_dod_test.sh podman localhost/cs-server:dod
+
 # Exec into running container
 shell:
     {{ENGINE}} exec -it scoutzknivez bash || {{ENGINE}} exec -it scoutzknivez sh

@@ -459,6 +459,32 @@ Steam servers.` and is neither VAC secured nor on the master list. Look for
 set `SERVER_IP` to the address clients reach; the health check follows it.
 A LAN-profile server does not talk to Steam and needs no `SERVER_IP`.
 
+## Day of Defeat
+
+The same Containerfile builds a Day of Defeat server: the same engine
+(ReHLDS), Metamod-R and AMX Mod X, around Valve's own game library. It is a
+build option for now; no Day of Defeat image is published yet, and the
+installer and Compose file still assume Counter-Strike.
+
+```bash
+podman build --build-arg GAME=dod -t localhost/cs-server:dod .   # or: just dod
+podman run -d --name dod \
+    --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp \
+    -p 27015:27015/udp -v dod-state:/hlds/state \
+    localhost/cs-server:dod
+```
+
+It starts on `dod_anzio` with the 18 stock maps in rotation and the stock
+AMX Mod X plugins, including player stats. `MAP`, `MAXPLAYERS`, `PORT`,
+`LAN_MODE`, `NOMASTER`, `SERVER_IP`, `FASTDL_URL` and the log settings work as
+they do for Counter-Strike; the state volume, read-only root and console pipe
+are the same. To change settings, mount your own files over
+`/hlds/dod/server.cfg` and `/hlds/dod/mapcycle.txt` (defaults in
+`config/dod/`).
+
+Not there: bots (the bots here are part of the Counter-Strike game library),
+`MODE` and `BOTS` (both ignored), and the ScoutzKnivez plugins.
+
 ## Saved state and logs
 
 Everything the server writes while it runs is kept in one place,
