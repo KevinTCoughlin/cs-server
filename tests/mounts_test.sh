@@ -31,9 +31,17 @@ for name in "${names[@]}"; do
     expect compose.yml 1 "${target}"
     expect quadlet/scoutzknivez.container 1 "${target}"
     expect justfile 1 "${target}"
-    # install.sh mounts twice: the Quadlet unit and `docker run`.
-    expect install.sh 2 "${target}"
 done
+
+# install.sh builds its mounts from CONFIG_FILES and CONFIG_DIRS (checked
+# below), once for the Quadlet unit and once for `docker run`, so another
+# game (CS_GAME) mounts into its own directory.
+# shellcheck disable=SC2016 # the text is searched for as written
+{
+    expect install.sh 1 'Volume=${CONFIG_DIR}/${f}:/hlds/${GAME}/${f}:ro,Z'
+    expect install.sh 1 '-v "${CONFIG_DIR}/${f}:/hlds/${GAME}/${f}:ro"'
+    expect install.sh 1 'CONFIG_DIRS=(modes)'
+}
 
 # ops/cs-server and install.sh seed from one CONFIG_FILES array each.
 for file in ops/cs-server install.sh; do
@@ -51,7 +59,6 @@ expect compose.yml 1 "${modes}"
 expect quadlet/scoutzknivez.container 1 "${modes}"
 expect justfile 1 "${modes}"
 expect ops/cs-server 1 "${modes}"
-expect install.sh 2 "${modes}"
 
 # The state volume (bans, admins, stats, logs) is writable and mounted on
 # every path; without it a replaced container starts from nothing.
