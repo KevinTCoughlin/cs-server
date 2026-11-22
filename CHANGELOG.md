@@ -9,6 +9,7 @@
 - **Other games: published images and installer.** A release tag now also builds, tests and publishes every game on both architectures as `:<version>-<game>`, `:<major>.<minor>-<game>`, `:<major>-<game>` and `:<game>` (`.github/workflows/games.yml`). `CS_GAME=<game>` makes `install.sh` install that game with its own service (`<game>-server`), config directory (`~/.config/<game>-server`: the game's `server.cfg` and `mapcycle.txt`) and state volume, next to a Counter-Strike server or on its own (#108)
 
 ### Fixed
+- **macOS: the image no longer built.** Apple `container` 1.7.1 refuses a Containerfile over 16 KiB (`Dockerfile size (18706 bytes) exceeds the maximum allowed size of 16384 bytes`, apple/container#735), which ours passed when the other games were added. `cs-server build` / `update` and `just build` / `up` / `deploy` now hand the builder a copy without the comment lines (about 11.7 KiB); `tests/ops_test.sh` fails if that copy reaches the limit. `cs-server install` on a Mac that still had an older image started that image instead of failing
 - **Installer: the server could not read its config.** `install.sh` made the files in the config directory mode 600. The server runs as an unprivileged user inside the container, so `server.cfg` and the map cycles were silently ignored (stock settings, `Couldn't read file "mapcycle.txt"`). They are now 644, inside a directory that stays 700, so other users of the machine still cannot read them. Running the installer again repairs an existing install
 
 ## [1.2.0] - 2026-11-21

@@ -35,6 +35,7 @@ assert_eq "ops/cs-server pins PATH on exactly one line" 1 "${pinned}"
 grep -v '^export PATH=' "${ROOT}/ops/cs-server" > "${TREE}/ops/cs-server"
 chmod +x "${TREE}/ops/cs-server"
 ln -s "${ROOT}/config" "${TREE}/config"
+ln -s "${ROOT}/Containerfile" "${TREE}/Containerfile"
 ln -s "${ROOT}/scripts" "${TREE}/scripts"
 ln -s "${ROOT}/ops/launchd" "${TREE}/ops/launchd"
 
@@ -50,7 +51,14 @@ case "$1" in
             [ -e "${STATE}/image" ]
         fi
         ;;
-    build) : > "${STATE}/image" ;;
+    build)
+        : > "${STATE}/image"
+        # Keep what -f names: the test checks its size and content.
+        while [ "$#" -gt 1 ]; do
+            if [ "$1" = -f ]; then cp "$2" "${STATE}/containerfile"; fi
+            shift
+        done
+        ;;
 esac
 EOF
 cat > "${STUBS}/launchctl" <<'EOF'
@@ -179,7 +187,16 @@ assert_contains "VM size can be overridden" "${calls}" "-m 1G -c 4"
 fresh
 ops -- install
 expect_ok "install"
-assert_contains "install builds a missing image" "${calls}" "container build --platform linux/arm64 -t localhost/cs-server:latest -f Containerfile ."
+assert_contains "install builds a missing image" "${calls}" "container build --platform linux/arm64 -t localhost/cs-server:latest -f "
+# Apple's builder refuses a Containerfile over 16384 bytes (apple/container#735).
+built="${STATE}/containerfile"
+size=$(wc -c < "${built}")
+[[ "${size}" -lt 16384 ]] || fail "the Containerfile handed to the builder is ${size} bytes; Apple container's limit is 16384"
+comments=$(grep -cE '^[[:space:]]*#' "${built}") || true
+assert_eq "the built Containerfile has no comment lines" 0 "${comments}"
+instructions=$(grep -cE '^(FROM|RUN|COPY|ARG|ENV|USER|WORKDIR|ENTRYPOINT|HEALTHCHECK|EXPOSE|LABEL|STOPSIGNAL|VOLUME|CMD) ' "${ROOT}/Containerfile")
+kept=$(grep -cE '^(FROM|RUN|COPY|ARG|ENV|USER|WORKDIR|ENTRYPOINT|HEALTHCHECK|EXPOSE|LABEL|STOPSIGNAL|VOLUME|CMD) ' "${built}")
+assert_eq "the built Containerfile keeps every instruction" "${instructions}" "${kept}"
 assert_contains "install stops the builder it started" "${calls}" "container builder stop"
 link=$(readlink "${HOME_DIR}/.local/bin/cs-server")
 assert_eq "install links the CLI" "${TREE}/ops/cs-server" "${link}"
