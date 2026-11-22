@@ -160,8 +160,41 @@ exit 17
 EOF
 chmod +x "${WORK_DIR}/hlds_run"
 
+# A Day of Defeat image: its own game directory and default map, and none of
+# the ScoutzKnivez mode or bot arguments.
+bash "${ROOT}/scripts/game-env.sh" dod > "${WORK_DIR}/game.env"
+run_stub HLDS_GAME_ENV="${WORK_DIR}/game.env"
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    "-game dod +map dod_anzio "*) ;;
+    *) printf 'Expected a Day of Defeat image to start -game dod on dod_anzio, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+case "${args}" in
+    *sk_mode* | *bot_quota*) printf 'Day of Defeat must not get mode or bot arguments, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+
+# Condition Zero has ReGameDLL's bots but not the ScoutzKnivez plugin.
+bash "${ROOT}/scripts/game-env.sh" czero > "${WORK_DIR}/game.env"
+run_stub HLDS_GAME_ENV="${WORK_DIR}/game.env" BOTS=0
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    "-game czero +map de_dust2_cz "*"+bot_quota 0"*) ;;
+    *) printf 'Expected Condition Zero with BOTS=0 to pass +bot_quota 0, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+case "${args}" in
+    *sk_mode* | *sk_bots*) printf 'Condition Zero must not get ScoutzKnivez arguments, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+if bash "${ROOT}/scripts/game-env.sh" quake >/dev/null 2>&1; then
+    printf 'game-env.sh accepted an unknown game\n' >&2
+    exit 1
+fi
+
 run_stub
 args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    "-game cstrike +map scoutzknivez "*"+localinfo sk_mode scoutz +exec server.cfg"*"+bot_quota 10"*) ;;
+    *) printf 'Expected the Counter-Strike defaults, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
 case "${args}" in
     *"+exec server.cfg +exec banned.cfg +exec listip.cfg "*" +log on") ;;
     *) printf 'Expected the ban lists to be loaded and +log on by default, got: %s\n' "${args}" >&2; exit 1 ;;

@@ -96,7 +96,7 @@ lint:
 
 # Lint shell scripts with shellcheck
 shellcheck:
-    shellcheck entrypoint.sh install.sh scripts/i386-compat.sh scripts/mode.sh scripts/fetch-maps.sh scripts/healthcheck.sh scripts/release-notes.sh ops/cs-server tests/*.sh
+    shellcheck entrypoint.sh install.sh scripts/i386-compat.sh scripts/mode.sh scripts/fetch-maps.sh scripts/healthcheck.sh scripts/game-env.sh scripts/release-notes.sh ops/cs-server tests/*.sh
 
 # Run all checks
 check: lint shellcheck test
@@ -121,6 +121,12 @@ test:
 # Build the image, boot it and test the live server (about 2 minutes)
 e2e: build
     bash tests/e2e_test.sh {{ENGINE}} {{IMAGE}}
+
+# Build another game's image (localhost/cs-server:<game>) and test it:
+# czero, dod, tfc, valve, gearbox, dmc or ricochet
+game name:
+    podman build --build-arg GAME={{name}} -t localhost/cs-server:{{name}} .
+    bash tests/e2e_game_test.sh podman localhost/cs-server:{{name}}
 
 # Exec into running container
 shell:

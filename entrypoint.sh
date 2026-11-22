@@ -4,7 +4,17 @@
 # shellcheck disable=SC2329 # Signal/EXIT traps invoke these functions indirectly.
 set -euo pipefail
 
-MAP="${MAP:-scoutzknivez}"
+# Which game this image runs: its row of scripts/game-env.sh, written at
+# build. Not a run-time setting; an image holds one game.
+GAME=cstrike
+GAME_MAP=scoutzknivez
+GAME_BOTS=1
+GAME_ENV="${HLDS_GAME_ENV:-/usr/local/share/cs-server/game.env}"
+if [[ -f "${GAME_ENV}" ]]; then
+    # shellcheck disable=SC1090 # generated at image build
+    source "${GAME_ENV}"
+fi
+MAP="${MAP:-${GAME_MAP}}"
 MAXPLAYERS="${MAXPLAYERS:-20}"
 PORT="${PORT:-27015}"
 BOTS="${BOTS:-1}"
@@ -243,8 +253,18 @@ mkfifo "${FIFO}"
 chmod 600 "${FIFO}"
 exec 3<> "${FIFO}"
 
-if [[ "${BOTS}" = "1" ]]; then
+# Modes belong to the ScoutzKnivez plugin (Counter-Strike only) and bots to
+# ReGameDLL (GAME_BOTS); elsewhere MODE and BOTS do nothing.
+MODE_ARGS=()
+if [[ "${GAME}" = "cstrike" ]]; then
+    MODE_ARGS=(+localinfo sk_mode "${MODE}")
+fi
+if [[ "${GAME_BOTS}" != "1" ]]; then
+    BOT_QUOTA_ARGS=()
+elif [[ "${BOTS}" = "1" ]]; then
     BOT_QUOTA_ARGS=(+bot_quota 10)
+elif [[ "${GAME}" != "cstrike" ]]; then
+    BOT_QUOTA_ARGS=(+bot_quota 0)
 else
     # server.cfg sets bot_quota and scoutzknivez.amxx re-runs it on every
     # map; sk_bots tells the plugin to turn bots off again afterwards.
@@ -275,7 +295,7 @@ else
     IP_ARGS=()
 fi
 
-# File logs go to the state volume (cstrike/logs is a link into it). `log on`
+# File logs go to the state volume (<game>/logs is a link into it). `log on`
 # must come after server.cfg, whose sv_log_onefile decides how files are cut.
 LOG_ARGS=()
 if [[ "${LOGS}" = "1" ]]; then
@@ -291,7 +311,7 @@ fi
 # the IPC state needed for the second run to accept players).
 HLDS_ARGS=(
     ./hlds_run
-    -game cstrike
+    -game "${GAME}"
     +map "${MAP}"
     +maxplayers "${MAXPLAYERS}"
     +port "${PORT}"
@@ -300,7 +320,7 @@ HLDS_ARGS=(
     -pingboost 2
     +sys_ticrate 1000
     +mapcyclefile "${MAPCYCLE}"
-    +localinfo sk_mode "${MODE}"
+    "${MODE_ARGS[@]}"
     +exec server.cfg
     +exec banned.cfg
     +exec listip.cfg
@@ -322,6 +342,13 @@ script -eqfc "${HLDS_COMMAND}" /dev/null < "${FIFO}" &
 SCRIPT_PID=$!
 
 echo "[entrypoint] HLDS started (PID: ${SCRIPT_PID})"
+
+# Condition Zero ignores bot_quota on the command line; the console takes it
+# once the server reads its input, and it then holds across map changes.
+# (Counter-Strike's server.cfg and plugin set it on every map instead.)
+if [[ "${GAME}" != "cstrike" && "${#BOT_QUOTA_ARGS[@]}" -gt 0 ]]; then
+    hlds_command "bot_quota ${BOT_QUOTA_ARGS[1]}"
+fi
 
 set +e
 wait "${SCRIPT_PID}"
