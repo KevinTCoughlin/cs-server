@@ -68,6 +68,13 @@ cat > "${STUBS}/systemctl" <<'EOF'
 printf 'systemctl %s\n' "$*" >> "${CALLS}"
 case "$2" in
     is-active | is-enabled) [ "${FAKE_ACTIVE:-1}" = 1 ] ;;
+    # As systemd does: a Quadlet-generated service cannot be enabled.
+    enable)
+        case "$*" in
+            *.timer) ;;
+            *) echo "Failed to enable unit: Unit is transient or generated" >&2; exit 1 ;;
+        esac
+        ;;
 esac
 EOF
 cat > "${STUBS}/uname" <<'EOF'
@@ -167,7 +174,8 @@ assert_not_contains "docker is not used when podman exists" "${calls}" "docker "
 assert_contains "pulls the image" "${calls}" "podman pull localhost/cs-server:latest"
 assert_contains "seeds config without network" "${calls}" "podman run --rm --network none --entrypoint sh localhost/cs-server:latest"
 assert_contains "reloads systemd" "${calls}" "systemctl --user daemon-reload"
-assert_contains "enables and starts the service" "${calls}" "systemctl --user enable --now scoutzknivez"
+assert_contains "starts the service" "${calls}" "systemctl --user start scoutzknivez"
+assert_not_contains "does not try to enable a generated unit" "${calls}" "enable --now scoutzknivez"
 assert_contains "prints the server address" "${output}" "192.0.2.10:27015"
 
 # The installer's unit is the repo's Quadlet unit with this user's paths.
@@ -273,7 +281,7 @@ rm "${WORK}/old-image/mapcycle-nipper-xmas.txt"
 install FAKE_IMAGE_CONFIG="${WORK}/old-image"
 expect_die "old image" "does not provide mapcycle-nipper-xmas.txt"
 [[ ! -e "${UNIT}" ]] || fail "old image: the Quadlet unit was installed anyway"
-assert_not_contains "old image: service not started" "${calls}" "enable --now"
+assert_not_contains "old image: service not started" "${calls}" "systemctl --user start"
 
 install FAKE_IMAGE_CONFIG="${WORK}/no-such-image"
 expect_die "unreadable image" "Unable to read the default config"

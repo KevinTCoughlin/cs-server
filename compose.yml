@@ -29,9 +29,6 @@ services:
       LOGS: ${LOGS:-1}
       LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-7}
       LOGADDRESS: ${LOGADDRESS:-}
-    sysctls:
-      - net.core.rmem_max=26214400
-      - net.core.wmem_max=26214400
     # The image is immutable at run time: writes go to the state volume or
     # to /tmp (console FIFO).
     read_only: true

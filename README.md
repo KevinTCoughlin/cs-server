@@ -25,7 +25,7 @@ Requires [Podman](https://podman.io/getting-started/installation) (rootless) or 
 That runs the newest build of `main` (`:latest`). To run a release instead, name it; see [Releases, upgrade and rollback](#releases-upgrade-and-rollback):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.1.0/install.sh | CS_SERVER_VERSION=1.1.0 bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.1.1/install.sh | CS_SERVER_VERSION=1.1.1 bash
 ```
 
 To uninstall: `curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash -s -- --uninstall`
@@ -507,7 +507,7 @@ Each release is a git tag (`v1.0.0`), a [GitHub release](https://github.com/Kevi
 **Upgrade** by running the installer again with the new version. Config in `~/.config/cs-server/` is kept, the unit is rewritten, and a running server is restarted onto the new image (players get the 30 second countdown):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.1.0/install.sh | CS_SERVER_VERSION=1.1.0 bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.1.1/install.sh | CS_SERVER_VERSION=1.1.1 bash
 ```
 
 **From 1.0.x to 1.1.0, re-run the installer** rather than editing `Image=`:
@@ -659,7 +659,7 @@ Nothing installs or loads it for you: `install.sh` only points at it.
 
 The server is preconfigured with HLDS/ReHLDS network and tick-rate optimizations:
 
-- **Network buffer sysctls** (`net.core.rmem_max`, `net.core.wmem_max`) — applied automatically per-container via compose, Quadlet, and install.sh. No admin action required.
+- **Network buffers** — the container sets no sysctls. `net.core.rmem_max` and `net.core.wmem_max` belong to the host, and a rootless container that asks for them does not start. A busy host can raise them itself (`sudo sysctl -w net.core.rmem_max=26214400 net.core.wmem_max=26214400`); a single server does not need it.
 - **Host kernel timer and CPU governor** — detected automatically by `install.sh` during installation. The script checks the current state and prints actionable commands if changes are recommended.
 
 ### Host Kernel (optional)

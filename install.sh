@@ -395,8 +395,6 @@ Environment=LAN_MODE=0
 Environment=MODE=scoutz
 Environment=LOGS=1
 Environment=LOG_RETENTION_DAYS=7${fastdl_env}
-Sysctl=net.core.rmem_max=26214400
-Sysctl=net.core.wmem_max=26214400
 ReadOnly=true
 Tmpfs=/tmp
 DropCapability=ALL
@@ -424,7 +422,9 @@ QUADLET
 
     info "Reloading systemd and starting server"
     systemctl --user daemon-reload
-    systemctl --user enable --now "${SERVICE_NAME}"
+    # Quadlet's generator enables the unit itself ([Install] in the
+    # .container file); `systemctl enable` refuses generated units.
+    systemctl --user start "${SERVICE_NAME}"
     if [[ "${was_active}" == "1" ]]; then
         info "Restarting the running server on ${IMAGE} (in-game countdown, about 35 s)"
         systemctl --user restart "${SERVICE_NAME}"
@@ -520,8 +520,6 @@ install_docker() {
         -e LOGS=1 \
         -e LOG_RETENTION_DAYS=7 \
         ${fastdl_args[@]+"${fastdl_args[@]}"} \
-        --sysctl net.core.rmem_max=26214400 \
-        --sysctl net.core.wmem_max=26214400 \
         --read-only \
         --tmpfs /tmp \
         --cap-drop ALL \
