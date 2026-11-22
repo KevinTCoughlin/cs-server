@@ -338,6 +338,51 @@ back=$(all_running "amxx plugins" "${listed}")
 assert_eq "plugins.ini is back after vanilla" "${plugins}" "${back}"
 step "switched back to scoutz from vanilla"
 
+# --- scoutz -> match -> scoutz ----------------------------------------------
+# match.amxx with bots: warmup, a forced start, the knife round, the side
+# choice, live, a pause that holds the freeze time. Ready-up needs people.
+match_listed=$(grep -cE '^[A-Za-z0-9_]+\.amxx' "${ROOT}/plugins/amxmodx/modes/match.ini" || true)
+switch_mode match mapcycle-dust2.txt scoutzknivez scoutzknivez
+wait_log '\[MATCH\] state: warmup' 30 >/dev/null || fail "match mode did not start in warmup"
+match_plugins=$(all_running "amxx plugins" "${match_listed}")
+assert_eq "match runs its own plugin list" "${match_listed}" "${match_plugins}"
+expect_cvar mp_round_infinite 1 "warmup rounds do not end"
+line=$(ask match_pause '\[MATCH\] pausing')
+assert_contains "no pause outside the live match" "${line}" "pausing is for the live match (warmup)"
+mark
+send match_start
+wait_log '\[MATCH\] state: knife' 20 >/dev/null || fail "match_start did not start the knife round"
+wait_log '\[MATCH\] state: choose' 300 >/dev/null || fail "the knife round did not produce a winner"
+mark
+send match_switch
+wait_log '\[MATCH\] state: live \(switched\)' 20 >/dev/null || fail "match_switch did not start the match"
+expect_cvar mp_round_infinite 0 "live rounds end"
+expect_cvar mp_startmoney 800 "live money from modes/match.cfg"
+# sv_restart 3, then freeze time (15 s): the pause takes hold in it, and no
+# round starts for as long as it lasts.
+mark
+wait_log 'World triggered "Restart_Round_' 20 >/dev/null || true
+sleep $((5 * SCALE))
+mark
+send match_pause
+wait_log '\[MATCH\] paused' 60 >/dev/null || fail "the match did not pause in freeze time"
+sleep $((25 * SCALE))
+if since_mark 'World triggered "Round_Start"' >/dev/null; then
+    fail "a round started while the match was paused"
+fi
+mark
+send match_unpause
+wait_log 'World triggered "Round_Start"' 20 >/dev/null || fail "the round did not start after the unpause"
+step "match: warmup, knife round, side choice, live, pause (${match_plugins} plugins)"
+
+switch_mode scoutz mapcycle.txt scoutzknivez
+expect_cvar sv_gravity "${gravity}" "match settings do not leak back into scoutz"
+expect_cvar mp_round_infinite 0 "warmup rules do not leak into scoutz"
+expect_cvar mp_maxrounds 0 "the match round limit does not leak into scoutz"
+back=$(all_running "amxx plugins" "${listed}")
+assert_eq "plugins.ini is back after match" "${plugins}" "${back}"
+step "switched back to scoutz from match"
+
 # Grenade maps: only when the he_ map is in this image (local builds with maps/).
 if map_in_image he_dodgeball2; then
     mark

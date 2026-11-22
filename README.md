@@ -183,7 +183,7 @@ Edit files in `config/` — they're bind-mounted into the container:
 | `config/mapcycle-dust2.txt` | Dust 2 rotation (classic de_dust2) |
 | `config/mapcycle-nipper.txt` | Nipper Friday (knife mode) rotation |
 | `config/mapcycle-nipper-xmas.txt` | Nipper Friday Christmas rotation (Dec 1 to Jan 6) |
-| `config/modes/*.cfg` | Per-mode gameplay (gravity, round time, money), run after `server.cfg`: `scoutz.cfg`, `knife.cfg` (Nipper Friday; `knife_he.cfg` for grenade maps), `vanilla.cfg` |
+| `config/modes/*.cfg` | Per-mode gameplay (gravity, round time, money), run after `server.cfg`: `scoutz.cfg`, `knife.cfg` (Nipper Friday; `knife_he.cfg` for grenade maps), `vanilla.cfg`, `match.cfg` |
 | `config/autoexec.cfg` | Runs on server start |
 
 Changes to `server.cfg` take effect on the next map or via `just rcon "exec server.cfg"`.
@@ -263,6 +263,35 @@ admin and map-vote plugins without bunny hop, kill sounds and advertisements.
 A mode without such a file uses `plugins.ini`. Bots need a navigation mesh for
 each map; on a stock map they build one the first time it is played (a
 minute or two) and it is kept in the state volume.
+
+### Match (5v5)
+
+`MODE=match` (or `just mode match` on a running server) runs a competitive
+match: first to 16 of 30 rounds, 1:45 rounds, 15 s freeze time, $800,
+friendly fire on, and sides swapped after 15 rounds with the score carried
+over and money reset. Every map goes through these steps:
+
+| Step | What happens | Chat |
+|------|--------------|------|
+| Warmup | Everyone respawns with full money; rounds do not end | `.ready`, `.notready` |
+| Knife round | Starts when 10 players are ready. Knives only, one round | |
+| Side choice | The knife winners pick within 30 s, otherwise sides stay | `.stay`, `.switch` |
+| Live | The match, after a restart | `.pause`, `.unpause` |
+
+A pause holds the next freeze time (or the current one) until someone says
+`.unpause`. Commands also work with `!` or `/`.
+
+From the server console (`just rcon "<command>"`): `match_start` starts the
+knife round without waiting for players to ready up, `match_live` skips
+straight to live, `match_stay` / `match_switch`, `match_pause` /
+`match_unpause`, `match_reset` goes back to warmup and `match_status` prints
+where the match is. `match_players` (10), `match_half` (15) and
+`match_choose_time` (30) are cvars; set them in `config/modes/match.cfg`.
+For a 2v2: `match_players 4`.
+
+The mode's plugin list (`plugins/amxmodx/modes/match.ini`) has no map votes
+and no AFK or ping kicks. There is no overtime: 15-15 is a draw. Set `BOTS=0`
+for a real match; with bots, `match_start` gives a practice run.
 
 #### NIPPER's maps
 
@@ -378,7 +407,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `NOMASTER` | `0` | Disable master server (1=on, 0=off). Enable for Docker Desktop on Windows |
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
-| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday) or `vanilla` (stock Counter-Strike) |
+| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike) or `match` (5v5: warmup, knife round, pause) |
 | `FASTDL_URL` | empty | http(s) URL serving your `cstrike/` content (`sv_downloadurl`); see [FastDL](#fastdl-fast-downloads) |
 | `LOGS` | `1` | Write server log files (1=on, 0=off); see [Saved state and logs](#saved-state-and-logs) |
 | `LOG_RETENTION_DAYS` | `7` | Delete log files older than this many days (`0` keeps them all) |

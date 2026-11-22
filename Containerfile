@@ -207,7 +207,7 @@ COPY plugins/amxmodx/scripting/*.sma /usr/local/src/cs-server/scripting/
 WORKDIR /hlds/${GAME}/addons/amxmodx/scripting
 RUN chmod +x amxxpc && mkdir -p /out && \
     if [ "${GAME}" = cstrike ]; then cp /usr/local/src/cs-server/scripting/*.sma . || exit 1; else exit 0; fi && \
-    for sma in scoutzknivez.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma; do \
+    for sma in scoutzknivez.sma match.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma; do \
         run-i386 ./amxxpc "$sma" || exit 1; \
         mv "${sma%.sma}.amxx" /out/ || exit 1; \
     done

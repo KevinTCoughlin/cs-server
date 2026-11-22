@@ -20,8 +20,9 @@ BOTS="${BOTS:-1}"
 NOMASTER="${NOMASTER:-0}"
 LAN_MODE="${LAN_MODE:-0}"
 MODE="${MODE:-scoutz}"
-# Vanilla starts on a stock map with the stock rotation unless told otherwise.
-if [[ "${GAME}" = "cstrike" && "${MODE}" = "vanilla" ]]; then
+# Vanilla and match start on a stock map with the stock rotation unless told
+# otherwise.
+if [[ "${GAME}" = "cstrike" && ( "${MODE}" = "vanilla" || "${MODE}" = "match" ) ]]; then
     MAP="${MAP:-de_dust2}"
     MAPCYCLE="${MAPCYCLE:-mapcycle-dust2.txt}"
 fi
@@ -134,9 +135,9 @@ if [[ -n "${LOGADDRESS}" && "${LOGS}" != "1" ]]; then
     exit 1
 fi
 case "${MODE}" in
-    scoutz | knife | vanilla) ;;
+    scoutz | knife | vanilla | match) ;;
     *)
-        echo "[entrypoint] MODE must be scoutz, knife or vanilla" >&2
+        echo "[entrypoint] MODE must be scoutz, knife, vanilla or match" >&2
         exit 1
         ;;
 esac
