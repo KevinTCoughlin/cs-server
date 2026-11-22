@@ -91,8 +91,14 @@ build_image() {
         stop_builder=0
     fi
     log "building ${IMAGE} (linux/arm64, i386 payload via qemu) from ${REPO}"
-    local status=0
-    (cd "${REPO}" && container build --platform linux/arm64 -t "${IMAGE}" -f Containerfile .) || status=$?
+    # Apple's builder refuses a Containerfile over 16 KiB (apple/container#735)
+    # and ours is past that, a third of it comments: build from a copy without
+    # them. `#!` lines stay, in case a heredoc ever carries a script.
+    local slim status=0
+    slim=$(mktemp "${TMPDIR:-/tmp}/cs-server-Containerfile.XXXXXX")
+    grep -vE '^[[:space:]]*#([^!]|$)' "${REPO}/Containerfile" > "${slim}"
+    (cd "${REPO}" && container build --platform linux/arm64 -t "${IMAGE}" -f "${slim}" .) || status=$?
+    rm -f "${slim}"
     if [[ "${stop_builder}" == "1" ]]; then
         log "stopping the image builder VM"
         container builder stop >/dev/null 2>&1 || true
