@@ -422,7 +422,9 @@ QUADLET
 
     info "Reloading systemd and starting server"
     systemctl --user daemon-reload
-    systemctl --user enable --now "${SERVICE_NAME}"
+    # Quadlet's generator enables the unit itself ([Install] in the
+    # .container file); `systemctl enable` refuses generated units.
+    systemctl --user start "${SERVICE_NAME}"
     if [[ "${was_active}" == "1" ]]; then
         info "Restarting the running server on ${IMAGE} (in-game countdown, about 35 s)"
         systemctl --user restart "${SERVICE_NAME}"

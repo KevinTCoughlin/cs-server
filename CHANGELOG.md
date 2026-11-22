@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- **A fresh Podman install stopped before starting the server.** `install.sh` ran `systemctl --user enable --now` on the Quadlet unit; systemd refuses to enable a generated unit (`Unit ... is transient or generated`) and the installer exited there. It now starts the unit; the unit's `[Install]` section already makes it start at login or boot.
 - **The Quadlet unit did not start on rootless Podman.** The unit, `install.sh` (Quadlet and `docker run`) and `compose.yml` asked for `net.core.rmem_max` / `net.core.wmem_max`, which belong to the host: the runtime refused with `open /proc/sys/net/core/rmem_max: Permission denied` and the service never came up. The sysctls are gone from every deployment path; the README shows how to raise them on the host. **Run the installer again** to get a unit without them (#92)
 
 ## [1.1.0] - 2026-11-21
