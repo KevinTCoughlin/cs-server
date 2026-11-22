@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-22
+
 ### Added
 - **Other games.** `podman build --build-arg GAME=<name>` (`just game <name>`) builds a server for Condition Zero (`czero`), Day of Defeat (`dod`), Team Fortress Classic (`tfc`), Half-Life deathmatch (`valve`), Opposing Force (`gearbox`), Deathmatch Classic (`dmc`) or Ricochet (`ricochet`) from the same Containerfile: ReHLDS, Metamod-R and AMX Mod X around the game's own library and stock maps, with the state volume, read-only root, console pipe and graceful shutdown of the Counter-Strike image. Condition Zero also gets ReGameDLL and bots. `scripts/game-env.sh` is the table of games. (#106)
 - **Other games: published images and installer.** A release tag now also builds, tests and publishes every game on both architectures as `:<version>-<game>`, `:<major>.<minor>-<game>`, `:<major>-<game>` and `:<game>` (`.github/workflows/games.yml`). `CS_GAME=<game>` makes `install.sh` install that game with its own service (`<game>-server`), config directory (`~/.config/<game>-server`: the game's `server.cfg` and `mapcycle.txt`) and state volume, next to a Counter-Strike server or on its own (#108)
@@ -135,7 +137,8 @@ First tagged release. Images for it are on ghcr.io as `1.0.0`, `1.0` and `1` (`l
 - .env.example documenting environment variables
 - Quadlet systemd unit file shipped in-repo
 
-[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/KevinTCoughlin/cs-server/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/KevinTCoughlin/cs-server/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.0.0...v1.1.0
