@@ -417,7 +417,6 @@ seed_config() {
 
     for f in ${CONFIG_DIRS[@]+"${CONFIG_DIRS[@]}"}; do
         mkdir -p "${CONFIG_DIR}/${f}"
-        chmod 700 "${CONFIG_DIR}/${f}"
     done
     for f in "${tmp}"/*.cfg "${tmp}"/*.txt "${tmp}"/modes/*.cfg; do
         [[ -f "${f}" ]] || continue
@@ -442,7 +441,11 @@ seed_config() {
         printf 'rcon_password "%s"\n' "${rcon_password}" >> "${CONFIG_DIR}/server.cfg"
         ok "Generated rcon_password in ${CONFIG_DIR}/server.cfg (keep that file private)"
     fi
-    find "${CONFIG_DIR}" -type f -exec chmod 600 {} +
+    # The server runs as an unprivileged user in the container, which is not
+    # this user there: it reads these files as "other". The directory above
+    # them (mode 700) is what keeps them from other users of this machine.
+    find "${CONFIG_DIR}" -mindepth 1 -type d -exec chmod 755 {} +
+    find "${CONFIG_DIR}" -type f -exec chmod 644 {} +
 }
 
 # --- Podman install (Quadlet) -----------------------------------------------

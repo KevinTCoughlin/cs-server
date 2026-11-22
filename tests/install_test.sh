@@ -191,7 +191,9 @@ assert_eq "generated Quadlet unit matches quadlet/scoutzknivez.container" "${ref
 for name in "${CONFIG_NAMES[@]}"; do
     [[ -f "${CONFIG}/${name}" ]] || fail "config not seeded: ${name}"
     perms=$(mode_of "${CONFIG}/${name}")
-    assert_eq "${name} permissions" 600 "${perms}"
+    # Readable by the container's unprivileged user; the 700 directory
+    # above keeps other users of the host out.
+    assert_eq "${name} permissions" 644 "${perms}"
     assert_contains "unit mounts ${name}" "${generated}" ":/hlds/cstrike/${name}:ro,Z"
 done
 for f in "${ROOT}"/config/modes/*.cfg; do
@@ -200,7 +202,7 @@ done
 perms=$(mode_of "${CONFIG}")
 assert_eq "config dir permissions" 700 "${perms}"
 perms=$(mode_of "${CONFIG}/modes")
-assert_eq "modes dir permissions" 700 "${perms}"
+assert_eq "modes dir permissions" 755 "${perms}"
 cmp -s "${ROOT}/config/server.cfg" "${CONFIG}/server.cfg" || fail "server.cfg differs from the image default"
 count=$(count_lines "${CONFIG}/server.cfg" "rcon_password")
 assert_eq "no RCON password unless asked for" 0 "${count}"
