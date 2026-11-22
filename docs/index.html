@@ -476,12 +476,27 @@ footer p{max-width:60em}
       <div class="card">
         <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.500 7-10V6z"/><path d="m9 12 2 2 4-4"/></svg></div>
         <h3>Locked down by default</h3>
-        <p>Runs as a non-root user with every Linux capability dropped, no privilege escalation, memory and CPU limits, and RCON lockout after 5 failures.</p>
+        <p>Runs as a non-root user on a read-only filesystem with every Linux capability dropped, no privilege escalation, and memory and CPU limits. Network RCON is off unless you turn it on.</p>
       </div>
       <div class="card">
         <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.300M20 12a8 8 0 0 1-14 5.300"/><path d="M18 3v4h-4M6 21v-4h4"/></svg></div>
         <h3>Stays up on its own</h3>
         <p>A systemd Quadlet unit on Linux or a launchd agent on macOS starts it at boot and restarts it after a crash. On shutdown, players get a 30-second countdown.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg></div>
+        <h3>Classic and 5v5 match modes</h3>
+        <p><code>just mode vanilla</code> is stock Counter-Strike. <code>just mode match</code> runs a 5v5: warmup, <code>.ready</code>, a knife round for sides, and <code>.pause</code>. <a href="#modes">The modes</a>.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+        <h3>Seven more games</h3>
+        <p>The same server for Condition Zero, Day of Defeat, Team Fortress Classic, Half-Life deathmatch, Opposing Force, Deathmatch Classic and Ricochet: <code>CS_GAME=dod</code>. <a href="#games">Other games</a>.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="16" height="6" rx="1"/><rect x="4" y="14" width="16" height="6" rx="1"/><path d="M8 7h.01M8 17h.01"/></svg></div>
+        <h3>More than one server</h3>
+        <p><code>CS_INSTANCE=match2 CS_PORT=27016</code> adds a second server on the same machine with its own settings, bans and stats. <code>CS_PROFILE=lan</code> puts one in the LAN tab.</p>
       </div>
     </div>
   </div>
@@ -580,7 +595,7 @@ footer p{max-width:60em}
             <li><strong>Install it on a spare Linux machine.</strong> Run the install command on any box with Podman or Docker. The three ScoutzKnivez maps are in the image, so there is nothing else to download.</li>
             <li><strong>No spare Linux box? Use your Mac.</strong> Apple silicon Macs run it with Apple's <code>container</code> CLI: <code>just build &amp;&amp; just up</code> from a checkout. See <a href="#macos">macOS / Apple silicon</a>.</li>
             <li><strong>Everyone connects from the CS 1.6 console.</strong> Type <code>connect &lt;server-lan-ip&gt;:27015</code>. The installer prints the address when it finishes.</li>
-            <li><strong>Keep it to the house.</strong> With the Podman install, change <code>Environment=LAN_MODE=0</code> to <code>1</code> in <code>~/.config/containers/systemd/scoutzknivez.container</code>, then run <code>systemctl --user daemon-reload &amp;&amp; systemctl --user restart scoutzknivez</code>.</li>
+            <li><strong>Keep it to the house.</strong> Run the installer with <code>CS_PROFILE=lan</code> in front of <code>bash</code>. The server then shows up in everyone's LAN tab and needs no internet connection.</li>
             <li><strong>Or let friends join from their houses.</strong> Leave <code>LAN_MODE=0</code> (the default), allow 27015 UDP through the host firewall, forward it on your router, and share your public IP.</li>
             <li><strong>Only two of you? Bots fill in.</strong> ZBots fill the server up to 10 players and leave as people join. Set <code>BOTS=0</code> to turn them off.</li>
             <li><strong>Make Friday a Nipper Friday.</strong> Knives only on NIPPER's classic maps, with his Christmas maps through Jan 6. See <a href="#nipper">Nipper Friday</a>.</li>
@@ -643,12 +658,57 @@ footer p{max-width:60em}
               <tr><td><code>BOTS</code></td><td><code>1</code></td><td>Enable bots (1=on, 0=off)</td></tr>
               <tr><td><code>LAN_MODE</code></td><td><code>0</code></td><td>LAN-only server (1) or public (0)</td></tr>
               <tr><td><code>MAPCYCLE</code></td><td><code>mapcycle.txt</code></td><td>Map rotation file, e.g. <code>mapcycle-dust2.txt</code></td></tr>
-              <tr><td><code>MODE</code></td><td><code>scoutz</code></td><td>Startup game mode: <code>scoutz</code> or <code>knife</code> (Nipper Friday)</td></tr>
+              <tr><td><code>MODE</code></td><td><code>scoutz</code></td><td>Startup game mode: <code>scoutz</code>, <code>knife</code> (Nipper Friday), <code>vanilla</code> or <code>match</code>. See <a href="#modes">Game modes</a></td></tr>
               <tr><td><code>NOMASTER</code></td><td><code>0</code></td><td>Skip the master server (1=on). For Docker Desktop on Windows</td></tr>
               <tr><td><code>LOGS</code></td><td><code>1</code></td><td>Write server log files to the state volume (1=on, 0=off)</td></tr>
               <tr><td><code>LOG_RETENTION_DAYS</code></td><td><code>7</code></td><td>Delete log files older than this many days (0 keeps them all)</td></tr>
             </tbody>
           </table></div>
+        </div>
+      </details>
+
+      <details id="modes">
+        <summary>Game modes <small>ScoutzKnivez, knife, vanilla, 5v5 match</small></summary>
+        <div class="d-body">
+          <p>One server, four modes. <code>just mode &lt;name&gt;</code> switches at the end of the round with no restart; <code>MODE</code> picks the one it starts in.</p>
+          <div class="tbl"><table class="kv">
+            <thead><tr><th>Mode</th><th>What it is</th></tr></thead>
+            <tbody>
+              <tr><td><code>scoutz</code></td><td>The default: scout and knife in low gravity, with bunny hop.</td></tr>
+              <tr><td><code>nipper</code></td><td>Knives only on NIPPER's maps (<code>MODE=knife</code>). See <a href="#nipper">Nipper Friday</a>.</td></tr>
+              <tr><td><code>vanilla</code></td><td>Stock Counter-Strike: normal gravity, buying, bombs and hostages, $800.</td></tr>
+              <tr><td><code>match</code></td><td>A 5v5 match, first to 16 of 30 rounds, sides swapped after 15.</td></tr>
+            </tbody>
+          </table></div>
+          <p>A match goes through four steps on every map:</p>
+          <ol>
+            <li><strong>Warmup.</strong> Everyone respawns with full money and rounds do not end. Players say <code>.ready</code>.</li>
+            <li><strong>Knife round.</strong> Starts when ten players are ready. Knives only, one round.</li>
+            <li><strong>Sides.</strong> The winners say <code>.stay</code> or <code>.switch</code> within 30 seconds.</li>
+            <li><strong>Live.</strong> <code>.pause</code> holds the next freeze time until someone says <code>.unpause</code>.</li>
+          </ol>
+          <p class="note">For a 2v2, set <code>match_players 4</code> in <code>modes/match.cfg</code>. To practise with bots, <code>just rcon "match_start"</code> skips the ready-up. There is no overtime: 15-15 is a draw.</p>
+        </div>
+      </details>
+
+      <details id="games">
+        <summary>Other games <small>Seven more Valve classics, same server</small></summary>
+        <div class="d-body">
+          <p>The same engine, plugins, hardening and installer around another game. Each one gets its own service, settings folder and saved state, so it can run next to the Counter-Strike server on another port.</p>
+          <pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | CS_GAME=dod bash</pre>
+          <div class="tbl"><table class="kv">
+            <thead><tr><th><code>CS_GAME</code></th><th>Game</th><th>Starts on</th></tr></thead>
+            <tbody>
+              <tr><td><code>czero</code></td><td>Condition Zero (with bots)</td><td><code>de_dust2_cz</code></td></tr>
+              <tr><td><code>dod</code></td><td>Day of Defeat</td><td><code>dod_anzio</code></td></tr>
+              <tr><td><code>tfc</code></td><td>Team Fortress Classic</td><td><code>2fort</code></td></tr>
+              <tr><td><code>valve</code></td><td>Half-Life deathmatch</td><td><code>crossfire</code></td></tr>
+              <tr><td><code>gearbox</code></td><td>Opposing Force</td><td><code>op4_bootcamp</code></td></tr>
+              <tr><td><code>dmc</code></td><td>Deathmatch Classic</td><td><code>dmc_dm2</code></td></tr>
+              <tr><td><code>ricochet</code></td><td>Ricochet</td><td><code>rc_arena</code></td></tr>
+            </tbody>
+          </table></div>
+          <p class="note">Only Counter-Strike and Condition Zero have bots. The game modes above are Counter-Strike only. A second server on the same machine needs its own port: add <code>CS_PORT=27016</code>.</p>
         </div>
       </details>
 
