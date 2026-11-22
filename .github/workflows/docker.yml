@@ -122,22 +122,16 @@ jobs:
             "${LOCAL_IMAGE}" \
             -c "test -x /hlds/hlds_linux && test -x /hlds/hlds_run && test -x /entrypoint.sh && test -s /etc/ssl/certs/ca-certificates.crt"
 
-      # Runs the server for real: the seccomp profile built into Docker 29
-      # answers the i386 binary's 32-bit socket() with ENOSYS and HLDS
-      # crash-loops, which the file checks above can't see. Same flags as
-      # install.sh: the profile the image carries, which must also be the
-      # one in the repo. On arm64
-      # this is the only CI coverage of the qemu-i386 path.
+      # Runs the server for real, under Docker's built-in seccomp profile:
+      # a server that cannot open its port crash-loops, which the file checks
+      # above can't see. On arm64 this is the only CI coverage of the
+      # qemu-i386 path. (The newest Docker is checked in docker-latest.yml.)
       - name: Smoke test — server starts and reaches Steam
         env:
           STEAM_TIMEOUT: ${{ matrix.steam_timeout }}
         run: |
-          docker run --rm --network none --entrypoint cat "${LOCAL_IMAGE}" \
-            /usr/local/share/cs-server/seccomp.json > "${RUNNER_TEMP}/seccomp.json"
-          cmp "${RUNNER_TEMP}/seccomp.json" ops/seccomp/docker-default.json
           docker run -d --name hlds-smoke \
-            --cap-drop ALL --security-opt no-new-privileges:true \
-            --security-opt "seccomp=${RUNNER_TEMP}/seccomp.json" "${LOCAL_IMAGE}"
+            --cap-drop ALL --security-opt no-new-privileges:true "${LOCAL_IMAGE}"
           for _ in $(seq $((STEAM_TIMEOUT / 3))); do
             if docker logs hlds-smoke 2>&1 | grep -q 'Connection to Steam servers successful'; then
               docker logs hlds-smoke 2>&1 | grep -E 'Connection to Steam|VAC secure'

@@ -893,26 +893,21 @@ install_docker() {
         game_args=(-e "MAP=${START_MAP}" -e "MODE=${MODE}")
     fi
 
-    # The seccomp profile built into Docker 29 answers the i386 HLDS binary's
-    # 32-bit socket() with ENOSYS, so it can't open its port. The image
-    # carries Docker's upstream default profile, which does not have that
-    # fault; an image from before 1.1.0 has none and runs unconfined.
-    local seccomp="${CONFIG_DIR}/seccomp.json"
-    if docker run --rm --network none --entrypoint cat "${IMAGE}" \
-        /usr/local/share/cs-server/seccomp.json > "${seccomp}.new" 2>/dev/null && [[ -s "${seccomp}.new" ]]; then
-        mv "${seccomp}.new" "${seccomp}"
-        chmod 600 "${seccomp}"
-    else
-        rm -f "${seccomp}.new" "${seccomp}"
-        seccomp="unconfined"
-        warn "${IMAGE} has no seccomp profile; running with seccomp=unconfined"
+    # Docker 29.4.2 blocked socketcall(2) in its built-in seccomp profile, so
+    # no 32-bit program could open a socket (moby/moby#52506); 29.4.3 undid
+    # it. Every other release runs the server under the built-in profile.
+    local engine
+    engine=$(docker version --format '{{.Server.Version}}' 2>/dev/null) || engine=""
+    if [[ "${engine}" == "29.4.2" ]]; then
+        error "Docker Engine 29.4.2 cannot run 32-bit programs with networking (fixed in 29.4.3): update Docker and run the installer again"
     fi
+    # A profile an earlier installer saved for `docker run`.
+    rm -f "${CONFIG_DIR}/seccomp.json"
 
     info "Creating and starting container"
     docker run -d \
         --name "${SERVICE_NAME}" \
         --restart on-failure:10 \
-        --security-opt "seccomp=${seccomp}" \
         "${network_args[@]}" \
         "${mount_args[@]}" \
         -v "${STATE_VOLUME}:/hlds/state" \

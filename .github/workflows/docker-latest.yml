@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: MIT
+name: Docker (latest) default seccomp
+
+# The i386 server opens its sockets through socketcall(2). Docker 29.4.2
+# blocked that call in its built-in seccomp profile (moby/moby#52506) and
+# 29.4.3 took the block out again; the hosted runners ship an older Docker
+# that never had it. This starts the published image on the newest Docker
+# under the built-in profile, weekly, so a repeat is seen here first.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/docker-latest.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  builtin-profile:
+    name: built-in seccomp profile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      IMAGE: ghcr.io/kevintcoughlin/cs-server:latest
+
+    steps:
+      - name: Install the latest Docker Engine
+        uses: docker/setup-docker-action@v5
+
+      - name: Docker version
+        run: docker version
+
+      - name: Server opens its port under the built-in profile
+        run: |
+          docker run -d --name hlds --cap-drop ALL --security-opt no-new-privileges:true \
+            --read-only --tmpfs /tmp -e NOMASTER=1 -e LAN_MODE=1 "${IMAGE}"
+          for _ in $(seq 60); do
+            if docker exec hlds /healthcheck.sh; then
+              docker logs hlds 2>&1 | grep -a 'Started map' || true
+              echo 'health check: server answers a ping on its game port'
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::the server did not open its port under Docker's built-in seccomp profile"
+          docker logs hlds 2>&1 | tail -40
+          exit 1

@@ -29,7 +29,7 @@ STATE="game-e2e-state-$$"
 FIFO="/hlds/.runtime/hlds-input"
 
 case "${ENGINE}" in
-    docker) RUN_FLAGS=(--cap-drop ALL --security-opt no-new-privileges:true --security-opt "seccomp=${ROOT}/ops/seccomp/docker-default.json" --read-only --tmpfs /tmp -v "${STATE}:/hlds/state") ;;
+    docker) RUN_FLAGS=(--cap-drop ALL --security-opt no-new-privileges:true --read-only --tmpfs /tmp -v "${STATE}:/hlds/state") ;;
     podman) RUN_FLAGS=(--cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp -v "${STATE}:/hlds/state") ;;
     *) fail "usage: ${0##*/} [docker|podman] [image]" ;;
 esac

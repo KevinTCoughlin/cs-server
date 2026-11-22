@@ -38,8 +38,8 @@ jobs:
           # Environment=MAP=de_dust2
           systemctl --user restart scoutzknivez
 
-          # Docker (profile: ops/seccomp/docker-default.json in the repo)
-          docker run -d --security-opt seccomp=docker-default.json \
+          # Docker
+          docker run -d \
             -p 27015:27015/udp \
             -e MAP=de_dust2 \
             -e MAPCYCLE=mapcycle-dust2.txt \

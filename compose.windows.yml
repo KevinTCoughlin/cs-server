@@ -11,8 +11,7 @@
 # queries: clients connect by address.
 #
 # Everything else in compose.yml applies unchanged: the bind-mounted config,
-# the state volume, the read-only root, dropped capabilities and the seccomp
-# profile. (Earlier versions of this file set empty lists to remove some of
+# the state volume, the read-only root and dropped capabilities. (Earlier versions of this file set empty lists to remove some of
 # those. Compose appends lists when it merges files, so they removed nothing.)
 #
 # UDP port forwarding on Docker Desktop for Windows is unreliable. Prefer a
