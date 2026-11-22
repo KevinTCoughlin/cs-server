@@ -459,31 +459,44 @@ Steam servers.` and is neither VAC secured nor on the master list. Look for
 set `SERVER_IP` to the address clients reach; the health check follows it.
 A LAN-profile server does not talk to Steam and needs no `SERVER_IP`.
 
-## Day of Defeat
+## Other games
 
-The same Containerfile builds a Day of Defeat server: the same engine
-(ReHLDS), Metamod-R and AMX Mod X, around Valve's own game library. It is a
-build option for now; no Day of Defeat image is published yet, and the
-installer and Compose file still assume Counter-Strike.
+The same Containerfile builds a server for the other Valve games on this
+engine: the same ReHLDS, Metamod-R and AMX Mod X around that game's own
+library, with its stock maps, map cycle and settings.
+
+| `GAME` | Game | Starts on | Notes |
+|--------|------|-----------|-------|
+| `czero` | Condition Zero | `de_dust2_cz` | ReGameDLL, ReAPI and bots (`BOTS`), stats |
+| `dod` | Day of Defeat | `dod_anzio` | AMX Mod X DoD modules and stats |
+| `tfc` | Team Fortress Classic | `2fort` | AMX Mod X TFC modules and stats |
+| `valve` | Half-Life deathmatch | `crossfire` | |
+| `gearbox` | Opposing Force | `op4_bootcamp` | |
+| `dmc` | Deathmatch Classic | `dmc_dm2` | |
+| `ricochet` | Ricochet | `rc_arena` | |
+
+These are a build option for now: no image is published for them, and the
+installer, Compose file and Quadlet unit still assume Counter-Strike.
 
 ```bash
-podman build --build-arg GAME=dod -t localhost/cs-server:dod .   # or: just dod
+podman build --build-arg GAME=dod -t localhost/cs-server:dod .   # or: just game dod
 podman run -d --name dod \
     --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp \
     -p 27015:27015/udp -v dod-state:/hlds/state \
     localhost/cs-server:dod
 ```
 
-It starts on `dod_anzio` with the 18 stock maps in rotation and the stock
-AMX Mod X plugins, including player stats. `MAP`, `MAXPLAYERS`, `PORT`,
-`LAN_MODE`, `NOMASTER`, `SERVER_IP`, `FASTDL_URL` and the log settings work as
-they do for Counter-Strike; the state volume, read-only root and console pipe
-are the same. To change settings, mount your own files over
-`/hlds/dod/server.cfg` and `/hlds/dod/mapcycle.txt` (defaults in
-`config/dod/`).
+`MAP`, `MAXPLAYERS`, `PORT`, `LAN_MODE`, `NOMASTER`, `SERVER_IP`, `FASTDL_URL`
+and the log settings work as they do for Counter-Strike; the state volume,
+read-only root and console pipe are the same. Each image keeps the game's
+stock `server.cfg` with a hostname and this repo's rate and security settings
+appended (`config/games/common.cfg`). To change settings, mount your own
+files over `/hlds/<game>/server.cfg` and `/hlds/<game>/mapcycle.txt`.
 
-Not there: bots (the bots here are part of the Counter-Strike game library),
-`MODE` and `BOTS` (both ignored), and the ScoutzKnivez plugins.
+Only Counter-Strike and Condition Zero have bots (they are part of
+ReGameDLL). `MODE` and the ScoutzKnivez plugins are Counter-Strike only.
+Each game is about 1.1 to 1.5 GB. Built and tested on x86-64 with Podman
+(`tests/e2e_game_test.sh`); not yet on arm64.
 
 ## Saved state and logs
 

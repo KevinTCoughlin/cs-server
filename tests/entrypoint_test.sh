@@ -34,8 +34,6 @@ expect_invalid "PORT must be an integer from 1 to 65535" PORT=184467440737095516
 expect_invalid "MAP must be a filename" "MAP=scoutzknivez;quit"
 expect_invalid "MAPCYCLE must be a filename" MAPCYCLE=../server.cfg
 expect_invalid "MODE must be scoutz or knife" MODE=nipper
-expect_invalid "GAME must be cstrike or dod" GAME=tfc
-expect_invalid "GAME must be cstrike or dod" "GAME=dod;quit"
 expect_invalid "MODE must be scoutz or knife" "MODE=knife;quit"
 expect_invalid "FASTDL_URL must be an http(s) URL" FASTDL_URL=ftp://example.com/cstrike/
 expect_invalid "FASTDL_URL must be an http(s) URL" FASTDL_URL=example.com/cstrike/
@@ -164,15 +162,32 @@ chmod +x "${WORK_DIR}/hlds_run"
 
 # A Day of Defeat image: its own game directory and default map, and none of
 # the ScoutzKnivez mode or bot arguments.
-run_stub GAME=dod
+bash "${ROOT}/scripts/game-env.sh" dod > "${WORK_DIR}/game.env"
+run_stub HLDS_GAME_ENV="${WORK_DIR}/game.env"
 args=$(cat "${WORK_DIR}/args")
 case "${args}" in
     "-game dod +map dod_anzio "*) ;;
-    *) printf 'Expected GAME=dod to start -game dod on dod_anzio, got: %s\n' "${args}" >&2; exit 1 ;;
+    *) printf 'Expected a Day of Defeat image to start -game dod on dod_anzio, got: %s\n' "${args}" >&2; exit 1 ;;
 esac
 case "${args}" in
-    *sk_mode* | *bot_quota*) printf 'GAME=dod must not pass mode or bot arguments, got: %s\n' "${args}" >&2; exit 1 ;;
+    *sk_mode* | *bot_quota*) printf 'Day of Defeat must not get mode or bot arguments, got: %s\n' "${args}" >&2; exit 1 ;;
 esac
+
+# Condition Zero has ReGameDLL's bots but not the ScoutzKnivez plugin.
+bash "${ROOT}/scripts/game-env.sh" czero > "${WORK_DIR}/game.env"
+run_stub HLDS_GAME_ENV="${WORK_DIR}/game.env" BOTS=0
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    "-game czero +map de_dust2_cz "*"+bot_quota 0"*) ;;
+    *) printf 'Expected Condition Zero with BOTS=0 to pass +bot_quota 0, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+case "${args}" in
+    *sk_mode* | *sk_bots*) printf 'Condition Zero must not get ScoutzKnivez arguments, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+if bash "${ROOT}/scripts/game-env.sh" quake >/dev/null 2>&1; then
+    printf 'game-env.sh accepted an unknown game\n' >&2
+    exit 1
+fi
 
 run_stub
 args=$(cat "${WORK_DIR}/args")

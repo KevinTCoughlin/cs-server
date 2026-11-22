@@ -4,17 +4,17 @@
 # shellcheck disable=SC2329 # Signal/EXIT traps invoke these functions indirectly.
 set -euo pipefail
 
-# The image sets GAME (cstrike or dod): the game directory under /hlds.
-GAME="${GAME:-cstrike}"
-case "${GAME}" in
-    cstrike) DEFAULT_MAP=scoutzknivez ;;
-    dod) DEFAULT_MAP=dod_anzio ;;
-    *)
-        echo "[entrypoint] GAME must be cstrike or dod" >&2
-        exit 1
-        ;;
-esac
-MAP="${MAP:-${DEFAULT_MAP}}"
+# Which game this image runs: its row of scripts/game-env.sh, written at
+# build. Not a run-time setting; an image holds one game.
+GAME=cstrike
+GAME_MAP=scoutzknivez
+GAME_BOTS=1
+GAME_ENV="${HLDS_GAME_ENV:-/usr/local/share/cs-server/game.env}"
+if [[ -f "${GAME_ENV}" ]]; then
+    # shellcheck disable=SC1090 # generated at image build
+    source "${GAME_ENV}"
+fi
+MAP="${MAP:-${GAME_MAP}}"
 MAXPLAYERS="${MAXPLAYERS:-20}"
 PORT="${PORT:-27015}"
 BOTS="${BOTS:-1}"
@@ -253,16 +253,19 @@ mkfifo "${FIFO}"
 chmod 600 "${FIFO}"
 exec 3<> "${FIFO}"
 
-# Modes and bots belong to the ScoutzKnivez plugin and ReGameDLL; a Day of
-# Defeat server has neither, and MODE and BOTS do nothing there.
-if [[ "${GAME}" != "cstrike" ]]; then
-    MODE_ARGS=()
+# Modes belong to the ScoutzKnivez plugin (Counter-Strike only) and bots to
+# ReGameDLL (GAME_BOTS); elsewhere MODE and BOTS do nothing.
+MODE_ARGS=()
+if [[ "${GAME}" = "cstrike" ]]; then
+    MODE_ARGS=(+localinfo sk_mode "${MODE}")
+fi
+if [[ "${GAME_BOTS}" != "1" ]]; then
     BOT_QUOTA_ARGS=()
 elif [[ "${BOTS}" = "1" ]]; then
-    MODE_ARGS=(+localinfo sk_mode "${MODE}")
     BOT_QUOTA_ARGS=(+bot_quota 10)
+elif [[ "${GAME}" != "cstrike" ]]; then
+    BOT_QUOTA_ARGS=(+bot_quota 0)
 else
-    MODE_ARGS=(+localinfo sk_mode "${MODE}")
     # server.cfg sets bot_quota and scoutzknivez.amxx re-runs it on every
     # map; sk_bots tells the plugin to turn bots off again afterwards.
     BOT_QUOTA_ARGS=(+bot_quota 0 +localinfo sk_bots 0)
@@ -339,6 +342,13 @@ script -eqfc "${HLDS_COMMAND}" /dev/null < "${FIFO}" &
 SCRIPT_PID=$!
 
 echo "[entrypoint] HLDS started (PID: ${SCRIPT_PID})"
+
+# Condition Zero ignores bot_quota on the command line; the console takes it
+# once the server reads its input, and it then holds across map changes.
+# (Counter-Strike's server.cfg and plugin set it on every map instead.)
+if [[ "${GAME}" != "cstrike" && "${#BOT_QUOTA_ARGS[@]}" -gt 0 ]]; then
+    hlds_command "bot_quota ${BOT_QUOTA_ARGS[1]}"
+fi
 
 set +e
 wait "${SCRIPT_PID}"
