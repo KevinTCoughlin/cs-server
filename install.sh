@@ -32,6 +32,16 @@
 #                      digits, hyphens). Gets its own service, config
 #                      directory and state volume; needs CS_PORT
 #   CS_PORT            UDP port (default 27015). Each instance needs its own
+#   CS_MODE            Counter-Strike game mode at startup: scoutz (default),
+#                      knife, vanilla or match
+#   CS_BOTS=0          no bots (default 1)
+#   CS_FASTDL=1        also run a FastDL sidecar: a small web server from the
+#                      same image that serves the maps to clients over HTTP
+#                      (CS_FASTDL_PORT, default 27080/tcp; CS_FASTDL_HOST is the
+#                      address clients use, default this machine's first one)
+#   CS_LAN_KIT=<n>     LAN event: n servers (1 to 8) named lan1..lan<n> on
+#                      consecutive ports from CS_PORT, LAN profile, match mode,
+#                      no bots, and one FastDL sidecar for all of them
 #   CS_GAME            another Valve game on the same engine: czero, dod, tfc,
 #                      valve, gearbox, dmc or ricochet (default cstrike). Gets
 #                      its own image tag, service (<game>-server), config
@@ -89,21 +99,97 @@ if [[ ! "${PORT}" =~ ^[0-9]{1,5}$ ]] || [[ "$((10#${PORT}))" -lt 1024 || "$((10#
     exit 1
 fi
 PORT="$((10#${PORT}))"
-SERVICE_NAME="scoutzknivez"
-CONFIG_DIR="${HOME}/.config/cs-server"
-# Named volume for what the server writes: bans, admins, stats, logs.
-STATE_VOLUME="cs-server-state"
-if [[ -n "${INSTANCE}" ]]; then
-    SERVICE_NAME="cs-server-${INSTANCE}"
-    CONFIG_DIR="${HOME}/.config/cs-server-${INSTANCE}"
-    STATE_VOLUME="cs-server-state-${INSTANCE}"
+# set_names: the service, config directory and state volume of INSTANCE.
+set_names() {
+    SERVICE_NAME="scoutzknivez"
+    CONFIG_DIR="${HOME}/.config/cs-server"
+    # Named volume for what the server writes: bans, admins, stats, logs.
+    STATE_VOLUME="cs-server-state"
+    if [[ -n "${INSTANCE}" ]]; then
+        SERVICE_NAME="cs-server-${INSTANCE}"
+        CONFIG_DIR="${HOME}/.config/cs-server-${INSTANCE}"
+        STATE_VOLUME="cs-server-state-${INSTANCE}"
+    fi
+    # Another game never shares a name with a Counter-Strike server or instance.
+    if [[ "${GAME}" != "cstrike" ]]; then
+        SERVICE_NAME="${GAME}-server${INSTANCE:+-${INSTANCE}}"
+        CONFIG_DIR="${HOME}/.config/${SERVICE_NAME}"
+        STATE_VOLUME="${SERVICE_NAME}-state"
+    fi
+}
+set_names
+
+# LAN kit: several servers for one event (see run_kit).
+LAN_KIT="${CS_LAN_KIT:-}"
+if [[ -n "${LAN_KIT}" ]]; then
+    if [[ ! "${LAN_KIT}" =~ ^[1-8]$ ]]; then
+        printf '[error] Invalid CS_LAN_KIT: %s (expected 1 to 8 servers)\n' "${LAN_KIT}" >&2
+        exit 1
+    fi
+    if [[ -n "${INSTANCE}" || "${GAME}" != "cstrike" ]]; then
+        printf '[error] CS_LAN_KIT names its own servers (lan1, lan2, ...) and is Counter-Strike only: drop CS_INSTANCE and CS_GAME\n' >&2
+        exit 1
+    fi
 fi
-# Another game never shares a name with a Counter-Strike server or instance.
+
+# Game mode and bots the server starts with.
+MODE="${CS_MODE:-}"
+if [[ -n "${MODE}" && "${GAME}" != "cstrike" ]]; then
+    printf '[error] CS_MODE is Counter-Strike only\n' >&2
+    exit 1
+fi
+if [[ -z "${MODE}" ]]; then
+    MODE="scoutz"
+    [[ -z "${LAN_KIT}" ]] || MODE="match"
+fi
+case "${MODE}" in
+    scoutz | knife | vanilla | match) ;;
+    *)
+        printf '[error] Invalid CS_MODE: %s (expected scoutz, knife, vanilla or match)\n' "${MODE}" >&2
+        exit 1
+        ;;
+esac
+BOTS="${CS_BOTS:-}"
+if [[ -z "${BOTS}" ]]; then
+    BOTS=1
+    [[ -z "${LAN_KIT}" ]] || BOTS=0
+fi
+if [[ "${BOTS}" != "0" && "${BOTS}" != "1" ]]; then
+    printf '[error] Invalid CS_BOTS: %s (expected 0 or 1)\n' "${BOTS}" >&2
+    exit 1
+fi
+
+# FastDL sidecar: one per game on this machine, shared by its instances.
+FASTDL="${CS_FASTDL:-}"
+if [[ -z "${FASTDL}" ]]; then
+    FASTDL=0
+    [[ -z "${LAN_KIT}" ]] || FASTDL=1
+fi
+if [[ "${FASTDL}" != "0" && "${FASTDL}" != "1" ]]; then
+    printf '[error] Invalid CS_FASTDL: %s (expected 0 or 1)\n' "${FASTDL}" >&2
+    exit 1
+fi
+FASTDL_PORT="${CS_FASTDL_PORT:-27080}"
+if [[ ! "${FASTDL_PORT}" =~ ^[0-9]{1,5}$ ]] || [[ "$((10#${FASTDL_PORT}))" -lt 1024 || "$((10#${FASTDL_PORT}))" -gt 65535 ]]; then
+    printf '[error] Invalid CS_FASTDL_PORT: %s (expected 1024 to 65535)\n' "${FASTDL_PORT}" >&2
+    exit 1
+fi
+FASTDL_PORT="$((10#${FASTDL_PORT}))"
+FASTDL_HOST="${CS_FASTDL_HOST:-}"
+if [[ -n "${FASTDL_HOST}" && ! "${FASTDL_HOST}" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,62}[A-Za-z0-9])?$ ]]; then
+    printf '[error] Invalid CS_FASTDL_HOST: %s (expected a host name or an IPv4 address)\n' "${FASTDL_HOST}" >&2
+    exit 1
+fi
+FASTDL_NAME="cs-server-fastdl"
 if [[ "${GAME}" != "cstrike" ]]; then
-    SERVICE_NAME="${GAME}-server${INSTANCE:+-${INSTANCE}}"
-    CONFIG_DIR="${HOME}/.config/${SERVICE_NAME}"
-    STATE_VOLUME="${SERVICE_NAME}-state"
+    FASTDL_NAME="${GAME}-server-fastdl"
 fi
+if [[ "${INSTANCE}" == "fastdl" ]]; then
+    printf '[error] CS_INSTANCE=fastdl is the name of the FastDL sidecar: pick another\n' >&2
+    exit 1
+fi
+FASTDL_DONE=0
+IMAGE_PULLED=0
 QUADLET_DIR="${HOME}/.config/containers/systemd"
 RUNTIME=""
 
@@ -119,7 +205,11 @@ if [[ "${AUTO_UPDATE}" == "1" && "${IMAGE}" == *@sha256:* ]]; then
 fi
 
 # Same rule as entrypoint.sh: the URL reaches the HLDS console.
-PROFILE="${CS_PROFILE:-public}"
+PROFILE="${CS_PROFILE:-}"
+if [[ -z "${PROFILE}" ]]; then
+    PROFILE="public"
+    [[ -z "${LAN_KIT}" ]] || PROFILE="lan"
+fi
 case "${PROFILE}" in
     public | lan) ;;
     *)
@@ -176,6 +266,10 @@ Environment:
   CS_INSTANCE=<name>       An additional server: own service, config, state
   CS_PORT=<port>           UDP port (default 27015); one per instance
   CS_GAME=<game>           Another game: czero, dod, tfc, valve, gearbox, dmc, ricochet
+  CS_MODE=<mode>           Start in scoutz (default), knife, vanilla or match
+  CS_BOTS=0                No bots
+  CS_FASTDL=1              Also serve the maps to clients over HTTP (port 27080/tcp)
+  CS_LAN_KIT=<n>           LAN event: n match servers (lan1..lan<n>) and FastDL
 
 Upgrade or roll back: run the installer again with another CS_SERVER_VERSION
 (or CS_SERVER_IMAGE). Config files are kept.
@@ -354,8 +448,9 @@ do_install() {
 
     # --- Pull image ----------------------------------------------------------
 
-    info "Pulling container image: ${IMAGE}"
-    if ${RUNTIME} pull "${IMAGE}"; then
+    if [[ "${IMAGE_PULLED}" == "1" ]]; then
+        :
+    elif info "Pulling container image: ${IMAGE}" && ${RUNTIME} pull "${IMAGE}"; then
         ok "Image pulled"
     elif ${RUNTIME} image inspect "${IMAGE}" >/dev/null 2>&1; then
         # Offline install: the image came from `podman load` / `docker load`.
@@ -383,7 +478,22 @@ do_install() {
     mkdir -p "${CONFIG_DIR}"
     chmod 700 "${CONFIG_DIR}"
 
+    IMAGE_PULLED=1
     seed_config
+
+    # --- FastDL sidecar (once, before the servers that point at it) ----------
+
+    if [[ "${FASTDL}" == "1" && "${FASTDL_DONE}" == "0" ]]; then
+        ${RUNTIME} run --rm --network none --entrypoint sh "${IMAGE}" -c 'test -x /fastdl.sh' >/dev/null 2>&1 ||
+            error "${IMAGE} has no FastDL server (it came with 1.4.0); use a newer image or drop CS_FASTDL / CS_LAN_KIT"
+        fastdl_url
+        if [[ "${RUNTIME}" == "podman" ]]; then
+            install_fastdl_podman
+        else
+            install_fastdl_docker
+        fi
+        FASTDL_DONE=1
+    fi
 
     # --- Start server --------------------------------------------------------
 
@@ -451,6 +561,108 @@ seed_config() {
     find "${CONFIG_DIR}" -type f -exec chmod 644 {} +
 }
 
+# --- Starting map -----------------------------------------------------------
+
+# The stock modes start on a stock map with the stock rotation.
+start_map() {
+    START_MAP="scoutzknivez"
+    START_CYCLE="mapcycle.txt"
+    if [[ "${GAME}" == "cstrike" && ( "${MODE}" == "vanilla" || "${MODE}" == "match" ) ]]; then
+        START_MAP="de_dust2"
+        START_CYCLE="mapcycle-dust2.txt"
+    fi
+}
+
+# --- FastDL sidecar ---------------------------------------------------------
+
+# The URL the game servers hand to clients, unless FASTDL_URL names another.
+fastdl_url() {
+    [[ -z "${FASTDL_URL}" ]] || return 0
+    local host="${FASTDL_HOST:-${SERVER_IP}}"
+    if [[ -z "${host}" ]]; then
+        host=$(hostname -I 2>/dev/null | awk '{print $1}') || host=""
+    fi
+    [[ "${host}" =~ ^[A-Za-z0-9.-]+$ ]] ||
+        error "Could not work out this machine's address for FastDL; set CS_FASTDL_HOST"
+    FASTDL_URL="http://${host}:${FASTDL_PORT}/${GAME}/"
+}
+
+fastdl_unit() {
+    cat << QUADLET
+[Unit]
+Description=${GAME_TITLE} FastDL (maps over HTTP)
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=${IMAGE}
+ContainerName=${FASTDL_NAME}
+PodmanArgs=--entrypoint /fastdl.sh
+PublishPort=${FASTDL_PORT}:${FASTDL_PORT}/tcp
+Environment=FASTDL_PORT=${FASTDL_PORT}
+ReadOnly=true
+DropCapability=ALL
+NoNewPrivileges=true
+HealthCmd=/fastdl.sh check
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+
+[Service]
+Restart=on-failure
+RestartSec=10
+MemoryMax=64M
+
+[Install]
+WantedBy=default.target
+QUADLET
+}
+
+install_fastdl_podman() {
+    info "Installing the FastDL sidecar: ${FASTDL_NAME} on port ${FASTDL_PORT}/tcp"
+    mkdir -p "${QUADLET_DIR}"
+    fastdl_unit > "${QUADLET_DIR}/${FASTDL_NAME}.container"
+    systemctl --user daemon-reload
+    systemctl --user restart "${FASTDL_NAME}"
+    ok "FastDL serves ${FASTDL_URL}"
+}
+
+install_fastdl_docker() {
+    info "Starting the FastDL sidecar: ${FASTDL_NAME} on port ${FASTDL_PORT}/tcp"
+    if docker container inspect "${FASTDL_NAME}" &>/dev/null; then
+        docker rm -f "${FASTDL_NAME}" >/dev/null 2>&1 || true
+    fi
+    docker run -d \
+        --name "${FASTDL_NAME}" \
+        --restart on-failure:10 \
+        --entrypoint /fastdl.sh \
+        -p "${FASTDL_PORT}:${FASTDL_PORT}/tcp" \
+        -e "FASTDL_PORT=${FASTDL_PORT}" \
+        --read-only \
+        --cap-drop ALL \
+        --security-opt no-new-privileges \
+        --memory 64m \
+        "${IMAGE}"
+    ok "FastDL serves ${FASTDL_URL}"
+}
+
+# `--uninstall` with CS_FASTDL=1 (or CS_LAN_KIT) also removes the sidecar.
+# Without it the sidecar stays: other servers may still point at it.
+remove_fastdl() {
+    if [[ "${RUNTIME}" == "podman" ]]; then
+        [[ -f "${QUADLET_DIR}/${FASTDL_NAME}.container" ]] || return 0
+        info "Removing the FastDL sidecar: ${FASTDL_NAME}"
+        systemctl --user stop "${FASTDL_NAME}" 2>/dev/null || true
+        rm -f "${QUADLET_DIR}/${FASTDL_NAME}.container"
+        systemctl --user daemon-reload
+    else
+        docker container inspect "${FASTDL_NAME}" &>/dev/null || return 0
+        info "Removing the FastDL sidecar: ${FASTDL_NAME}"
+        docker rm -f "${FASTDL_NAME}" >/dev/null 2>&1 || true
+    fi
+    ok "FastDL sidecar removed"
+}
+
 # --- Quadlet unit -----------------------------------------------------------
 
 # The one definition of the unit. quadlet/scoutzknivez.container in the
@@ -487,9 +699,10 @@ quadlet_unit() {
     # The image of another game starts on that game's own map; MODE is the
     # ScoutzKnivez plugin's.
     local map_env="" mode_env=""
+    start_map
     if [[ "${GAME}" == "cstrike" ]]; then
-        map_env="Environment=MAP=scoutzknivez"$'\n'
-        mode_env="Environment=MODE=scoutz"$'\n'
+        map_env="Environment=MAP=${START_MAP}"$'\n'
+        mode_env="Environment=MODE=${MODE}"$'\n'
     fi
 
     cat << QUADLET
@@ -505,8 +718,8 @@ ${network}
 ${volumes}Volume=${STATE_VOLUME}:/hlds/state
 ${map_env}Environment=MAXPLAYERS=20
 Environment=PORT=${PORT}
-Environment=BOTS=1
-Environment=MAPCYCLE=mapcycle.txt
+Environment=BOTS=${BOTS}
+Environment=MAPCYCLE=${START_CYCLE}
 Environment=LAN_MODE=${lan_mode}
 ${mode_env}Environment=LOGS=1
 Environment=LOG_RETENTION_DAYS=7${fastdl_env}${server_ip_env}
@@ -588,6 +801,9 @@ install_podman() {
     echo "  Config files:    ${CONFIG_DIR}/"
     echo "  Saved state:     volume ${STATE_VOLUME} (bans, admins, stats, logs)"
     echo "  Quadlet unit:    ${QUADLET_DIR}/${SERVICE_NAME}.container"
+    if [[ "${FASTDL}" == "1" ]]; then
+        echo "  FastDL:          ${FASTDL_URL} (open ${FASTDL_PORT}/tcp in this machine's firewall)"
+    fi
     echo ""
     echo "  Useful commands:"
     echo "    systemctl --user status ${SERVICE_NAME}     # check status"
@@ -629,8 +845,9 @@ install_docker() {
         mount_args+=(-v "${CONFIG_DIR}/${f}:/hlds/${GAME}/${f}:ro")
     done
     local game_args=()
+    start_map
     if [[ "${GAME}" == "cstrike" ]]; then
-        game_args=(-e MAP=scoutzknivez -e MODE=scoutz)
+        game_args=(-e "MAP=${START_MAP}" -e "MODE=${MODE}")
     fi
 
     # The seccomp profile built into Docker 29 answers the i386 HLDS binary's
@@ -659,8 +876,8 @@ install_docker() {
         ${game_args[@]+"${game_args[@]}"} \
         -e MAXPLAYERS=20 \
         -e "PORT=${PORT}" \
-        -e BOTS=1 \
-        -e MAPCYCLE=mapcycle.txt \
+        -e "BOTS=${BOTS}" \
+        -e "MAPCYCLE=${START_CYCLE}" \
         -e "LAN_MODE=${lan_mode}" \
         -e LOGS=1 \
         -e LOG_RETENTION_DAYS=7 \
@@ -773,12 +990,42 @@ check_host_tuning() {
 
 # --- Main -------------------------------------------------------------------
 
+# LAN kit: the same install or uninstall for lan1..lan<n> on consecutive ports.
+run_kit() {
+    local i base="${PORT}"
+    for ((i = 1; i <= LAN_KIT; i++)); do
+        INSTANCE="lan${i}"
+        PORT=$((base + i - 1))
+        set_names
+        "$1"
+    done
+    PORT="${base}"
+}
+
 if [[ "${ACTION}" == "print-unit" ]]; then
+    [[ -z "${LAN_KIT}" ]] || error "--print-unit prints one unit; it does not take CS_LAN_KIT"
     # %h is systemd's specifier for the home directory.
     CONFIG_DIR="%h/.config/${CONFIG_DIR##*/}"
+    if [[ "${FASTDL}" == "1" ]]; then
+        fastdl_url
+    fi
     quadlet_unit
 elif [[ "${ACTION}" == "uninstall" ]]; then
-    do_uninstall
+    if [[ -n "${LAN_KIT}" ]]; then
+        run_kit do_uninstall
+    else
+        do_uninstall
+    fi
+    if [[ "${FASTDL}" == "1" ]]; then
+        remove_fastdl
+    fi
+elif [[ -n "${LAN_KIT}" ]]; then
+    run_kit do_install
+    check_host_tuning
+    echo ""
+    info "LAN kit: ${LAN_KIT} ${MODE} servers on ports ${PORT} to $((PORT + LAN_KIT - 1))/udp, maps from ${FASTDL_URL}"
+    echo "      Open those ports and ${FASTDL_PORT}/tcp in this machine's firewall."
+    echo "      Remove them all: CS_LAN_KIT=${LAN_KIT} bash install.sh --uninstall"
 else
     do_install
     check_host_tuning

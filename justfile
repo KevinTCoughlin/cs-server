@@ -129,6 +129,12 @@ e2e: build
 quadlet:
     CS_SERVER_IMAGE=localhost/cs-server:latest bash install.sh --print-unit > quadlet/scoutzknivez.container
 
+# LAN event: n match servers (lan1..lan<n>) on consecutive ports and one
+# FastDL sidecar, from the published image. Remove them with
+# `CS_LAN_KIT=<n> bash install.sh --uninstall`
+lan-kit n="2":
+    CS_LAN_KIT={{n}} bash install.sh
+
 # Build another game's image (localhost/cs-server:<game>) and test it:
 # czero, dod, tfc, valve, gearbox, dmc or ricochet
 game name:

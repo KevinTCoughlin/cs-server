@@ -233,7 +233,7 @@ RUN printf 'path-exclude=/usr/share/doc/*\npath-include=/usr/share/doc/*/copyrig
 # static qemu-i386 + hlds_linux launcher (see scripts/i386-compat.sh)
 RUN --mount=type=bind,source=scripts/i386-compat.sh,target=/usr/local/src/cs-server/i386-compat.sh \
     --mount=type=bind,source=scripts/i386-qemu-shim.c,target=/usr/local/src/cs-server/i386-qemu-shim.c \
-    bash /usr/local/src/cs-server/i386-compat.sh install \
+    bash /usr/local/src/cs-server/i386-compat.sh install busybox-static \
     && rm -rf /var/lib/apt/lists/* \
               /var/cache/apt/archives/* \
               /var/log/dpkg.log \
@@ -305,6 +305,7 @@ COPY --from=builder /usr/local/share/cs-server/game.env /usr/local/share/cs-serv
 
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 COPY --chmod=755 scripts/healthcheck.sh /healthcheck.sh
+COPY --chmod=755 scripts/fastdl.sh /fastdl.sh
 
 # Everything the server writes at run time lives under /hlds/state, so one
 # volume there keeps bans, admins, stats and logs across container
@@ -345,9 +346,23 @@ RUN . /usr/local/share/cs-server/game.env && \
 COPY --chmod=644 ops/seccomp/docker-default.json /usr/local/share/cs-server/seccomp.json
 
 # Create Steam SDK symlink for steamclient.so (fixes Docker Desktop on Windows)
-RUN mkdir -p /home/hlds/.steam/sdk32 && \
+#
+# The FastDL tree (scripts/fastdl.sh serves it): links to what a client
+# downloads from a server and to nothing else. No settings, ban lists, admin
+# files or plugins.
+RUN . /usr/local/share/cs-server/game.env && \
+    mkdir -p /home/hlds/.steam/sdk32 && \
     ln -s /hlds/steamclient.so /home/hlds/.steam/sdk32/steamclient.so && \
-    chown -R hlds:hlds /home/hlds
+    chown -R hlds:hlds /home/hlds && \
+    fastdl="/usr/local/share/cs-server/fastdl/${GAME}" && \
+    mkdir -p "${fastdl}" && \
+    for dir in maps sound sprites models gfx overviews; do \
+        [ ! -d "/hlds/${GAME}/${dir}" ] || ln -s "/hlds/${GAME}/${dir}" "${fastdl}/${dir}"; \
+    done && \
+    for wad in "/hlds/${GAME}"/*.wad; do \
+        [ ! -e "${wad}" ] || ln -s "${wad}" "${fastdl}/"; \
+    done && \
+    test -e "${fastdl}/maps/${GAME_MAP}.bsp"
 
 LABEL io.github.kevintcoughlin.cs-server.game="${GAME}" \
       org.opencontainers.image.title="cs-server (${GAME})" \
