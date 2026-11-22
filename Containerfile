@@ -74,14 +74,23 @@ ARG GAME
 # steamcmd.sh launches the binary through $DEBUGGER (run-i386: a no-op exec
 # on x86) and would pick the absent linuxarm64 build on arm64 without
 # STEAM_PLATFORM=linux32 (the x86 default anyway).
-RUN DEBUGGER=run-i386 STEAM_PLATFORM=linux32 /opt/steamcmd/steamcmd.sh \
-        +force_install_dir /hlds \
-        +login anonymous \
-        +app_set_config 90 mod "${GAME}" \
-        +app_update 90 -beta steam_legacy validate \
-        +app_update 90 -beta steam_legacy validate \
-        +app_update 90 -beta steam_legacy validate \
-        +quit
+# Steam's content servers now and then fail a download part way ("App '90'
+# state is 0x10E after update job"); a second run picks up where it stopped.
+RUN for attempt in 1 2 3; do \
+        if DEBUGGER=run-i386 STEAM_PLATFORM=linux32 /opt/steamcmd/steamcmd.sh \
+            +force_install_dir /hlds \
+            +login anonymous \
+            +app_set_config 90 mod "${GAME}" \
+            +app_update 90 -beta steam_legacy validate \
+            +app_update 90 -beta steam_legacy validate \
+            +app_update 90 -beta steam_legacy validate \
+            +quit; then \
+            exit 0; \
+        fi; \
+        echo "SteamCMD failed (attempt ${attempt} of 3)" >&2; \
+        sleep 15; \
+    done; \
+    exit 1
 
 WORKDIR /hlds
 
