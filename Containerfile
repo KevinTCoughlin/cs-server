@@ -170,19 +170,20 @@ RUN --mount=type=bind,source=config/games/common.cfg,target=/usr/local/src/cs-se
 # tfc.so needs a newer C++ runtime (CXXABI_1.3.8) than the libstdc++ HLDS
 # ships beside its binary, which the loader finds first. Without that copy it
 # uses the system's 32-bit one, installed by i386-compat.sh.
-RUN [ "${GAME}" != tfc ] || rm -f libstdc++.so.6 libgcc_s.so.1
-
+#
 # Valve's files are not all lower case (tfc/events/wpn/Tf_sg.sc) and the
 # game asks for them in lower case. On x86 the engine finds them anyway; under
 # qemu-i386 on arm64 it does not, and the server dies precaching the first
 # map. A lower-case link next to each such file serves both.
-RUN [ "${GAME}" = cstrike ] || \
-    find "${GAME}" -path "${GAME}/addons" -prune -o -type f -name '*[A-Z]*' -exec sh -c '\
-        for file; do \
-            name=${file##*/}; \
-            link="${file%/*}/$(printf "%s" "${name}" | tr "[:upper:]" "[:lower:]")"; \
-            [ -e "${link}" ] || ln -s "${name}" "${link}"; \
-        done' sh {} +
+RUN if [ "${GAME}" = tfc ]; then rm -f libstdc++.so.6 libgcc_s.so.1; fi && \
+    if [ "${GAME}" != cstrike ]; then \
+        find "${GAME}" -path "${GAME}/addons" -prune -o -type f -name '*[A-Z]*' -exec sh -c '\
+            for file; do \
+                name=${file##*/}; \
+                link="${file%/*}/$(printf "%s" "${name}" | tr "[:upper:]" "[:lower:]")"; \
+                [ -e "${link}" ] || ln -s "${name}" "${link}"; \
+            done' sh {} +; \
+    fi
 
 # Ensure binaries are executable and set Steam app ID
 RUN chmod +x hlds_linux hlds_run && \
