@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-22
+
 ### Fixed
 - **Nobody could join: "STEAM validation rejected".** The image carried Half-Life's Steam app id (70) in `steam_appid.txt` for every game. The engine normally corrects that file at start, but cannot on the read-only root filesystem (since 1.1.0), so a Counter-Strike server signed on to Steam as Half-Life and refused every player's ticket. Bots, the server browser and the health check were unaffected, which is why no test caught it. Each game's image now carries its own id (`GAME_APPID` in `scripts/game-env.sh`)
 
@@ -149,7 +151,8 @@ First tagged release. Images for it are on ghcr.io as `1.0.0`, `1.0` and `1` (`l
 - .env.example documenting environment variables
 - Quadlet systemd unit file shipped in-repo
 
-[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/KevinTCoughlin/cs-server/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/KevinTCoughlin/cs-server/compare/v1.1.0...v1.1.1
