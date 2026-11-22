@@ -9,6 +9,8 @@
 //            placed by the map can be picked up; everything else stays blocked.
 //   vanilla  stock Counter-Strike: the plugin leaves spawns and buying alone
 //            and only applies the mode's settings.
+//   match    5v5 competitive rules; match.amxx (in the mode's plugin list)
+//            runs the warmup, knife round, sides and pauses.
 //
 // The mode lives in `localinfo sk_mode`, which survives map changes. On each
 // map the plugin execs server.cfg, modes/<mode>.cfg and, if present,
@@ -24,7 +26,7 @@
 // `localinfo sk_bots 0` (set by BOTS=0) keeps bots off: server.cfg sets
 // bot_quota, and re-running it would otherwise bring them back on every map.
 //
-// sk_switchmode <scoutz|knife|vanilla> <mapcyclefile> [map]
+// sk_switchmode <scoutz|knife|vanilla|match> <mapcyclefile> [map]
 //   Server command (console/FIFO only). Announces the switch and changes level
 //   at the next round end, never mid-round. Without a map, the first map of
 //   the mapcycle that exists on disk is used. A no-op if already in that mode
@@ -91,7 +93,7 @@ load_mode() {
 }
 
 bool:is_valid_mode(const mode[]) {
-    return bool:(equal(mode, "scoutz") || equal(mode, "knife") || equal(mode, "vanilla"));
+    return bool:(equal(mode, "scoutz") || equal(mode, "knife") || equal(mode, "vanilla") || equal(mode, "match"));
 }
 
 public exec_mode_cfg() {
@@ -165,7 +167,7 @@ public CS_OnBuyAttempt(id, item) {
 
 public cmd_switchmode() {
     if (read_argc() < 3) {
-        server_print("usage: sk_switchmode <scoutz|knife|vanilla> <mapcyclefile> [map]");
+        server_print("usage: sk_switchmode <scoutz|knife|vanilla|match> <mapcyclefile> [map]");
         return PLUGIN_HANDLED;
     }
 
@@ -175,7 +177,7 @@ public cmd_switchmode() {
     read_argv(3, szMap, charsmax(szMap));
 
     if (!is_valid_mode(szMode)) {
-        server_print("[SK] unknown mode '%s' (scoutz|knife|vanilla)", szMode);
+        server_print("[SK] unknown mode '%s' (scoutz|knife|vanilla|match)", szMode);
         return PLUGIN_HANDLED;
     }
     if (!is_safe_name(szCycle) || !file_exists(szCycle)) {
@@ -209,6 +211,8 @@ public cmd_switchmode() {
 
     if (equal(szMode, "knife")) {
         client_print(0, print_chat, "[SERVER] Nipper Friday! Knives only on %s from the end of this round. Maps by NIPPER.", szMap);
+    } else if (equal(szMode, "match")) {
+        client_print(0, print_chat, "[SERVER] Match mode on %s from the end of this round: warmup, then say .ready", szMap);
     } else if (equal(szMode, "vanilla")) {
         client_print(0, print_chat, "[SERVER] Classic Counter-Strike on %s from the end of this round.", szMap);
     } else {

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- **Match mode (5v5).** `MODE=match` (or `just mode match`) runs a competitive match on every map: warmup with `.ready`, a knife round whose winners choose sides (`.stay` / `.switch`), the live match (first to 16 of 30, sides swapped after 15 with the score kept and money reset) and `.pause` / `.unpause`, which holds a freeze time. Server commands (`match_start`, `match_live`, `match_reset`, `match_status`, …) do the same from the console. `plugins/amxmodx/scripting/match.sma`, `config/modes/match.cfg` (#73)
 - **Vanilla mode.** `MODE=vanilla` (or `just mode vanilla` on a running server) is stock Counter-Strike: normal gravity, buying, objectives, no scout-and-knife loadout, and its own plugin list without bunny hop, kill sounds and advertisements (`plugins/amxmodx/modes/vanilla.ini`). A mode can now carry a plugin list as well as settings (#73)
 
 ### Changed
