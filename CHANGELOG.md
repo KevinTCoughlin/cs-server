@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Builds no longer fail on a transient Steam download error.** SteamCMD is run up to three times when it stops with `App '90' state is 0x10E after update job`, which failed one game's image in the 1.3.0 release run
+
 ### Added
 - **Metrics for Prometheus.** A new plugin in every game's image (`metrics.amxx`) keeps players, bots, slots, map, map time, uptime and server FPS in `/hlds/.runtime/metrics.prom`, from the game itself, so it works with `NOMASTER=1` too. `METRICS_PORT` (installer: `CS_METRICS_PORT`, published on loopback) serves it at `/metrics` with `hlds_up`. Nothing listens by default (#99)
 - **FastDL sidecar.** `CS_FASTDL=1` makes `install.sh` also run a second container from the same image (`/fastdl.sh`, busybox httpd on `27080/tcp`) that serves the game's maps, sounds, sprites, models, gfx, overviews and `.wad` files to clients over HTTP, and points the server's `FASTDL_URL` at it. It serves nothing else (no settings, admin files or directory listings), mounts nothing and needs no internet. `CS_FASTDL_HOST` / `CS_FASTDL_PORT` set the address clients use (#75)
