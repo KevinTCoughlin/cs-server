@@ -4,9 +4,12 @@ services:
       context: .
       dockerfile: Containerfile
     image: localhost/cs-server:latest
-    container_name: scoutzknivez
+    # CS_CONTAINER_NAME, PORT and CS_STATE_VOLUME let a second copy run next
+    # to this one: give each its own values and its own project (-p).
+    container_name: ${CS_CONTAINER_NAME:-scoutzknivez}
     ports:
-      - "27015:27015/udp"
+      # Same port inside and out: GoldSrc tells clients its own port.
+      - "${PORT:-27015}:${PORT:-27015}/udp"
     volumes:
       - ./config/server.cfg:/hlds/cstrike/server.cfg:ro,Z
       - ./config/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro,Z
@@ -57,4 +60,4 @@ services:
 volumes:
   # A fixed name, so the Quadlet unit and `just deploy` use the same volume.
   state:
-    name: cs-server-state
+    name: ${CS_STATE_VOLUME:-cs-server-state}

@@ -65,4 +65,20 @@ for kept in 'read_only: true' 'no-new-privileges:true' 'target: /hlds/state' 'ta
     fi
 done
 
+# A second copy: own container name, port (same inside and out) and volume.
+output=$(CS_CONTAINER_NAME=cs-server-b PORT=27016 CS_STATE_VOLUME=cs-server-state-b "${COMPOSE[@]}" -p cs-b config)
+for want in 'container_name: cs-server-b' 'target: 27016' 'published: "27016"' 'name: cs-server-state-b' 'PORT: "27016"'; do
+    if ! grep -qF -- "${want}" <<<"${output}"; then
+        printf 'second compose instance: expected "%s"\n' "${want}" >&2
+        exit 1
+    fi
+done
+output=$("${COMPOSE[@]}" config)
+for want in 'container_name: scoutzknivez' 'published: "27015"' 'name: cs-server-state'; do
+    if ! grep -qF -- "${want}" <<<"${output}"; then
+        printf 'default compose instance: expected "%s"\n' "${want}" >&2
+        exit 1
+    fi
+done
+
 printf 'compose tests passed\n'

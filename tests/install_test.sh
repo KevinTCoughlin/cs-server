@@ -260,6 +260,36 @@ assert_contains "offline install says what it used" "${output}" "using the copy 
 install FAKE_PULL_FAIL=1
 expect_die "offline install without an image" "no local copy exists"
 
+# --- A second instance next to the default one --------------------------------
+fresh_home
+install
+expect_ok "default install before adding an instance"
+default_unit=$(cat "${UNIT}")
+install CS_INSTANCE=match-2 CS_PORT=27016
+expect_ok "install of a named instance"
+INSTANCE_UNIT="${HOME_DIR}/.config/containers/systemd/cs-server-match-2.container"
+[[ -f "${INSTANCE_UNIT}" ]] || fail "no unit for the named instance"
+unit=$(cat "${INSTANCE_UNIT}")
+assert_contains "instance: own container name" "${unit}" "ContainerName=cs-server-match-2"
+assert_contains "instance: own port, same inside and out" "${unit}" "PublishPort=27016:27016/udp"
+assert_contains "instance: HLDS listens on that port" "${unit}" "Environment=PORT=27016"
+assert_contains "instance: own state volume" "${unit}" "Volume=cs-server-state-match-2:/hlds/state"
+assert_contains "instance: own config directory" "${unit}" "Volume=${HOME_DIR}/.config/cs-server-match-2/server.cfg:/hlds/cstrike/server.cfg:ro,Z"
+[[ -f "${HOME_DIR}/.config/cs-server-match-2/server.cfg" ]] || fail "instance config was not seeded"
+assert_contains "instance: its own service is started" "${calls}" "systemctl --user start cs-server-match-2"
+assert_eq "the default unit is untouched by a named instance" "${default_unit}" "$(cat "${UNIT}")"
+install CS_INSTANCE=Match_2
+expect_die "bad CS_INSTANCE" "Invalid CS_INSTANCE"
+install CS_PORT=80
+expect_die "privileged CS_PORT" "Invalid CS_PORT"
+install 'CS_PORT=27016;quit'
+expect_die "bad CS_PORT" "Invalid CS_PORT"
+ANSWERS=$'y\ny' install CS_INSTANCE=match-2 FAKE_VOLUME=1 -- --uninstall
+expect_ok "uninstall of the named instance"
+[[ ! -e "${INSTANCE_UNIT}" ]] || fail "instance unit survived its uninstall"
+[[ -f "${UNIT}" && -f "${CONFIG}/server.cfg" ]] || fail "uninstalling an instance removed the default server"
+assert_contains "instance uninstall removes only its volume" "${calls}" "podman volume rm cs-server-state-match-2"
+
 # --- Pinning, upgrade and rollback ------------------------------------------
 # Default image: lowercase (engines reject the repository's mixed case).
 fresh_home

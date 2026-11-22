@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- **Several servers on one host.** `CS_INSTANCE=<name> CS_PORT=<port>` makes `install.sh` set up an additional server with its own service (`cs-server-<name>`), config directory and state volume, on Podman and Docker; `--uninstall` with the same variable removes only that one. `compose.yml` takes `CS_CONTAINER_NAME`, `PORT` and `CS_STATE_VOLUME` for the same purpose. The default server keeps its names. Not yet on macOS (#72)
 - **LAN profile.** `CS_PROFILE=lan` for `install.sh` (Quadlet and Docker) and `compose.lan.yml` (`just lan-party`) run the server on the host's network with `sv_lan 1`, so the LAN tab's broadcast query reaches it. Verified between two containers on one network; `NOMASTER=1` and `SERVER_IP` both hide a server from the LAN tab and the README says why (#81)
 - **Offline start and install.** The server boots and answers server-browser queries with no network (new `--network none` case in `tests/e2e_test.sh`). `install.sh` uses an image already loaded with `podman load` / `docker load` when the registry cannot be reached; the README has the `save` / `load` steps (#82)
 - `SERVER_IP`: IPv4 address for HLDS to bind and report (`+ip`). The health check queries that address.

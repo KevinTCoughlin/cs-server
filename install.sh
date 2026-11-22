@@ -28,6 +28,10 @@
 #                      shows in the LAN tab; no Steam, no VAC, no master list
 #   SERVER_IP          IPv4 address to bind and report (+ip), for a public
 #                      server on host networking or a multi-homed host
+#   CS_INSTANCE        name of an additional server on this host (letters,
+#                      digits, hyphens). Gets its own service, config
+#                      directory and state volume; needs CS_PORT
+#   CS_PORT            UDP port (default 27015). Each instance needs its own
 #
 # With no route to the registry, an image already in local storage (from
 # `podman load` / `docker load`) is used as it is.
@@ -48,10 +52,28 @@ fi
 IMAGE="${IMAGE_REPO}:${VERSION:-latest}"
 IMAGE="${CS_SERVER_IMAGE:-${IMAGE}}"
 AUTO_UPDATE="${CS_AUTO_UPDATE:-0}"
+# The default instance keeps the names every earlier release used. A named
+# one (CS_INSTANCE) gets its own service, config directory and state volume.
+INSTANCE="${CS_INSTANCE:-}"
+if [[ -n "${INSTANCE}" && ! "${INSTANCE}" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]]; then
+    printf '[error] Invalid CS_INSTANCE: %s (lowercase letters, digits and hyphens, at most 32)\n' "${INSTANCE}" >&2
+    exit 1
+fi
+PORT="${CS_PORT:-27015}"
+if [[ ! "${PORT}" =~ ^[0-9]{1,5}$ ]] || [[ "$((10#${PORT}))" -lt 1024 || "$((10#${PORT}))" -gt 65535 ]]; then
+    printf '[error] Invalid CS_PORT: %s (expected 1024 to 65535)\n' "${PORT}" >&2
+    exit 1
+fi
+PORT="$((10#${PORT}))"
 SERVICE_NAME="scoutzknivez"
 CONFIG_DIR="${HOME}/.config/cs-server"
 # Named volume for what the server writes: bans, admins, stats, logs.
 STATE_VOLUME="cs-server-state"
+if [[ -n "${INSTANCE}" ]]; then
+    SERVICE_NAME="cs-server-${INSTANCE}"
+    CONFIG_DIR="${HOME}/.config/cs-server-${INSTANCE}"
+    STATE_VOLUME="cs-server-state-${INSTANCE}"
+fi
 QUADLET_DIR="${HOME}/.config/containers/systemd"
 RUNTIME=""
 
@@ -120,6 +142,8 @@ Environment:
   FASTDL_URL=<url>         http(s) URL that serves your cstrike/ content
   CS_PROFILE=lan           LAN party server: host networking, sv_lan 1
   SERVER_IP=<ipv4>         Address to bind and report (+ip)
+  CS_INSTANCE=<name>       An additional server: own service, config, state
+  CS_PORT=<port>           UDP port (default 27015); one per instance
 
 Upgrade or roll back: run the installer again with another CS_SERVER_VERSION
 (or CS_SERVER_IMAGE). Config files are kept.
@@ -264,8 +288,12 @@ do_uninstall() {
         # shellcheck disable=SC2310
         confirm "Remove container image ${IMAGE}?" && remove_image=true
         if [[ "${remove_image}" == true ]]; then
-            ${RUNTIME} rmi "${IMAGE}"
-            ok "Image removed"
+            # Another instance on this host may still run from it.
+            if ${RUNTIME} rmi "${IMAGE}"; then
+                ok "Image removed"
+            else
+                warn "Image ${IMAGE} is still in use; kept"
+            fi
         else
             info "Keeping container image"
         fi
@@ -404,7 +432,7 @@ install_podman() {
     fi
     # LAN: the server sits on the host's network so broadcast queries from
     # the LAN tab reach it. Published ports would hide it from them.
-    local network="PublishPort=27015:27015/udp" lan_mode=0
+    local network="PublishPort=${PORT}:${PORT}/udp" lan_mode=0
     if [[ "${PROFILE}" == "lan" ]]; then
         network="Network=host"
         lan_mode=1
@@ -416,7 +444,7 @@ install_podman() {
 
     cat > "${QUADLET_DIR}/${SERVICE_NAME}.container" << QUADLET
 [Unit]
-Description=CS 1.6 ScoutzKnivez Server
+Description=CS 1.6 ScoutzKnivez Server${INSTANCE:+ (${INSTANCE})}
 Wants=network-online.target
 After=network-online.target
 
@@ -433,7 +461,7 @@ Volume=${CONFIG_DIR}/modes:/hlds/cstrike/modes:ro,Z
 Volume=${STATE_VOLUME}:/hlds/state
 Environment=MAP=scoutzknivez
 Environment=MAXPLAYERS=20
-Environment=PORT=27015
+Environment=PORT=${PORT}
 Environment=BOTS=1
 Environment=MAPCYCLE=mapcycle.txt
 Environment=LAN_MODE=${lan_mode}
@@ -494,11 +522,11 @@ QUADLET
     local server_ip
     server_ip=$(hostname -I 2>/dev/null | awk '{print $1}') || server_ip=""
     server_ip="${server_ip:-your-ip}"
-    echo "  Server address:  ${server_ip}:27015"
+    echo "  Server address:  ${server_ip}:${PORT}"
     echo "  Image:           ${IMAGE}"
     if [[ "${PROFILE}" == "lan" ]]; then
         echo "  Profile:         LAN (host networking, sv_lan 1): look in the LAN tab,"
-        echo "                   and open 27015/udp in this machine's firewall"
+        echo "                   and open ${PORT}/udp in this machine's firewall"
     fi
     echo "  Config files:    ${CONFIG_DIR}/"
     echo "  Saved state:     volume ${STATE_VOLUME} (bans, admins, stats, logs)"
@@ -526,7 +554,7 @@ install_docker() {
         docker rm "${SERVICE_NAME}" 2>/dev/null || true
     fi
 
-    local network_args=(-p 27015:27015/udp) lan_mode=0
+    local network_args=(-p "${PORT}:${PORT}/udp") lan_mode=0
     if [[ "${PROFILE}" == "lan" ]]; then
         network_args=(--network host)
         lan_mode=1
@@ -570,7 +598,7 @@ install_docker() {
         -v "${STATE_VOLUME}:/hlds/state" \
         -e MAP=scoutzknivez \
         -e MAXPLAYERS=20 \
-        -e PORT=27015 \
+        -e "PORT=${PORT}" \
         -e BOTS=1 \
         -e MAPCYCLE=mapcycle.txt \
         -e "LAN_MODE=${lan_mode}" \
@@ -602,11 +630,11 @@ install_docker() {
     local server_ip
     server_ip=$(hostname -I 2>/dev/null | awk '{print $1}') || server_ip=""
     server_ip="${server_ip:-your-ip}"
-    echo "  Server address:  ${server_ip}:27015"
+    echo "  Server address:  ${server_ip}:${PORT}"
     echo "  Image:           ${IMAGE}"
     if [[ "${PROFILE}" == "lan" ]]; then
         echo "  Profile:         LAN (host networking, sv_lan 1): look in the LAN tab,"
-        echo "                   and open 27015/udp in this machine's firewall"
+        echo "                   and open ${PORT}/udp in this machine's firewall"
     fi
     echo "  Config files:    ${CONFIG_DIR}/"
     echo "  Saved state:     volume ${STATE_VOLUME} (bans, admins, stats, logs)"

@@ -61,7 +61,7 @@ expect quadlet/scoutzknivez.container 1 "Volume=cs-server-state${state}"
 expect justfile 1 "${state}"
 expect ops/cs-server 1 "${state}"
 expect install.sh 2 "${state}"
-expect compose.yml 1 "name: cs-server-state"
+expect compose.yml 1 "name: \${CS_STATE_VOLUME:-cs-server-state}"
 if grep -F -- "${state}:ro" compose.yml quadlet/scoutzknivez.container justfile ops/cs-server install.sh >&2; then
     printf 'the state volume must not be mounted read-only\n' >&2
     failed=1
