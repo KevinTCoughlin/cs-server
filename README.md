@@ -475,8 +475,32 @@ library, with its stock maps, map cycle and settings.
 | `dmc` | Deathmatch Classic | `dmc_dm2` | |
 | `ricochet` | Ricochet | `rc_arena` | |
 
-These are a build option for now: no image is published for them, and the
-installer, Compose file and Quadlet unit still assume Counter-Strike.
+Each release publishes them next to the Counter-Strike image, under the
+game's name: `ghcr.io/kevintcoughlin/cs-server:<version>-<game>` (also
+`<major>.<minor>-<game>` and `<major>-<game>`), and `:<game>` for the newest
+release. The first release with these tags is the one after 1.2.0.
+
+Install one with the installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | CS_GAME=dod bash
+```
+
+| | Counter-Strike | `CS_GAME=dod` |
+|---|---|---|
+| Service / container | `scoutzknivez` | `dod-server` |
+| Config directory | `~/.config/cs-server` | `~/.config/dod-server` |
+| State volume | `cs-server-state` | `dod-server-state` |
+| Image | `:latest` or `:<version>` | `:dod` or `:<version>-dod` |
+
+The config directory holds the game's `server.cfg` and `mapcycle.txt`, copied
+from the image on the first install and mounted read-only; edit them and
+restart the service. `CS_SERVER_VERSION`, `CS_PORT`, `CS_INSTANCE`
+(`dod-server-<name>`), `CS_PROFILE=lan`, `SERVER_IP`, `CS_RCON` and
+`--uninstall` work as they do for Counter-Strike. A game server next to a
+Counter-Strike server needs its own `CS_PORT`.
+
+Or build and run one by hand:
 
 ```bash
 podman build --build-arg GAME=dod -t localhost/cs-server:dod .   # or: just game dod
@@ -486,17 +510,21 @@ podman run -d --name dod \
     localhost/cs-server:dod
 ```
 
+The Compose files and the macOS `ops/cs-server` path still assume
+Counter-Strike.
+
 `MAP`, `MAXPLAYERS`, `PORT`, `LAN_MODE`, `NOMASTER`, `SERVER_IP`, `FASTDL_URL`
 and the log settings work as they do for Counter-Strike; the state volume,
 read-only root and console pipe are the same. Each image keeps the game's
 stock `server.cfg` with a hostname and this repo's rate and security settings
-appended (`config/games/common.cfg`). To change settings, mount your own
-files over `/hlds/<game>/server.cfg` and `/hlds/<game>/mapcycle.txt`.
+appended (`config/games/common.cfg`). To change settings without the
+installer, mount your own files over `/hlds/<game>/server.cfg` and
+`/hlds/<game>/mapcycle.txt`.
 
 Only Counter-Strike and Condition Zero have bots (they are part of
 ReGameDLL). `MODE` and the ScoutzKnivez plugins are Counter-Strike only.
-Each game is about 1.1 to 1.5 GB. Built and tested on x86-64 with Podman
-(`tests/e2e_game_test.sh`); not yet on arm64.
+Each game is about 1.1 to 1.5 GB. CI builds and tests each one on x86-64 and arm64
+(`tests/e2e_game_test.sh`).
 
 ## Saved state and logs
 

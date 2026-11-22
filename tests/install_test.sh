@@ -39,7 +39,9 @@ case "$1" in
     pull) [ "${FAKE_PULL_FAIL:-0}" = 0 ] || exit 1 ;;
     run)
         case "$*" in
-            *"--entrypoint sh"*) cd "${FAKE_IMAGE_CONFIG}" && tar -cf - server.cfg mapcycle*.txt modes ;;
+            *"--entrypoint sh"*"cd /hlds/cstrike "*) cd "${FAKE_IMAGE_CONFIG}" && tar -cf - server.cfg mapcycle*.txt modes ;;
+            # Another game: its stock settings and one map cycle, no modes.
+            *"--entrypoint sh"*) cd "${FAKE_IMAGE_CONFIG}" && tar -cf - server.cfg mapcycle.txt ;;
             *"--entrypoint cat"*)
                 [ "${FAKE_SECCOMP:-1}" = 1 ] || exit 1
                 echo '{"defaultAction":"SCMP_ACT_ERRNO"}'
@@ -189,7 +191,9 @@ assert_eq "generated Quadlet unit matches quadlet/scoutzknivez.container" "${ref
 for name in "${CONFIG_NAMES[@]}"; do
     [[ -f "${CONFIG}/${name}" ]] || fail "config not seeded: ${name}"
     perms=$(mode_of "${CONFIG}/${name}")
-    assert_eq "${name} permissions" 600 "${perms}"
+    # Readable by the container's unprivileged user; the 700 directory
+    # above keeps other users of the host out.
+    assert_eq "${name} permissions" 644 "${perms}"
     assert_contains "unit mounts ${name}" "${generated}" ":/hlds/cstrike/${name}:ro,Z"
 done
 for f in "${ROOT}"/config/modes/*.cfg; do
@@ -198,7 +202,7 @@ done
 perms=$(mode_of "${CONFIG}")
 assert_eq "config dir permissions" 700 "${perms}"
 perms=$(mode_of "${CONFIG}/modes")
-assert_eq "modes dir permissions" 700 "${perms}"
+assert_eq "modes dir permissions" 755 "${perms}"
 cmp -s "${ROOT}/config/server.cfg" "${CONFIG}/server.cfg" || fail "server.cfg differs from the image default"
 count=$(count_lines "${CONFIG}/server.cfg" "rcon_password")
 assert_eq "no RCON password unless asked for" 0 "${count}"
@@ -413,6 +417,77 @@ install FAKE_CONTAINER=1 SERVER_IP=192.0.2.10
 expect_ok "docker install with SERVER_IP"
 run_line=$(grep '^docker run -d ' "${LOG}")
 assert_contains "docker run carries SERVER_IP" "${run_line}" " -e SERVER_IP=192.0.2.10 "
+
+# --- Another game (CS_GAME) -------------------------------------------------
+use_runtimes podman
+fresh_home
+install
+expect_ok "default install before adding a game"
+default_unit=$(cat "${UNIT}")
+install CS_GAME=dod CS_SERVER_VERSION=1.3.0
+expect_ok "install of another game"
+GAME_UNIT="${HOME_DIR}/.config/containers/systemd/dod-server.container"
+GAME_CONFIG="${HOME_DIR}/.config/dod-server"
+[[ -f "${GAME_UNIT}" ]] || fail "no unit for the game"
+unit=$(cat "${GAME_UNIT}")
+assert_contains "game: the release under the game's tag suffix" "${calls}" "podman pull ghcr.io/kevintcoughlin/cs-server:1.3.0-dod"
+assert_contains "game: config is read from its own directory" "${calls}" "cd /hlds/dod && tar -cf - server.cfg mapcycle*.txt"
+assert_contains "game: its title" "${unit}" "Description=Day of Defeat Server"
+assert_contains "game: own container name" "${unit}" "ContainerName=dod-server"
+assert_contains "game: server.cfg mounts into its directory" "${unit}" "Volume=${GAME_CONFIG}/server.cfg:/hlds/dod/server.cfg:ro,Z"
+assert_contains "game: mapcycle.txt mounts into its directory" "${unit}" "Volume=${GAME_CONFIG}/mapcycle.txt:/hlds/dod/mapcycle.txt:ro,Z"
+assert_contains "game: own state volume" "${unit}" "Volume=dod-server-state:/hlds/state"
+assert_contains "game: read-only root" "${unit}" "ReadOnly=true"
+for absent in cstrike "Environment=MAP=" "Environment=MODE=" mapcycle-dust2 /modes; do
+    assert_not_contains "game: nothing of Counter-Strike (${absent})" "${unit}" "${absent}"
+done
+[[ -f "${GAME_CONFIG}/server.cfg" && -f "${GAME_CONFIG}/mapcycle.txt" ]] || fail "game config was not seeded"
+[[ ! -e "${GAME_CONFIG}/modes" ]] || fail "a game has no modes directory"
+assert_contains "game: its own service is started" "${calls}" "systemctl --user start dod-server"
+assert_eq "the default unit is untouched by a game" "${default_unit}" "$(cat "${UNIT}")"
+install CS_GAME=tfc
+expect_ok "install of a game without a version"
+assert_contains "game: newest release is the bare game tag" "${calls}" "podman pull ghcr.io/kevintcoughlin/cs-server:tfc"
+install CS_GAME=dod CS_INSTANCE=two CS_PORT=27017
+expect_ok "install of a game instance"
+unit=$(cat "${HOME_DIR}/.config/containers/systemd/dod-server-two.container")
+assert_contains "game instance: own state volume" "${unit}" "Volume=dod-server-two-state:/hlds/state"
+assert_contains "game instance: own port" "${unit}" "PublishPort=27017:27017/udp"
+install CS_GAME=svencoop
+expect_die "unknown CS_GAME" "Invalid CS_GAME"
+ANSWERS=$'y\ny' install CS_GAME=dod FAKE_VOLUME=1 -- --uninstall
+expect_ok "uninstall of a game"
+[[ ! -e "${GAME_UNIT}" ]] || fail "game unit survived its uninstall"
+[[ -f "${UNIT}" && -f "${CONFIG}/server.cfg" ]] || fail "uninstalling a game removed the default server"
+assert_contains "game uninstall removes only its volume" "${calls}" "podman volume rm dod-server-state"
+
+# The installer and the workflow each list the games; scripts/game-env.sh is
+# the table they must agree with.
+all_games=$(sed -n 's/^  ALL_GAMES: //p' "${ROOT}/.github/workflows/games.yml")
+[[ -n "${all_games}" ]] || fail "games.yml has no ALL_GAMES"
+for game in ${all_games}; do
+    title=$(bash "${ROOT}/scripts/game-env.sh" "${game}" | sed -n 's/^GAME_TITLE="\(.*\)"$/\1/p')
+    grep -qE "^ +${game}\) +GAME_TITLE=\"${title}\" ;;" "${ROOT}/install.sh" ||
+        fail "install.sh does not know ${game} as ${title}"
+done
+count=$(grep -cE '^ +[a-z0-9]+\) +GAME_TITLE=' "${ROOT}/install.sh")
+# shellcheck disable=SC2086 # counting the words
+set -- ${all_games}
+assert_eq "install.sh lists Counter-Strike and every game" "$(($# + 1))" "${count}"
+
+use_runtimes docker
+fresh_home
+install CS_GAME=czero
+expect_ok "docker install of another game"
+run_line=$(grep '^docker run -d ' "${LOG}")
+for flag in "--name czero-server" "-v ${HOME_DIR}/.config/czero-server/server.cfg:/hlds/czero/server.cfg:ro" \
+    "-v ${HOME_DIR}/.config/czero-server/mapcycle.txt:/hlds/czero/mapcycle.txt:ro" \
+    "-v czero-server-state:/hlds/state" "--read-only" "-e BOTS=1" "ghcr.io/kevintcoughlin/cs-server:czero"; do
+    assert_contains "docker game flag" "${run_line}" "${flag}"
+done
+for absent in cstrike "-e MAP=" "-e MODE=" /modes; do
+    assert_not_contains "docker game: nothing of Counter-Strike (${absent})" "${run_line}" "${absent}"
+done
 
 # --- Firewall recipe: mentioned, never applied -------------------------------
 cat > "${STUBS}/nft" <<'EOF'

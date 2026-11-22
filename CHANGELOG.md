@@ -3,7 +3,11 @@
 ## [Unreleased]
 
 ### Added
-- **Other games.** `podman build --build-arg GAME=<name>` (`just game <name>`) builds a server for Condition Zero (`czero`), Day of Defeat (`dod`), Team Fortress Classic (`tfc`), Half-Life deathmatch (`valve`), Opposing Force (`gearbox`), Deathmatch Classic (`dmc`) or Ricochet (`ricochet`) from the same Containerfile: ReHLDS, Metamod-R and AMX Mod X around the game's own library and stock maps, with the state volume, read-only root, console pipe and graceful shutdown of the Counter-Strike image. Condition Zero also gets ReGameDLL and bots. `scripts/game-env.sh` is the table of games. Each passes `tests/e2e_game_test.sh` on Podman (x86-64); not yet published, built in CI, or known to the installer (#106)
+- **Other games.** `podman build --build-arg GAME=<name>` (`just game <name>`) builds a server for Condition Zero (`czero`), Day of Defeat (`dod`), Team Fortress Classic (`tfc`), Half-Life deathmatch (`valve`), Opposing Force (`gearbox`), Deathmatch Classic (`dmc`) or Ricochet (`ricochet`) from the same Containerfile: ReHLDS, Metamod-R and AMX Mod X around the game's own library and stock maps, with the state volume, read-only root, console pipe and graceful shutdown of the Counter-Strike image. Condition Zero also gets ReGameDLL and bots. `scripts/game-env.sh` is the table of games. (#106)
+- **Other games: published images and installer.** A release tag now also builds, tests and publishes every game on both architectures as `:<version>-<game>`, `:<major>.<minor>-<game>`, `:<major>-<game>` and `:<game>` (`.github/workflows/games.yml`). `CS_GAME=<game>` makes `install.sh` install that game with its own service (`<game>-server`), config directory (`~/.config/<game>-server`: the game's `server.cfg` and `mapcycle.txt`) and state volume, next to a Counter-Strike server or on its own (#108)
+
+### Fixed
+- **Installer: the server could not read its config.** `install.sh` made the files in the config directory mode 600. The server runs as an unprivileged user inside the container, so `server.cfg` and the map cycles were silently ignored (stock settings, `Couldn't read file "mapcycle.txt"`). They are now 644, inside a directory that stays 700, so other users of the machine still cannot read them. Running the installer again repairs an existing install
 
 ## [1.2.0] - 2026-11-21
 

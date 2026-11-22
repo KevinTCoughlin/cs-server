@@ -1,0 +1,244 @@
+# SPDX-License-Identifier: MIT
+name: Other Games
+
+# The images for the other games the Containerfile builds (GAME=czero, dod,
+# tfc, valve, gearbox, dmc, ricochet). docker.yml covers Counter-Strike.
+#
+#   release tag        every game on both architectures, then published as
+#                      <version>-<game>, <major>.<minor>-<game>,
+#                      <major>-<game> and <game>
+#   pull request       touching a game's own files: every game on both
+#                      architectures. Touching only the shared Containerfile
+#                      or entrypoint: Day of Defeat on amd64, as a canary
+#   workflow_dispatch  build and test (nothing is published); run it before
+#                      tagging a release
+on:
+  push:
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Containerfile'
+      - 'entrypoint.sh'
+      - 'scripts/game-env.sh'
+      - 'config/games/**'
+      - 'tests/e2e_game_test.sh'
+      - '.github/workflows/games.yml'
+  workflow_dispatch:
+    inputs:
+      games:
+        description: 'Games to build, space separated (default: all)'
+        required: false
+        default: ''
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  ALL_GAMES: czero dod tfc valve gearbox dmc ricochet
+
+permissions:
+  contents: read
+
+# Cancel superseded PR runs only; tag and manual runs get a unique group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Decides which games and architectures this run builds.
+  plan:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      games: ${{ steps.plan.outputs.games }}
+    steps:
+      - name: Choose games and architectures
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          REQUESTED: ${{ inputs.games }}
+        run: |
+          games="${ALL_GAMES}"
+          archs="amd64 arm64"
+          if [[ "${EVENT}" == "pull_request" ]]; then
+            files=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" --paginate -q '.[].filename')
+            if ! grep -qxE 'scripts/game-env\.sh|config/games/.*|tests/e2e_game_test\.sh|\.github/workflows/games\.yml' <<< "${files}"; then
+              games="dod"
+              archs="amd64"
+            fi
+          elif [[ -n "${REQUESTED}" ]]; then
+            for game in ${REQUESTED}; do
+              [[ " ${ALL_GAMES} " == *" ${game} "* ]] || { echo "::error::unknown game: ${game}"; exit 1; }
+            done
+            games="${REQUESTED}"
+          fi
+          # One space between names, whatever was typed.
+          read -ra list <<< "${games}"
+          games="${list[*]}"
+          matrix=$(jq -cn '
+            {amd64: {runner: "ubuntu-24.04", scale: 1},
+             arm64: {runner: "ubuntu-24.04-arm", scale: 2}} as $hosts
+            | {include: [($ARGS.named.games | split(" ")[]) as $game
+                         | ($ARGS.named.archs | split(" ")[]) as $arch
+                         | {game: $game, arch: $arch} + $hosts[$arch]]}' \
+            --arg games "${games}" --arg archs "${archs}")
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+          echo "games=$(jq -cn '$ARGS.positional' --args "${list[@]}")" >> "${GITHUB_OUTPUT}"
+          echo "games: ${games}; architectures: ${archs}"
+
+  # One native build per game and architecture, tested as tests/e2e_test.sh
+  # tests Counter-Strike: read-only root, state volume, plugins, map change,
+  # graceful shutdown. No layer cache: seven games would evict the
+  # Counter-Strike image's cache.
+  image:
+    name: ${{ matrix.game }} (${{ matrix.arch }})
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      LOCAL_IMAGE: local/cs-server:${{ matrix.game }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Lowercase image name
+        run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Containerfile
+          build-args: GAME=${{ matrix.game }}
+          platforms: linux/${{ matrix.arch }}
+          push: false
+          load: true
+          tags: ${{ env.LOCAL_IMAGE }}
+
+      - name: End-to-end test
+        env:
+          CS_E2E_TIMEOUT_SCALE: ${{ matrix.scale }}
+        run: bash tests/e2e_game_test.sh docker "${LOCAL_IMAGE}"
+
+      - name: Log in to GitHub Container Registry
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Push this architecture untagged (the builder still holds every
+      # layer); `publish` tags a manifest list that points at both digests.
+      - name: Push image by digest
+        id: push
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Containerfile
+          build-args: GAME=${{ matrix.game }}
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v7
+        with:
+          name: game-digests-${{ matrix.game }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Single check name covering every game and architecture.
+  games:
+    needs: image
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every game image to pass
+        env:
+          RESULT: ${{ needs.image.result }}
+        run: |
+          echo "game images: ${RESULT}"
+          [ "${RESULT}" = success ]
+
+  # Release tags only. A game is published when both of its architectures
+  # passed; one game failing does not hold back the others.
+  publish:
+    name: publish ${{ matrix.game }}
+    needs: [plan, image]
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        game: ${{ fromJSON(needs.plan.outputs.games) }}
+
+    steps:
+      - name: Lowercase image name
+        run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: game-digests-${{ matrix.game }}-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push the multi-arch manifest
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          GAME: ${{ matrix.game }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          shopt -s nullglob
+          digests=(*)
+          [[ "${#digests[@]}" -eq 2 ]] || { echo "::error::${GAME}: expected 2 architectures, found ${#digests[@]}"; exit 1; }
+          image="${REGISTRY}/${IMAGE_NAME}"
+          version="${TAG#v}"
+          tags=(-t "${image}:${version}-${GAME}")
+          # A pre-release (1.3.0-rc1) moves no floating tag.
+          if [[ "${version}" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
+            tags+=(-t "${image}:${BASH_REMATCH[1]}.${BASH_REMATCH[2]}-${GAME}"
+                   -t "${image}:${BASH_REMATCH[1]}-${GAME}"
+                   -t "${image}:${GAME}")
+          fi
+          docker buildx imagetools create "${tags[@]}" "${digests[@]/#/${image}@sha256:}"
+          docker buildx imagetools inspect "${image}:${version}-${GAME}"

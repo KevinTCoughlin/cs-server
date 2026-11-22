@@ -32,6 +32,10 @@
 #                      digits, hyphens). Gets its own service, config
 #                      directory and state volume; needs CS_PORT
 #   CS_PORT            UDP port (default 27015). Each instance needs its own
+#   CS_GAME            another Valve game on the same engine: czero, dod, tfc,
+#                      valve, gearbox, dmc or ricochet (default cstrike). Gets
+#                      its own image tag, service (<game>-server), config
+#                      directory and state volume
 #
 # With no route to the registry, an image already in local storage (from
 # `podman load` / `docker load`) is used as it is.
@@ -49,7 +53,27 @@ if [[ -n "${VERSION}" && ! "${VERSION}" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
     printf '[error] Invalid CS_SERVER_VERSION: %s (expected 1.0.0, 1.0 or 1)\n' "${CS_SERVER_VERSION}" >&2
     exit 1
 fi
+# Another game is the same release under a tag suffix: 1.3.0-dod, or dod for
+# the newest. Keep the titles in step with scripts/game-env.sh.
+GAME="${CS_GAME:-cstrike}"
+case "${GAME}" in
+    cstrike)  GAME_TITLE="CS 1.6 ScoutzKnivez" ;;
+    czero)    GAME_TITLE="Condition Zero" ;;
+    dod)      GAME_TITLE="Day of Defeat" ;;
+    tfc)      GAME_TITLE="Team Fortress Classic" ;;
+    valve)    GAME_TITLE="Half-Life" ;;
+    gearbox)  GAME_TITLE="Opposing Force" ;;
+    dmc)      GAME_TITLE="Deathmatch Classic" ;;
+    ricochet) GAME_TITLE="Ricochet" ;;
+    *)
+        printf '[error] Invalid CS_GAME: %s (expected cstrike, czero, dod, tfc, valve, gearbox, dmc or ricochet)\n' "${GAME}" >&2
+        exit 1
+        ;;
+esac
 IMAGE="${IMAGE_REPO}:${VERSION:-latest}"
+if [[ "${GAME}" != "cstrike" ]]; then
+    IMAGE="${IMAGE_REPO}:${VERSION:+${VERSION}-}${GAME}"
+fi
 IMAGE="${CS_SERVER_IMAGE:-${IMAGE}}"
 AUTO_UPDATE="${CS_AUTO_UPDATE:-0}"
 # The default instance keeps the names every earlier release used. A named
@@ -73,6 +97,12 @@ if [[ -n "${INSTANCE}" ]]; then
     SERVICE_NAME="cs-server-${INSTANCE}"
     CONFIG_DIR="${HOME}/.config/cs-server-${INSTANCE}"
     STATE_VOLUME="cs-server-state-${INSTANCE}"
+fi
+# Another game never shares a name with a Counter-Strike server or instance.
+if [[ "${GAME}" != "cstrike" ]]; then
+    SERVICE_NAME="${GAME}-server${INSTANCE:+-${INSTANCE}}"
+    CONFIG_DIR="${HOME}/.config/${SERVICE_NAME}"
+    STATE_VOLUME="${SERVICE_NAME}-state"
 fi
 QUADLET_DIR="${HOME}/.config/containers/systemd"
 RUNTIME=""
@@ -144,6 +174,7 @@ Environment:
   SERVER_IP=<ipv4>         Address to bind and report (+ip)
   CS_INSTANCE=<name>       An additional server: own service, config, state
   CS_PORT=<port>           UDP port (default 27015); one per instance
+  CS_GAME=<game>           Another game: czero, dod, tfc, valve, gearbox, dmc, ricochet
 
 Upgrade or roll back: run the installer again with another CS_SERVER_VERSION
 (or CS_SERVER_IMAGE). Config files are kept.
@@ -211,7 +242,7 @@ detect_runtime() {
 # --- Uninstall --------------------------------------------------------------
 
 do_uninstall() {
-    info "CS 1.6 ScoutzKnivez Server — Uninstaller"
+    info "${GAME_TITLE} Server — Uninstaller"
     echo ""
 
     detect_runtime
@@ -306,7 +337,7 @@ do_uninstall() {
 # --- Install ----------------------------------------------------------------
 
 do_install() {
-    info "CS 1.6 ScoutzKnivez Server — Installer"
+    info "${GAME_TITLE} Server — Installer"
     echo ""
 
     detect_runtime
@@ -365,6 +396,12 @@ do_install() {
 # Files bind-mounted into the container. Keep in sync with compose.yml and
 # quadlet/scoutzknivez.container (tests/mounts_test.sh checks all of them).
 CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt mapcycle-nipper-xmas.txt)
+CONFIG_DIRS=(modes)
+# Another game has its stock settings and one map cycle, and no modes.
+if [[ "${GAME}" != "cstrike" ]]; then
+    CONFIG_FILES=(server.cfg mapcycle.txt)
+    CONFIG_DIRS=()
+fi
 
 # Seed missing config files from the image itself, so the defaults always
 # match the image version. Existing files are never overwritten.
@@ -372,13 +409,15 @@ seed_config() {
     local tmp f rel rcon_password
     tmp=$(mktemp -d) || error "Unable to create a temporary directory"
     if ! ${RUNTIME} run --rm --network none --entrypoint sh "${IMAGE}" -c \
-        'cd /hlds/cstrike && tar -cf - server.cfg mapcycle*.txt modes' |
+        "cd /hlds/${GAME} && tar -cf - server.cfg mapcycle*.txt ${CONFIG_DIRS[*]-}" |
         tar -C "${tmp}" --no-same-owner -xf -; then
         rm -rf "${tmp}"
         error "Unable to read the default config from ${IMAGE}"
     fi
 
-    mkdir -p "${CONFIG_DIR}/modes"
+    for f in ${CONFIG_DIRS[@]+"${CONFIG_DIRS[@]}"}; do
+        mkdir -p "${CONFIG_DIR}/${f}"
+    done
     for f in "${tmp}"/*.cfg "${tmp}"/*.txt "${tmp}"/modes/*.cfg; do
         [[ -f "${f}" ]] || continue
         rel="${f#"${tmp}"/}"
@@ -402,8 +441,11 @@ seed_config() {
         printf 'rcon_password "%s"\n' "${rcon_password}" >> "${CONFIG_DIR}/server.cfg"
         ok "Generated rcon_password in ${CONFIG_DIR}/server.cfg (keep that file private)"
     fi
-    chmod 700 "${CONFIG_DIR}/modes"
-    find "${CONFIG_DIR}" -type f -exec chmod 600 {} +
+    # The server runs as an unprivileged user in the container, which is not
+    # this user there: it reads these files as "other". The directory above
+    # them (mode 700) is what keeps them from other users of this machine.
+    find "${CONFIG_DIR}" -mindepth 1 -type d -exec chmod 755 {} +
+    find "${CONFIG_DIR}" -type f -exec chmod 644 {} +
 }
 
 # --- Podman install (Quadlet) -----------------------------------------------
@@ -441,10 +483,21 @@ install_podman() {
     if [[ "${AUTO_UPDATE}" == "1" ]]; then
         auto_update=$'\n'"AutoUpdate=registry"
     fi
+    local volumes="" f
+    for f in "${CONFIG_FILES[@]}" ${CONFIG_DIRS[@]+"${CONFIG_DIRS[@]}"}; do
+        volumes+="Volume=${CONFIG_DIR}/${f}:/hlds/${GAME}/${f}:ro,Z"$'\n'
+    done
+    # The image of another game starts on that game's own map; MODE is the
+    # ScoutzKnivez plugin's.
+    local map_env="" mode_env=""
+    if [[ "${GAME}" == "cstrike" ]]; then
+        map_env="Environment=MAP=scoutzknivez"$'\n'
+        mode_env="Environment=MODE=scoutz"$'\n'
+    fi
 
     cat > "${QUADLET_DIR}/${SERVICE_NAME}.container" << QUADLET
 [Unit]
-Description=CS 1.6 ScoutzKnivez Server${INSTANCE:+ (${INSTANCE})}
+Description=${GAME_TITLE} Server${INSTANCE:+ (${INSTANCE})}
 Wants=network-online.target
 After=network-online.target
 
@@ -452,21 +505,13 @@ After=network-online.target
 Image=${IMAGE}${auto_update}
 ContainerName=${SERVICE_NAME}
 ${network}
-Volume=${CONFIG_DIR}/server.cfg:/hlds/cstrike/server.cfg:ro,Z
-Volume=${CONFIG_DIR}/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro,Z
-Volume=${CONFIG_DIR}/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro,Z
-Volume=${CONFIG_DIR}/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro,Z
-Volume=${CONFIG_DIR}/mapcycle-nipper-xmas.txt:/hlds/cstrike/mapcycle-nipper-xmas.txt:ro,Z
-Volume=${CONFIG_DIR}/modes:/hlds/cstrike/modes:ro,Z
-Volume=${STATE_VOLUME}:/hlds/state
-Environment=MAP=scoutzknivez
-Environment=MAXPLAYERS=20
+${volumes}Volume=${STATE_VOLUME}:/hlds/state
+${map_env}Environment=MAXPLAYERS=20
 Environment=PORT=${PORT}
 Environment=BOTS=1
 Environment=MAPCYCLE=mapcycle.txt
 Environment=LAN_MODE=${lan_mode}
-Environment=MODE=scoutz
-Environment=LOGS=1
+${mode_env}Environment=LOGS=1
 Environment=LOG_RETENTION_DAYS=7${fastdl_env}${server_ip_env}
 ReadOnly=true
 Tmpfs=/tmp
@@ -567,6 +612,14 @@ install_docker() {
     if [[ -n "${FASTDL_URL}" ]]; then
         fastdl_args=(-e "FASTDL_URL=${FASTDL_URL}")
     fi
+    local mount_args=() f
+    for f in "${CONFIG_FILES[@]}" ${CONFIG_DIRS[@]+"${CONFIG_DIRS[@]}"}; do
+        mount_args+=(-v "${CONFIG_DIR}/${f}:/hlds/${GAME}/${f}:ro")
+    done
+    local game_args=()
+    if [[ "${GAME}" == "cstrike" ]]; then
+        game_args=(-e MAP=scoutzknivez -e MODE=scoutz)
+    fi
 
     # The seccomp profile built into Docker 29 answers the i386 HLDS binary's
     # 32-bit socket() with ENOSYS, so it can't open its port. The image
@@ -589,20 +642,14 @@ install_docker() {
         --restart on-failure:10 \
         --security-opt "seccomp=${seccomp}" \
         "${network_args[@]}" \
-        -v "${CONFIG_DIR}/server.cfg:/hlds/cstrike/server.cfg:ro" \
-        -v "${CONFIG_DIR}/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro" \
-        -v "${CONFIG_DIR}/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro" \
-        -v "${CONFIG_DIR}/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro" \
-        -v "${CONFIG_DIR}/mapcycle-nipper-xmas.txt:/hlds/cstrike/mapcycle-nipper-xmas.txt:ro" \
-        -v "${CONFIG_DIR}/modes:/hlds/cstrike/modes:ro" \
+        "${mount_args[@]}" \
         -v "${STATE_VOLUME}:/hlds/state" \
-        -e MAP=scoutzknivez \
+        ${game_args[@]+"${game_args[@]}"} \
         -e MAXPLAYERS=20 \
         -e "PORT=${PORT}" \
         -e BOTS=1 \
         -e MAPCYCLE=mapcycle.txt \
         -e "LAN_MODE=${lan_mode}" \
-        -e MODE=scoutz \
         -e LOGS=1 \
         -e LOG_RETENTION_DAYS=7 \
         ${fastdl_args[@]+"${fastdl_args[@]}"} \
