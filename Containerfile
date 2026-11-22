@@ -160,6 +160,7 @@ RUN --mount=type=bind,source=config/games/common.cfg,target=/usr/local/src/cs-se
     sed -i 's|^gamedll_linux .*|gamedll_linux "addons/metamod/metamod_i386.so"|' "${GAME}/liblist.gam" && \
     grep -q '^gamedll_linux "addons/metamod/metamod_i386.so"' "${GAME}/liblist.gam" && \
     echo 'linux addons/amxmodx/dlls/amxmodx_mm_i386.so' > "${GAME}/addons/metamod/plugins.ini" && \
+    printf '\n; cs-server\nmetrics.amxx\n' >> "${GAME}/addons/amxmodx/configs/plugins.ini" && \
     touch "${GAME}/server.cfg" "${GAME}/mapcycle.txt" && \
     sed -i -e '/^[[:space:]]*hostname[[:space:]]/d' -e '/^[[:space:]]*bot_quota[[:space:]]/d' "${GAME}/server.cfg" && \
     { printf '\nhostname "%s"\n' "${GAME_TITLE}"; cat /usr/local/src/cs-server/common.cfg; \
@@ -206,13 +207,17 @@ FROM builder AS plugins
 
 ARG GAME
 
-# The custom plugins are Counter-Strike plugins; the other games run the
-# stock AMX Mod X set and get an empty /out.
+# The custom plugins are Counter-Strike plugins, except metrics.sma, which
+# every game gets on top of the stock AMX Mod X set.
 COPY plugins/amxmodx/scripting/*.sma /usr/local/src/cs-server/scripting/
 WORKDIR /hlds/${GAME}/addons/amxmodx/scripting
 RUN chmod +x amxxpc && mkdir -p /out && \
-    if [ "${GAME}" = cstrike ]; then cp /usr/local/src/cs-server/scripting/*.sma . || exit 1; else exit 0; fi && \
-    for sma in scoutzknivez.sma match.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma; do \
+    plugins="metrics.sma" && \
+    if [ "${GAME}" = cstrike ]; then \
+        plugins="scoutzknivez.sma match.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma metrics.sma"; \
+    fi && \
+    for sma in ${plugins}; do \
+        cp "/usr/local/src/cs-server/scripting/${sma}" . || exit 1; \
         run-i386 ./amxxpc "$sma" || exit 1; \
         mv "${sma%.sma}.amxx" /out/ || exit 1; \
     done
@@ -306,6 +311,9 @@ COPY --from=builder /usr/local/share/cs-server/game.env /usr/local/share/cs-serv
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 COPY --chmod=755 scripts/healthcheck.sh /healthcheck.sh
 COPY --chmod=755 scripts/fastdl.sh /fastdl.sh
+COPY --chmod=755 scripts/metrics.pl /metrics.pl
+# Counter-Strike has it from its own plugin copy above; same file.
+COPY --from=plugins --chown=hlds:hlds /out/metrics.amxx /hlds/${GAME}/addons/amxmodx/plugins/metrics.amxx
 
 # Everything the server writes at run time lives under /hlds/state, so one
 # volume there keeps bans, admins, stats and logs across container
@@ -334,6 +342,7 @@ RUN . /usr/local/share/cs-server/game.env && \
     ln -s /hlds/state/amxmodx/vault.ini     "${amx}/data/vault.ini" && \
     ln -s /hlds/state/amxmodx/vault         "${amx}/data/vault" && \
     ln -s /tmp/hlds-runtime                 /hlds/.runtime && \
+    ln -s /hlds/.runtime/metrics.prom       "${amx}/data/metrics.prom" && \
     if [ "${GAME_BOTS}" = 1 ]; then \
         for bsp in "${cs}"/maps/*.bsp; do \
             nav="${bsp%.bsp}.nav"; \

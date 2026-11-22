@@ -42,6 +42,9 @@
 #   CS_LAN_KIT=<n>     LAN event: n servers (1 to 8) named lan1..lan<n> on
 #                      consecutive ports from CS_PORT, LAN profile, match mode,
 #                      no bots, and one FastDL sidecar for all of them
+#   CS_METRICS_PORT    serve Prometheus metrics (players, map, uptime, server
+#                      FPS) at http://127.0.0.1:<port>/metrics;
+#                      CS_METRICS_BIND names another address to listen on
 #   CS_GAME            another Valve game on the same engine: czero, dod, tfc,
 #                      valve, gearbox, dmc or ricochet (default cstrike). Gets
 #                      its own image tag, service (<game>-server), config
@@ -189,6 +192,21 @@ if [[ "${INSTANCE}" == "fastdl" ]]; then
     exit 1
 fi
 FASTDL_DONE=0
+
+# Prometheus endpoint in the server container; off unless a port is given.
+METRICS_PORT="${CS_METRICS_PORT:-}"
+if [[ -n "${METRICS_PORT}" ]]; then
+    if [[ ! "${METRICS_PORT}" =~ ^[0-9]{1,5}$ ]] || [[ "$((10#${METRICS_PORT}))" -lt 1024 || "$((10#${METRICS_PORT}))" -gt 65535 ]]; then
+        printf '[error] Invalid CS_METRICS_PORT: %s (expected 1024 to 65535)\n' "${METRICS_PORT}" >&2
+        exit 1
+    fi
+    METRICS_PORT="$((10#${METRICS_PORT}))"
+fi
+METRICS_BIND="${CS_METRICS_BIND:-127.0.0.1}"
+if [[ ! "${METRICS_BIND}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+    printf '[error] Invalid CS_METRICS_BIND: %s (expected an IPv4 address)\n' "${METRICS_BIND}" >&2
+    exit 1
+fi
 IMAGE_PULLED=0
 QUADLET_DIR="${HOME}/.config/containers/systemd"
 RUNTIME=""
@@ -270,6 +288,7 @@ Environment:
   CS_BOTS=0                No bots
   CS_FASTDL=1              Also serve the maps to clients over HTTP (port 27080/tcp)
   CS_LAN_KIT=<n>           LAN event: n match servers (lan1..lan<n>) and FastDL
+  CS_METRICS_PORT=<port>   Prometheus metrics at http://127.0.0.1:<port>/metrics
 
 Upgrade or roll back: run the installer again with another CS_SERVER_VERSION
 (or CS_SERVER_IMAGE). Config files are kept.
@@ -692,6 +711,18 @@ quadlet_unit() {
     if [[ "${AUTO_UPDATE}" == "1" ]]; then
         auto_update=$'\n'"AutoUpdate=registry"
     fi
+    # Metrics listen inside the container; they are published on one host
+    # address only (loopback unless CS_METRICS_BIND). On host networking the
+    # endpoint binds that address itself.
+    local metrics_publish="" metrics_env=""
+    if [[ -n "${METRICS_PORT}" ]]; then
+        metrics_env=$'\n'"Environment=METRICS_PORT=${METRICS_PORT}"
+        if [[ "${PROFILE}" == "lan" ]]; then
+            metrics_env+=$'\n'"Environment=METRICS_BIND=${METRICS_BIND}"
+        else
+            metrics_publish=$'\n'"PublishPort=${METRICS_BIND}:${METRICS_PORT}:${METRICS_PORT}/tcp"
+        fi
+    fi
     local volumes="" f
     for f in "${CONFIG_FILES[@]}" ${CONFIG_DIRS[@]+"${CONFIG_DIRS[@]}"}; do
         volumes+="Volume=${CONFIG_DIR}/${f}:/hlds/${GAME}/${f}:ro,Z"$'\n'
@@ -714,7 +745,7 @@ After=network-online.target
 [Container]
 Image=${IMAGE}${auto_update}
 ContainerName=${SERVICE_NAME}
-${network}
+${network}${metrics_publish}
 ${volumes}Volume=${STATE_VOLUME}:/hlds/state
 ${map_env}Environment=MAXPLAYERS=20
 Environment=PORT=${PORT}
@@ -722,7 +753,7 @@ Environment=BOTS=${BOTS}
 Environment=MAPCYCLE=${START_CYCLE}
 Environment=LAN_MODE=${lan_mode}
 ${mode_env}Environment=LOGS=1
-Environment=LOG_RETENTION_DAYS=7${fastdl_env}${server_ip_env}
+Environment=LOG_RETENTION_DAYS=7${fastdl_env}${server_ip_env}${metrics_env}
 ReadOnly=true
 Tmpfs=/tmp
 DropCapability=ALL
@@ -804,6 +835,9 @@ install_podman() {
     if [[ "${FASTDL}" == "1" ]]; then
         echo "  FastDL:          ${FASTDL_URL} (open ${FASTDL_PORT}/tcp in this machine's firewall)"
     fi
+    if [[ -n "${METRICS_PORT}" ]]; then
+        echo "  Metrics:         http://${METRICS_BIND}:${METRICS_PORT}/metrics"
+    fi
     echo ""
     echo "  Useful commands:"
     echo "    systemctl --user status ${SERVICE_NAME}     # check status"
@@ -839,6 +873,15 @@ install_docker() {
     local fastdl_args=()
     if [[ -n "${FASTDL_URL}" ]]; then
         fastdl_args=(-e "FASTDL_URL=${FASTDL_URL}")
+    fi
+    local metrics_args=()
+    if [[ -n "${METRICS_PORT}" ]]; then
+        metrics_args=(-e "METRICS_PORT=${METRICS_PORT}")
+        if [[ "${PROFILE}" == "lan" ]]; then
+            metrics_args+=(-e "METRICS_BIND=${METRICS_BIND}")
+        else
+            metrics_args+=(-p "${METRICS_BIND}:${METRICS_PORT}:${METRICS_PORT}/tcp")
+        fi
     fi
     local mount_args=() f
     for f in "${CONFIG_FILES[@]}" ${CONFIG_DIRS[@]+"${CONFIG_DIRS[@]}"}; do
@@ -883,6 +926,7 @@ install_docker() {
         -e LOG_RETENTION_DAYS=7 \
         ${fastdl_args[@]+"${fastdl_args[@]}"} \
         ${server_ip_args[@]+"${server_ip_args[@]}"} \
+        ${metrics_args[@]+"${metrics_args[@]}"} \
         --read-only \
         --tmpfs /tmp \
         --cap-drop ALL \
@@ -992,14 +1036,16 @@ check_host_tuning() {
 
 # LAN kit: the same install or uninstall for lan1..lan<n> on consecutive ports.
 run_kit() {
-    local i base="${PORT}"
+    local i base="${PORT}" metrics_base="${METRICS_PORT}"
     for ((i = 1; i <= LAN_KIT; i++)); do
         INSTANCE="lan${i}"
         PORT=$((base + i - 1))
+        [[ -z "${metrics_base}" ]] || METRICS_PORT=$((metrics_base + i - 1))
         set_names
         "$1"
     done
     PORT="${base}"
+    METRICS_PORT="${metrics_base}"
 }
 
 if [[ "${ACTION}" == "print-unit" ]]; then

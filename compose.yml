@@ -29,6 +29,8 @@ services:
       LAN_MODE: ${LAN_MODE:-0}
       MODE: ${MODE:-scoutz}
       FASTDL_URL: ${FASTDL_URL:-}
+      # Prometheus endpoint inside the container; publish the port yourself.
+      METRICS_PORT: ${METRICS_PORT:-}
       LOGS: ${LOGS:-1}
       LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-7}
       LOGADDRESS: ${LOGADDRESS:-}

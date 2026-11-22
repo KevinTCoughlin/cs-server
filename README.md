@@ -437,6 +437,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
 | `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike) or `match` (5v5: warmup, knife round, pause) |
+| `METRICS_PORT` | empty | Serve Prometheus metrics on this port inside the container; see [Metrics](#metrics). `METRICS_BIND` (default `0.0.0.0`) is the address it listens on |
 | `FASTDL_URL` | empty | http(s) URL serving your `cstrike/` content (`sv_downloadurl`); see [FastDL](#fastdl-fast-downloads) |
 | `LOGS` | `1` | Write server log files (1=on, 0=off); see [Saved state and logs](#saved-state-and-logs) |
 | `LOG_RETENTION_DAYS` | `7` | Delete log files older than this many days (`0` keeps them all) |
@@ -665,6 +666,63 @@ older than `LOG_RETENTION_DAYS` (default 7) are deleted at start and once a
 day. Set `LOGS=0` to write none.
 `LOGADDRESS=host:port` also streams the log lines over UDP to a stats
 collector.
+
+## Metrics
+
+Every server keeps a small set of numbers in Prometheus text format: players
+and bots, slots, the running map, time on the map, uptime and server frames
+per second. They come from the game itself (the `metrics.amxx` plugin, in
+every game's image), so they are the same with and without Steam
+(`NOMASTER=1`), where the server-browser query goes unanswered.
+
+Nothing listens by default. Read them without opening a port:
+
+```bash
+podman exec scoutzknivez cat /hlds/.runtime/metrics.prom
+```
+
+For Prometheus, give the server a metrics port. The installer publishes it
+on this machine's loopback address only:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | CS_METRICS_PORT=9137 bash
+curl -s http://127.0.0.1:9137/metrics
+```
+
+```text
+hlds_players{type="human"} 3
+hlds_players{type="bot"} 7
+hlds_max_players 20
+hlds_map_info{map="scoutzknivez"} 1
+hlds_map_seconds 412
+hlds_uptime_seconds 86012
+hlds_server_fps 870.4
+hlds_updated_timestamp_seconds 1795385631
+hlds_up 1
+```
+
+- `hlds_up` is 0 when the game has not reported for 30 seconds (down, hung
+  or still loading its first map); the other lines are then left out.
+- `CS_METRICS_BIND=<address>` publishes on another address of this machine,
+  for a Prometheus that runs elsewhere. The endpoint has no authentication:
+  keep it off the internet.
+- In a unit or Compose file the settings are `METRICS_PORT` (the endpoint
+  inside the container) and, on host networking, `METRICS_BIND`. Publish the
+  port yourself: `PublishPort=127.0.0.1:9137:9137/tcp`.
+- With `CS_LAN_KIT`, each server gets the next port (`9137`, `9138`, ...).
+- The frame counter runs on every server frame and costs under 3% of the
+  frame rate in this project's own measurement; `metrics_fps 0` in
+  `server.cfg` turns it off (from the next map) and drops `hlds_server_fps`.
+  `metrics_interval` (5 s) is how often the numbers are refreshed.
+
+A scrape job:
+
+```yaml
+scrape_configs:
+  - job_name: cs-server
+    static_configs:
+      - targets: ['127.0.0.1:9137']
+```
 
 ## Bots
 

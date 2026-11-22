@@ -30,6 +30,9 @@ expect_invalid "LAN_MODE must be 0 or 1" LAN_MODE=-1
 expect_invalid "MAXPLAYERS must be an integer from 1 to 32" MAXPLAYERS=33
 expect_invalid "MAXPLAYERS must be an integer from 1 to 32" MAXPLAYERS=999999999999999999999999999999999999
 expect_invalid "PORT must be an integer from 1 to 65535" PORT=0
+expect_invalid "METRICS_PORT must be an integer from 1024 to 65535" METRICS_PORT=80
+expect_invalid "METRICS_PORT must be an integer from 1024 to 65535" "METRICS_PORT=9137;quit"
+expect_invalid "METRICS_BIND must be an IPv4 address" METRICS_PORT=9137 METRICS_BIND=localhost
 expect_invalid "PORT must be an integer from 1 to 65535" PORT=18446744073709551616
 expect_invalid "MAP must be a filename" "MAP=scoutzknivez;quit"
 expect_invalid "MAPCYCLE must be a filename" MAPCYCLE=../server.cfg
@@ -195,6 +198,22 @@ case "${args}" in
     "-game cstrike +map scoutzknivez "*"+localinfo sk_mode scoutz +exec server.cfg"*"+bot_quota 10"*) ;;
     *) printf 'Expected the Counter-Strike defaults, got: %s\n' "${args}" >&2; exit 1 ;;
 esac
+
+# Metrics: nothing listens unless METRICS_PORT is set; then the endpoint gets
+# the port, the address and the file the plugin writes.
+cat > "${WORK_DIR}/metrics-stub" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" > "${0%/*}/metrics-args"
+EOF
+chmod +x "${WORK_DIR}/metrics-stub"
+run_stub HLDS_METRICS_SERVER="${WORK_DIR}/metrics-stub"
+[[ ! -e "${WORK_DIR}/metrics-args" ]] || { printf 'The metrics endpoint started without METRICS_PORT\n' >&2; exit 1; }
+run_stub HLDS_METRICS_SERVER="${WORK_DIR}/metrics-stub" METRICS_PORT=09137 METRICS_BIND=127.0.0.1
+metrics_args=$(cat "${WORK_DIR}/metrics-args")
+if [[ "${metrics_args}" != "9137 127.0.0.1 ${WORK_DIR}/runtime/metrics.prom" ]]; then
+    printf 'Unexpected metrics endpoint arguments: %s\n' "${metrics_args}" >&2
+    exit 1
+fi
 
 # Vanilla: a stock map and rotation by default, and the mode's plugin list
 # when the image has one.
