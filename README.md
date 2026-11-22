@@ -523,8 +523,8 @@ installer, mount your own files over `/hlds/<game>/server.cfg` and
 
 Only Counter-Strike and Condition Zero have bots (they are part of
 ReGameDLL). `MODE` and the ScoutzKnivez plugins are Counter-Strike only.
-Each game is about 1.1 to 1.5 GB. Built and tested on x86-64 with Podman
-(`tests/e2e_game_test.sh`); not yet on arm64.
+Each game is about 1.1 to 1.5 GB. CI builds and tests each one on x86-64 and arm64
+(`tests/e2e_game_test.sh`).
 
 ## Saved state and logs
 
