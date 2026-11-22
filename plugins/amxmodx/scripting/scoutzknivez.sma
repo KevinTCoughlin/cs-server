@@ -14,6 +14,9 @@
 // modes/knife_he.cfg). The engine does not re-run server.cfg on changelevel
 // here, so without the first exec mode settings would leak across switches.
 //
+// `localinfo sk_bots 0` (set by BOTS=0) keeps bots off: server.cfg sets
+// bot_quota, and re-running it would otherwise bring them back on every map.
+//
 // sk_switchmode <scoutz|knife> <mapcyclefile> [map]
 //   Server command (console/FIFO only). Announces the switch and changes level
 //   at the next round end, never mid-round. Without a map, the first map of
@@ -96,6 +99,11 @@ public exec_mode_cfg() {
         if (file_exists(szCfg)) {
             server_cmd("exec %s", szCfg);
         }
+    }
+    new szBots[4];
+    get_localinfo("sk_bots", szBots, charsmax(szBots));
+    if (equal(szBots, "0")) {
+        server_cmd("bot_quota 0");
     }
     log_amx("[SK] mode: %s%s", g_szMode, g_bGrenadeMap ? " (grenade pickups on)" : "");
 }

@@ -14,7 +14,7 @@
 #
 # Covers: every Metamod and AMX Mod X plugin loads and runs, the health check,
 # a read-only root filesystem, file logs, a ban surviving container
-# replacement (state volume), no TCP listener on the game port, FASTDL_URL reaching sv_downloadurl and
+# replacement (state volume), BOTS=0 holding across a map change, no TCP listener on the game port, FASTDL_URL reaching sv_downloadurl and
 # surviving map changes, bots join, mode switching at round end in both directions (cvars, mapcycle
 # and `localinfo sk_mode` surviving the changelevel), the sk_switchmode error
 # paths, every mapcycle map present in the image loads, no AMX Mod X run-time
@@ -404,5 +404,30 @@ boot -e BOTS=0
 line=$(ask listip '^ *192\. *0\. *2\. *7 : ')
 assert_contains "the ban survives container replacement" "${line}" "permanent"
 step "the ban survived"
+
+# --- BOTS=0 stays off across map changes --------------------------------------
+# server.cfg sets bot_quota and is re-run on every map; the plugin must turn
+# bots off again each time. This boot is the one with BOTS=0.
+if note=$(tr -d '\r' < "${LOG}" | grep -a 'NOTE: .* is not a volume'); then
+    fail "the state volume was not recognised as one: ${note}"
+fi
+mark
+send "changelevel scoutzknivez"
+wait_log '\[SK\] mode: scoutz' 90 >/dev/null || fail "changelevel with BOTS=0: the map did not load"
+players=0
+for _ in $(seq 4); do
+    sleep 5
+    line=$(ask status '^players +: +[0-9]+ active')
+    players="${line#*: }"
+    players="${players#"${players%%[! ]*}"}"
+    players="${players%% *}"
+    [[ "${players}" -le 1 ]] || break
+done
+# websitebot.amxx keeps one fake client of its own in the player list.
+if [[ "${players}" -gt 1 ]]; then
+    fail "bots joined with BOTS=0 after a map change (players: ${players})"
+fi
+expect_cvar bot_quota 0 "BOTS=0 survives server.cfg being re-run"
+step "BOTS=0 keeps bots off"
 
 printf 'e2e tests passed\n'

@@ -25,7 +25,7 @@ Requires [Podman](https://podman.io/getting-started/installation) (rootless) or 
 That runs the newest build of `main` (`:latest`). To run a release instead, name it; see [Releases, upgrade and rollback](#releases-upgrade-and-rollback):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.0.0/install.sh | CS_SERVER_VERSION=1.0.0 bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.1.0/install.sh | CS_SERVER_VERSION=1.1.0 bash
 ```
 
 To uninstall: `curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash -s -- --uninstall`
@@ -508,6 +508,19 @@ Each release is a git tag (`v1.0.0`), a [GitHub release](https://github.com/Kevi
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.1.0/install.sh | CS_SERVER_VERSION=1.1.0 bash
+```
+
+**From 1.0.x to 1.1.0, re-run the installer** rather than editing `Image=`:
+1.1.0 adds a state volume, a read-only root filesystem and, on Docker, a
+seccomp profile, and those live in the unit (or the `docker run` command), not
+in the image. An old unit still starts a new image, but nothing the server
+saves outlives the container; the server log says so at start
+(`NOTE: /hlds/state is not a volume`). To do it by hand, add to `[Container]`:
+
+```ini
+Volume=cs-server-state:/hlds/state
+ReadOnly=true
+Tmpfs=/tmp
 ```
 
 Or by hand: change `Image=` in `~/.config/containers/systemd/scoutzknivez.container`, then

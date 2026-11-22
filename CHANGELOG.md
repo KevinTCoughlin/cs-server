@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-21
+
+State and hardening. What the server saves now survives a replaced container, and the container runs read-only under a seccomp profile on every engine. **Upgrading from 1.0.x: run the installer again** (or add the volume to your unit by hand, see the README); the new settings live in the unit, not in the image.
+
 ### Added
 - **State volume.** Bans (`banned.cfg`, `listip.cfg`), AMX Mod X admins (`users.ini`), stats, plugin storage and logs now live under `/hlds/state`, mounted as the named volume `cs-server-state` by `compose.yml`, the Quadlet unit and `install.sh`, and as `~/.config/cs-server/state` on macOS. Before this, all of it was lost whenever the container was replaced. The ban lists are loaded at every start. `install.sh --uninstall` asks before removing the volume. An existing install gets the volume when its unit is regenerated (re-run the installer) (#71)
 - **Server logs on disk.** `LOGS=1` (default) turns on HLDS file logging into the state volume; `LOG_RETENTION_DAYS` (default 7) deletes older files at start and daily; `LOGADDRESS=host:port` forwards log lines to a stats collector. Logs hold player names, SteamIDs and addresses; set `LOGS=0` to turn them off (#74)
@@ -14,6 +18,8 @@
 - **Docker no longer runs the server with `seccomp=unconfined`.** The profile built into Docker 29 answers the i386 binary's `socket()` with `ENOSYS`; Docker's own upstream default profile, passed as a file, does not (checked on Docker 29.4.2). `compose.yml` uses `ops/seccomp/docker-default.json`, the image carries the same file, and `install.sh` reads it out of the image for `docker run`, falling back to `unconfined` with a warning for older images. Podman is unchanged (#78)
 
 ### Fixed
+- **`BOTS=0` now keeps bots off.** `server.cfg` sets `bot_quota`, and the per-map re-run of `server.cfg` brought the bots back after the first map. The entrypoint now also sets `localinfo sk_bots 0`, and `scoutzknivez.amxx` turns bots off again after it re-runs the config (#91)
+- A container started without a state volume (a unit from before 1.1.0) says so in its log at start, and the README's upgrade section covers the step (#93)
 - `just deploy` failed with a container-name clash while the Quadlet service was running; it now builds the image and restarts the service.
 - The quickstart page still told readers to open 27015 on TCP.
 
@@ -99,5 +105,6 @@ First tagged release. Images for it are on ghcr.io as `1.0.0`, `1.0` and `1` (`l
 - .env.example documenting environment variables
 - Quadlet systemd unit file shipped in-repo
 
-[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/KevinTCoughlin/cs-server/releases/tag/v1.0.0
