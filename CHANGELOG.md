@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-21
+
+Several servers and LAN play. One host can run more than one server, a LAN-party profile shows the server in the LAN tab, and install and start work with no internet. **Upgrading from 1.1.x: pull the new image**; it also fixes a map-reload loop on two default maps.
+
 ### Added
 - **Several servers on one host.** `CS_INSTANCE=<name> CS_PORT=<port>` makes `install.sh` set up an additional server with its own service (`cs-server-<name>`), config directory and state volume, on Podman and Docker; `--uninstall` with the same variable removes only that one. `compose.yml` takes `CS_CONTAINER_NAME`, `PORT` and `CS_STATE_VOLUME` for the same purpose. The default server keeps its names. Not yet on macOS (#72)
 - **LAN profile.** `CS_PROFILE=lan` for `install.sh` (Quadlet and Docker) and `compose.lan.yml` (`just lan-party`) run the server on the host's network with `sv_lan 1`, so the LAN tab's broadcast query reaches it. Verified between two containers on one network; `NOMASTER=1` and `SERVER_IP` both hide a server from the LAN tab and the README says why (#81)
@@ -124,7 +128,8 @@ First tagged release. Images for it are on ghcr.io as `1.0.0`, `1.0` and `1` (`l
 - .env.example documenting environment variables
 - Quadlet systemd unit file shipped in-repo
 
-[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/KevinTCoughlin/cs-server/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/KevinTCoughlin/cs-server/releases/tag/v1.0.0

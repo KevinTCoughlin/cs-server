@@ -25,7 +25,7 @@ Requires [Podman](https://podman.io/getting-started/installation) (rootless) or 
 That runs the newest build of `main` (`:latest`). To run a release instead, name it; see [Releases, upgrade and rollback](#releases-upgrade-and-rollback):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.1.1/install.sh | CS_SERVER_VERSION=1.1.1 bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.2.0/install.sh | CS_SERVER_VERSION=1.2.0 bash
 ```
 
 To uninstall: `curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash -s -- --uninstall`
@@ -598,7 +598,7 @@ Each release is a git tag (`v1.0.0`), a [GitHub release](https://github.com/Kevi
 **Upgrade** by running the installer again with the new version. Config in `~/.config/cs-server/` is kept, the unit is rewritten, and a running server is restarted onto the new image (players get the 30 second countdown):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.1.1/install.sh | CS_SERVER_VERSION=1.1.1 bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.2.0/install.sh | CS_SERVER_VERSION=1.2.0 bash
 ```
 
 **From 1.0.x to 1.1.0, re-run the installer** rather than editing `Image=`:
