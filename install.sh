@@ -24,6 +24,13 @@
 #   CS_RCON=1          generate an rcon_password for network rcon (off by
 #                      default; the local console needs none)
 #   FASTDL_URL         http(s) URL that serves your cstrike/ content
+#   CS_PROFILE=lan     LAN party server: host networking and sv_lan 1, so it
+#                      shows in the LAN tab; no Steam, no VAC, no master list
+#   SERVER_IP          IPv4 address to bind and report (+ip), for a public
+#                      server on host networking or a multi-homed host
+#
+# With no route to the registry, an image already in local storage (from
+# `podman load` / `docker load`) is used as it is.
 #
 set -euo pipefail
 umask 077
@@ -60,6 +67,25 @@ if [[ "${AUTO_UPDATE}" == "1" && "${IMAGE}" == *@sha256:* ]]; then
 fi
 
 # Same rule as entrypoint.sh: the URL reaches the HLDS console.
+PROFILE="${CS_PROFILE:-public}"
+case "${PROFILE}" in
+    public | lan) ;;
+    *)
+        printf '[error] Invalid CS_PROFILE: %s (expected public or lan)\n' "${PROFILE}" >&2
+        exit 1
+        ;;
+esac
+SERVER_IP="${SERVER_IP:-}"
+if [[ -n "${SERVER_IP}" && ! "${SERVER_IP}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+    printf '[error] Invalid SERVER_IP: %s (expected an IPv4 address)\n' "${SERVER_IP}" >&2
+    exit 1
+fi
+# A socket bound to one address hears no broadcasts, and the LAN tab finds
+# servers by broadcast.
+if [[ "${PROFILE}" == "lan" && -n "${SERVER_IP}" ]]; then
+    printf '[error] SERVER_IP cannot be combined with CS_PROFILE=lan: the LAN tab would not find the server\n' >&2
+    exit 1
+fi
 FASTDL_URL="${FASTDL_URL:-}"
 if [[ -n "${FASTDL_URL}" ]] &&
    [[ "${#FASTDL_URL}" -gt 128 || ! "${FASTDL_URL}" =~ ^https?://[A-Za-z0-9._~:/?#@!\&=+,%-]+$ ]]; then
@@ -92,6 +118,8 @@ Environment:
   CS_AUTO_UPDATE=1         Podman: pull new images for the tag automatically
   CS_RCON=1                Generate an rcon_password (network rcon is off by default)
   FASTDL_URL=<url>         http(s) URL that serves your cstrike/ content
+  CS_PROFILE=lan           LAN party server: host networking, sv_lan 1
+  SERVER_IP=<ipv4>         Address to bind and report (+ip)
 
 Upgrade or roll back: run the installer again with another CS_SERVER_VERSION
 (or CS_SERVER_IMAGE). Config files are kept.
@@ -265,8 +293,14 @@ do_install() {
     # --- Pull image ----------------------------------------------------------
 
     info "Pulling container image: ${IMAGE}"
-    ${RUNTIME} pull "${IMAGE}"
-    ok "Image pulled"
+    if ${RUNTIME} pull "${IMAGE}"; then
+        ok "Image pulled"
+    elif ${RUNTIME} image inspect "${IMAGE}" >/dev/null 2>&1; then
+        # Offline install: the image came from `podman load` / `docker load`.
+        warn "Could not pull ${IMAGE}; using the copy already on this machine"
+    else
+        error "Could not pull ${IMAGE} and no local copy exists. Offline? Load one first: ${RUNTIME} load -i cs-server.tar"
+    fi
 
     # The digest names exactly this build: keep it to come back to.
     local digest
@@ -364,6 +398,17 @@ install_podman() {
     # podman-auto-update pulls the tag, restarts the unit and, because the
     # unit only counts as started once healthy (Notify=healthy), puts the
     # previous image back when the new one does not come up.
+    local server_ip_env=""
+    if [[ -n "${SERVER_IP}" ]]; then
+        server_ip_env=$'\n'"Environment=SERVER_IP=${SERVER_IP}"
+    fi
+    # LAN: the server sits on the host's network so broadcast queries from
+    # the LAN tab reach it. Published ports would hide it from them.
+    local network="PublishPort=27015:27015/udp" lan_mode=0
+    if [[ "${PROFILE}" == "lan" ]]; then
+        network="Network=host"
+        lan_mode=1
+    fi
     local auto_update=""
     if [[ "${AUTO_UPDATE}" == "1" ]]; then
         auto_update=$'\n'"AutoUpdate=registry"
@@ -378,7 +423,7 @@ After=network-online.target
 [Container]
 Image=${IMAGE}${auto_update}
 ContainerName=${SERVICE_NAME}
-PublishPort=27015:27015/udp
+${network}
 Volume=${CONFIG_DIR}/server.cfg:/hlds/cstrike/server.cfg:ro,Z
 Volume=${CONFIG_DIR}/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro,Z
 Volume=${CONFIG_DIR}/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro,Z
@@ -391,10 +436,10 @@ Environment=MAXPLAYERS=20
 Environment=PORT=27015
 Environment=BOTS=1
 Environment=MAPCYCLE=mapcycle.txt
-Environment=LAN_MODE=0
+Environment=LAN_MODE=${lan_mode}
 Environment=MODE=scoutz
 Environment=LOGS=1
-Environment=LOG_RETENTION_DAYS=7${fastdl_env}
+Environment=LOG_RETENTION_DAYS=7${fastdl_env}${server_ip_env}
 ReadOnly=true
 Tmpfs=/tmp
 DropCapability=ALL
@@ -451,6 +496,10 @@ QUADLET
     server_ip="${server_ip:-your-ip}"
     echo "  Server address:  ${server_ip}:27015"
     echo "  Image:           ${IMAGE}"
+    if [[ "${PROFILE}" == "lan" ]]; then
+        echo "  Profile:         LAN (host networking, sv_lan 1): look in the LAN tab,"
+        echo "                   and open 27015/udp in this machine's firewall"
+    fi
     echo "  Config files:    ${CONFIG_DIR}/"
     echo "  Saved state:     volume ${STATE_VOLUME} (bans, admins, stats, logs)"
     echo "  Quadlet unit:    ${QUADLET_DIR}/${SERVICE_NAME}.container"
@@ -477,6 +526,15 @@ install_docker() {
         docker rm "${SERVICE_NAME}" 2>/dev/null || true
     fi
 
+    local network_args=(-p 27015:27015/udp) lan_mode=0
+    if [[ "${PROFILE}" == "lan" ]]; then
+        network_args=(--network host)
+        lan_mode=1
+    fi
+    local server_ip_args=()
+    if [[ -n "${SERVER_IP}" ]]; then
+        server_ip_args=(-e "SERVER_IP=${SERVER_IP}")
+    fi
     local fastdl_args=()
     if [[ -n "${FASTDL_URL}" ]]; then
         fastdl_args=(-e "FASTDL_URL=${FASTDL_URL}")
@@ -502,7 +560,7 @@ install_docker() {
         --name "${SERVICE_NAME}" \
         --restart on-failure:10 \
         --security-opt "seccomp=${seccomp}" \
-        -p 27015:27015/udp \
+        "${network_args[@]}" \
         -v "${CONFIG_DIR}/server.cfg:/hlds/cstrike/server.cfg:ro" \
         -v "${CONFIG_DIR}/mapcycle.txt:/hlds/cstrike/mapcycle.txt:ro" \
         -v "${CONFIG_DIR}/mapcycle-dust2.txt:/hlds/cstrike/mapcycle-dust2.txt:ro" \
@@ -515,11 +573,12 @@ install_docker() {
         -e PORT=27015 \
         -e BOTS=1 \
         -e MAPCYCLE=mapcycle.txt \
-        -e LAN_MODE=0 \
+        -e "LAN_MODE=${lan_mode}" \
         -e MODE=scoutz \
         -e LOGS=1 \
         -e LOG_RETENTION_DAYS=7 \
         ${fastdl_args[@]+"${fastdl_args[@]}"} \
+        ${server_ip_args[@]+"${server_ip_args[@]}"} \
         --read-only \
         --tmpfs /tmp \
         --cap-drop ALL \
@@ -545,6 +604,10 @@ install_docker() {
     server_ip="${server_ip:-your-ip}"
     echo "  Server address:  ${server_ip}:27015"
     echo "  Image:           ${IMAGE}"
+    if [[ "${PROFILE}" == "lan" ]]; then
+        echo "  Profile:         LAN (host networking, sv_lan 1): look in the LAN tab,"
+        echo "                   and open 27015/udp in this machine's firewall"
+    fi
     echo "  Config files:    ${CONFIG_DIR}/"
     echo "  Saved state:     volume ${STATE_VOLUME} (bans, admins, stats, logs)"
     echo ""

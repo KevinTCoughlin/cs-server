@@ -41,4 +41,15 @@ if grep -q '/tcp\|protocol: tcp' <<<"${output}"; then
     exit 1
 fi
 
+# LAN override: host networking, no published port, sv_lan 1, queries answered.
+output=$("${COMPOSE[@]}" -f compose.yml -f compose.lan.yml config)
+if ! grep -q 'network_mode: host' <<<"${output}" || grep -q 'published:' <<<"${output}"; then
+    printf 'compose.lan.yml must select host networking and publish no port\n' >&2
+    exit 1
+fi
+if ! grep -Eq "LAN_MODE: ['\"]?1['\"]?$" <<<"${output}" || ! grep -Eq "NOMASTER: ['\"]?0['\"]?$" <<<"${output}"; then
+    printf 'compose.lan.yml must set LAN_MODE=1 and leave NOMASTER=0\n' >&2
+    exit 1
+fi
+
 printf 'compose tests passed\n'

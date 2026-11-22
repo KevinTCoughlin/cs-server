@@ -16,6 +16,7 @@ FASTDL_URL="${FASTDL_URL:-}"
 LOGS="${LOGS:-1}"
 LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"
 LOGADDRESS="${LOGADDRESS:-}"
+SERVER_IP="${SERVER_IP:-}"
 
 validate_boolean() {
     local name="$1" value="$2"
@@ -83,6 +84,24 @@ validate_logaddress() {
     fi
 }
 
+# The address HLDS binds and reports to Steam (+ip). Reaches the console.
+validate_ipv4() {
+    local name="$1" value="$2" octet
+    local -a octets
+    if [[ -z "${value}" ]]; then
+        return 0
+    fi
+    if [[ "${value}" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        IFS=. read -r -a octets <<< "${value}"
+        for octet in "${octets[@]}"; do
+            [[ "$((10#${octet}))" -le 255 ]] || octets=()
+        done
+        [[ "${#octets[@]}" -eq 4 ]] && return 0
+    fi
+    echo "[entrypoint] ${name} must be an IPv4 address" >&2
+    exit 1
+}
+
 validate_boolean "BOTS" "${BOTS}"
 validate_boolean "LOGS" "${LOGS}"
 validate_integer "LOG_RETENTION_DAYS" "${LOG_RETENTION_DAYS}" 0 3650
@@ -94,6 +113,7 @@ validate_integer "PORT" "${PORT}" 1 65535
 validate_filename "MAP" "${MAP}"
 validate_filename "MAPCYCLE" "${MAPCYCLE}"
 validate_url "FASTDL_URL" "${FASTDL_URL}"
+validate_ipv4 "SERVER_IP" "${SERVER_IP}"
 if [[ -n "${LOGADDRESS}" && "${LOGS}" != "1" ]]; then
     echo "[entrypoint] LOGADDRESS needs LOGS=1" >&2
     exit 1
@@ -246,6 +266,15 @@ else
     FASTDL_ARGS=()
 fi
 
+# Without +ip HLDS takes the address its hostname resolves to. On host
+# networking that can be a VPN or bridge address, and Steam then never
+# answers; SERVER_IP names the address to bind and report.
+if [[ -n "${SERVER_IP}" ]]; then
+    IP_ARGS=(+ip "${SERVER_IP}")
+else
+    IP_ARGS=()
+fi
+
 # File logs go to the state volume (cstrike/logs is a link into it). `log on`
 # must come after server.cfg, whose sv_log_onefile decides how files are cut.
 LOG_ARGS=()
@@ -266,6 +295,7 @@ HLDS_ARGS=(
     +map "${MAP}"
     +maxplayers "${MAXPLAYERS}"
     +port "${PORT}"
+    "${IP_ARGS[@]}"
     +sv_lan "${LAN_MODE}"
     -pingboost 2
     +sys_ticrate 1000

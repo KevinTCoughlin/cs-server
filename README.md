@@ -364,10 +364,71 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `LOGS` | `1` | Write server log files (1=on, 0=off); see [Saved state and logs](#saved-state-and-logs) |
 | `LOG_RETENTION_DAYS` | `7` | Delete log files older than this many days (`0` keeps them all) |
 | `LOGADDRESS` | empty | `host:port` of a log receiver such as HLstatsX (`logaddress_add`); needs `LOGS=1` |
+| `SERVER_IP` | empty | IPv4 address to bind and report to Steam (`+ip`); see [Host networking and Steam](#host-networking-and-steam) |
 
 Startup rejects invalid booleans, out-of-range ports/player counts, unsafe
 map or mapcycle filenames and malformed FastDL URLs or log addresses instead
 of passing unchecked values to HLDS.
+
+## LAN party
+
+A LAN server has to be found in the game's **LAN** tab, and the tab finds
+servers by broadcast. A broadcast never reaches a container behind a published
+port, so the LAN profile puts the server on the host's network and sets
+`sv_lan 1`:
+
+```bash
+# Installer (Podman Quadlet, or Docker)
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | CS_PROFILE=lan bash
+
+# From a checkout
+just lan-party      # podman compose -f compose.yml -f compose.lan.yml up --build -d
+```
+
+In an existing Quadlet unit, replace `PublishPort=27015:27015/udp` with
+`Network=host` and set `Environment=LAN_MODE=1`.
+
+- Open `27015/udp` in the host's firewall for the LAN.
+- `sv_lan 1` means no Steam login, no VAC and no master-server listing. The
+  server needs no internet connection, and non-Steam clients can join.
+- Do not set `NOMASTER=1`: the server then answers no server-browser queries
+  and stays out of the LAN tab. Do not set `SERVER_IP` either: a socket bound
+  to one address hears no broadcasts.
+- Apple `container` has no host networking. On a Mac, clients connect by
+  address (`connect <mac-ip>:27015`).
+- Tested here between two containers on one network (broadcast query answered,
+  with and without an uplink). Whether a given client's LAN tab lists it also
+  depends on that client and on the switch or access point passing broadcasts.
+
+### No internet
+
+The server starts and plays with no network at all (`tests/e2e_test.sh` boots
+it with `--network none`). To install on a machine that cannot reach the
+registry, carry the image over:
+
+```bash
+# On a machine with internet
+podman pull ghcr.io/kevintcoughlin/cs-server:1
+podman save -o cs-server.tar ghcr.io/kevintcoughlin/cs-server:1
+
+# On the LAN box (docker save / docker load work the same way)
+podman load -i cs-server.tar
+CS_SERVER_VERSION=1 CS_PROFILE=lan bash install.sh
+```
+
+When the pull fails and the image is already in local storage, the installer
+says so and uses that copy. Copy `install.sh` over with the tarball; it needs
+nothing else from the network.
+
+### Host networking and Steam
+
+Without `+ip`, HLDS reports the address its hostname resolves to. On host
+networking that can be a VPN or bridge address (a Tailscale `100.x` address,
+for example), and the server then logs `Could not establish connection to
+Steam servers.` and is neither VAC secured nor on the master list. Look for
+`Server IP address` in the log. For a **public** server on host networking,
+set `SERVER_IP` to the address clients reach; the health check follows it.
+A LAN-profile server does not talk to Steam and needs no `SERVER_IP`.
 
 ## Saved state and logs
 

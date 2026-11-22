@@ -103,6 +103,7 @@ tests/
 - **FIFO-based server control**: `entrypoint.sh` creates a private named pipe (`/hlds/.runtime/hlds-input`) for sending commands to HLDS (say, quit, rcon). The `script` utility provides a PTY so HLDS doesn't block on stdin.
 - **Graceful shutdown**: Traps SIGTERM/SIGINT, announces countdown in-game (30s → 10s → 5s → 2s → 1s), then sends `quit` via FIFO.
 - **Game modes**: `scoutzknivez.sma` reads the mode from `localinfo sk_mode` (set by `MODE` at startup, survives map changes) and on every map execs `server.cfg` then `modes/<mode>.cfg` (the engine doesn't re-run `server.cfg` on `changelevel`, so the plugin does). `sk_switchmode <mode> <mapcycle> [map]` (server console/FIFO only) queues a switch for the next round end. In knife mode on `he_*` maps, HE grenade pickups are allowed. `scripts/mode.sh` picks the Christmas rotation from Dec 1 to Jan 6. `scripts/mode.sh` wraps it for `just mode`, `cs-server mode` and the opt-in Friday schedule. `rtv.sma` follows the `mapcyclefile` cvar.
+- **LAN profile**: `CS_PROFILE=lan` (`install.sh`) and `compose.lan.yml` (`just lan-party`) select host networking and `LAN_MODE=1`, because the LAN tab finds servers by broadcast. Never combine it with `NOMASTER=1` (`-nomaster` silences A2S_INFO, so the server is invisible) or `SERVER_IP` (a socket bound to one address hears no broadcasts). `tests/e2e_test.sh` boots once with `--network none` and checks the A2S_INFO reply.
 - **Quadlet for systemd**: `scoutzknivez.container` unit file enables auto-start, crash recovery (restart on-failure), and resource limits (512MB RAM, 2 CPUs).
 
 ## Key Conventions
@@ -143,3 +144,4 @@ tests/
 | `LOGS` | `1` | `+log on`; files land in the state volume (`/hlds/state/logs`) |
 | `LOG_RETENTION_DAYS` | `7` | Prune `*.log` older than this at start and daily (`0` = keep) |
 | `LOGADDRESS` | empty | `host:port` for `+logaddress_add` |
+| `SERVER_IP` | empty | IPv4 for `+ip` (bind + report); for public servers on host networking. `healthcheck.sh` queries it instead of loopback |

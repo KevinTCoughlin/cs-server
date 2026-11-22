@@ -36,6 +36,7 @@ cat > "${STUBS}/engine" <<'EOF'
 printf '%s %s\n' "${0##*/}" "$*" >> "${CALLS}"
 case "$1" in
     info) echo true ;;
+    pull) [ "${FAKE_PULL_FAIL:-0}" = 0 ] || exit 1 ;;
     run)
         case "$*" in
             *"--entrypoint sh"*) cd "${FAKE_IMAGE_CONFIG}" && tar -cf - server.cfg mapcycle*.txt modes ;;
@@ -228,6 +229,37 @@ assert_contains "unit carries the FastDL URL" "${unit}" 'Environment=FASTDL_URL=
 install 'FASTDL_URL=https://example.com/";quit'
 expect_die "bad FASTDL_URL" "Invalid FASTDL_URL"
 
+# CS_PROFILE=lan: host networking instead of a published port, sv_lan 1.
+install CS_PROFILE=lan
+expect_ok "podman install with CS_PROFILE=lan"
+unit=$(cat "${UNIT}")
+assert_contains "LAN unit uses host networking" "${unit}" "Network=host"
+assert_not_contains "LAN unit publishes no port" "${unit}" "PublishPort="
+assert_contains "LAN unit sets sv_lan" "${unit}" "Environment=LAN_MODE=1"
+assert_not_contains "LAN unit keeps answering browser queries" "${unit}" "NOMASTER"
+assert_contains "LAN install points at the LAN tab" "${output}" "LAN tab"
+install CS_PROFILE=wan
+expect_die "bad CS_PROFILE" "Invalid CS_PROFILE"
+install CS_PROFILE=lan SERVER_IP=192.0.2.10
+expect_die "LAN profile with SERVER_IP" "cannot be combined"
+
+# SERVER_IP lands in the unit.
+install SERVER_IP=192.0.2.10
+expect_ok "podman install with SERVER_IP"
+unit=$(cat "${UNIT}")
+assert_contains "unit carries SERVER_IP" "${unit}" "Environment=SERVER_IP=192.0.2.10"
+assert_contains "SERVER_IP keeps the published port" "${unit}" "PublishPort=27015:27015/udp"
+install 'SERVER_IP=192.0.2.10;quit'
+expect_die "bad SERVER_IP" "Invalid SERVER_IP"
+
+# Offline: a failed pull falls back to an image loaded by hand, and stops
+# when there is none.
+install FAKE_PULL_FAIL=1 FAKE_IMAGE=1
+expect_ok "offline install with a loaded image"
+assert_contains "offline install says what it used" "${output}" "using the copy already on this machine"
+install FAKE_PULL_FAIL=1
+expect_die "offline install without an image" "no local copy exists"
+
 # --- Pinning, upgrade and rollback ------------------------------------------
 # Default image: lowercase (engines reject the repository's mixed case).
 fresh_home
@@ -338,6 +370,19 @@ run_line=$(grep '^docker run -d ' "${LOG}")
 assert_contains "docker run carries the FastDL URL" "${run_line}" "-e FASTDL_URL=https://example.com/cstrike/ "
 assert_contains "docker run mounts the state volume" "${run_line}" " -v cs-server-state:/hlds/state "
 assert_contains "docker run: read-only root" "${run_line}" " --read-only --tmpfs /tmp "
+
+fresh_home
+install FAKE_CONTAINER=1 CS_PROFILE=lan
+expect_ok "docker install with CS_PROFILE=lan"
+run_line=$(grep '^docker run -d ' "${LOG}")
+assert_contains "docker LAN: host networking" "${run_line}" " --network host "
+assert_not_contains "docker LAN: no published port" "${run_line}" " -p "
+assert_contains "docker LAN: sv_lan" "${run_line}" " -e LAN_MODE=1 "
+fresh_home
+install FAKE_CONTAINER=1 SERVER_IP=192.0.2.10
+expect_ok "docker install with SERVER_IP"
+run_line=$(grep '^docker run -d ' "${LOG}")
+assert_contains "docker run carries SERVER_IP" "${run_line}" " -e SERVER_IP=192.0.2.10 "
 
 # --- Firewall recipe: mentioned, never applied -------------------------------
 cat > "${STUBS}/nft" <<'EOF'

@@ -13,9 +13,11 @@
 set -u
 
 PORT="${PORT:-27015}"
+# With SERVER_IP the engine binds that address only, not loopback.
+HOST="${SERVER_IP:-127.0.0.1}"
 
 grep -qs hlds_linux /proc/[0-9]*/comm || exit 1
 
-exec 3<>"/dev/udp/127.0.0.1/${PORT}" || exit 1
+exec 3<>"/dev/udp/${HOST}/${PORT}" || exit 1
 printf '\377\377\377\377i' >&3 || exit 1
 LC_ALL=C IFS= read -r -t 3 -N 1 -u 3 _ 2>/dev/null || exit 1
