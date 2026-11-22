@@ -98,6 +98,16 @@ for _ in $(seq $((60 * SCALE))); do
     sleep 1
 done
 assert_eq "the health check passes" 1 "${healthy}"
+# metrics.amxx is in every game's plugin list and writes this file.
+reported=0
+for _ in $(seq $((20 * SCALE))); do
+    if "${ENGINE}" exec "${NAME}" grep -q "^hlds_map_info{map=\"${GAME_MAP}\"} 1\$" /hlds/.runtime/metrics.prom 2>/dev/null; then
+        reported=1
+        break
+    fi
+    sleep 1
+done
+assert_eq "metrics.amxx reports the running map" 1 "${reported}"
 step "${GAME} server is up on ${GAME_MAP}"
 
 wait_for "\[META\] Recognized game '${GAME}'" 10 || fail "Metamod did not recognise the game"

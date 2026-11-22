@@ -33,6 +33,9 @@ LOGS="${LOGS:-1}"
 LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"
 LOGADDRESS="${LOGADDRESS:-}"
 SERVER_IP="${SERVER_IP:-}"
+# Prometheus endpoint: off unless METRICS_PORT is set.
+METRICS_PORT="${METRICS_PORT:-}"
+METRICS_BIND="${METRICS_BIND:-0.0.0.0}"
 
 validate_boolean() {
     local name="$1" value="$2"
@@ -126,6 +129,10 @@ validate_boolean "NOMASTER" "${NOMASTER}"
 validate_boolean "LAN_MODE" "${LAN_MODE}"
 validate_integer "MAXPLAYERS" "${MAXPLAYERS}" 1 32
 validate_integer "PORT" "${PORT}" 1 65535
+if [[ -n "${METRICS_PORT}" ]]; then
+    validate_integer "METRICS_PORT" "${METRICS_PORT}" 1024 65535
+    validate_ipv4 "METRICS_BIND" "${METRICS_BIND}"
+fi
 validate_filename "MAP" "${MAP}"
 validate_filename "MAPCYCLE" "${MAPCYCLE}"
 validate_url "FASTDL_URL" "${FASTDL_URL}"
@@ -155,10 +162,14 @@ SCRIPT_PID=
 SHUTTING_DOWN=0
 
 PRUNE_PID=
+METRICS_PID=
 
 cleanup() {
     if [[ -n "${PRUNE_PID}" ]]; then
         kill "${PRUNE_PID}" 2>/dev/null || true
+    fi
+    if [[ -n "${METRICS_PID}" ]]; then
+        kill "${METRICS_PID}" 2>/dev/null || true
     fi
     exec 3>&- 3<&- || true
     rm -f "${FIFO}"
@@ -258,6 +269,14 @@ rm -f "${FIFO}"
 mkfifo "${FIFO}"
 chmod 600 "${FIFO}"
 exec 3<> "${FIFO}"
+
+# The metrics.amxx plugin keeps ${RUNTIME_DIR}/metrics.prom current; this
+# serves it at /metrics (hlds_up 0 while the file is missing or stale).
+rm -f "${RUNTIME_DIR}/metrics.prom"
+if [[ -n "${METRICS_PORT}" ]]; then
+    "${HLDS_METRICS_SERVER:-/metrics.pl}" "$((10#${METRICS_PORT}))" "${METRICS_BIND}" "${RUNTIME_DIR}/metrics.prom" &
+    METRICS_PID=$!
+fi
 
 # Modes belong to the ScoutzKnivez plugin (Counter-Strike only) and bots to
 # ReGameDLL (GAME_BOTS); elsewhere MODE and BOTS do nothing.

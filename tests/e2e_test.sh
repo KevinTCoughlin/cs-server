@@ -220,8 +220,33 @@ boot() {
 
 # --- Boot -------------------------------------------------------------------
 step "starting ${IMAGE} with ${ENGINE} as ${NAME}"
-boot -e BOTS=1
+boot -e BOTS=1 -e METRICS_PORT=9137
 step "server is up"
+
+# --- Metrics ----------------------------------------------------------------
+# metrics_body: GET /metrics from inside the container (no port is published).
+metrics_body() {
+    "${ENGINE}" exec "${NAME}" bash -c 'exec 3<>/dev/tcp/127.0.0.1/9137 && printf "GET /metrics HTTP/1.0\r\n\r\n" >&3 && cat <&3' | tr -d '\r'
+}
+# This boot has NOMASTER=1, where the server-browser query goes unanswered:
+# the numbers come from the game through metrics.amxx.
+metrics=""
+for _ in $(seq $((30 * SCALE))); do
+    metrics=$(metrics_body 2>/dev/null) || metrics=""
+    if grep -q '^hlds_up 1$' <<< "${metrics}" && grep -qE '^hlds_players\{type="bot"\} [1-9]' <<< "${metrics}"; then
+        break
+    fi
+    sleep 2
+done
+assert_contains "metrics: Prometheus content type" "${metrics}" "Content-Type: text/plain; version=0.0.4"
+assert_contains "metrics: the server reports" "${metrics}" "hlds_up 1"
+assert_contains "metrics: the running map" "${metrics}" 'hlds_map_info{map="scoutzknivez"} 1'
+assert_contains "metrics: slots" "${metrics}" "hlds_max_players 20"
+grep -qE '^hlds_players\{type="bot"\} [1-9]' <<< "${metrics}" || fail "metrics: no bots counted: ${metrics}"
+grep -qE '^hlds_players\{type="human"\} 0$' <<< "${metrics}" || fail "metrics: expected no human players"
+grep -qE '^hlds_server_fps [1-9][0-9]*\.[0-9]$' <<< "${metrics}" || fail "metrics: no server FPS"
+grep -qE '^hlds_uptime_seconds [0-9]+$' <<< "${metrics}" || fail "metrics: no uptime"
+step "metrics: players, map, uptime and FPS with NOMASTER=1"
 
 if [[ "${READ_ONLY}" == "1" ]]; then
     if "${ENGINE}" exec "${NAME}" sh -c ': > /hlds/cstrike/e2e-probe' 2>/dev/null; then
@@ -530,6 +555,12 @@ if [[ "${players}" -gt 1 ]]; then
     fail "bots joined with BOTS=0 after a map change (players: ${players})"
 fi
 expect_cvar bot_quota 0 "BOTS=0 survives server.cfg being re-run"
+# This boot has no METRICS_PORT: nothing listens, the file is still kept.
+if "${ENGINE}" exec "${NAME}" bash -c 'exec 3<>/dev/tcp/127.0.0.1/9137' 2>/dev/null; then
+    fail "the metrics endpoint listens without METRICS_PORT"
+fi
+"${ENGINE}" exec "${NAME}" grep -q '^hlds_map_info{map="scoutzknivez"} 1$' /hlds/.runtime/metrics.prom ||
+    fail "metrics.prom is not kept without METRICS_PORT"
 step "BOTS=0 keeps bots off"
 
 # --- MODE=vanilla from a cold start -------------------------------------------
@@ -593,7 +624,7 @@ if [[ "${ENGINE}" != "container" ]]; then
     : > "${LOG}"
     MARK=0
     "${ENGINE}" run -d --name "${NAME}" "${RUN_FLAGS[@]}" --network none \
-        -e LAN_MODE=1 -e BOTS=0 "${IMAGE}" >/dev/null
+        -e LAN_MODE=1 -e BOTS=0 -e METRICS_PORT=9137 "${IMAGE}" >/dev/null
     "${ENGINE}" logs -f "${NAME}" > "${LOG}" 2>&1 &
     LOG_PID=$!
     wait_log '\[SK\] mode: scoutz' 240 >/dev/null || fail "the server did not load its first map with no network"
@@ -609,7 +640,11 @@ if [[ "${ENGINE}" != "container" ]]; then
         I | A) ;;
         *) fail "no A2S_INFO reply offline with LAN_MODE=1 (got: '${reply}')" ;;
     esac
-    step "offline: boots and answers the server-browser query"
+    # The same endpoint without NOMASTER (and without a network).
+    metrics=$(metrics_body)
+    assert_contains "metrics without NOMASTER: the server reports" "${metrics}" "hlds_up 1"
+    assert_contains "metrics without NOMASTER: the running map" "${metrics}" 'hlds_map_info{map="scoutzknivez"} 1'
+    step "offline: boots, answers the server-browser query and reports metrics"
 fi
 
 printf 'e2e tests passed\n'

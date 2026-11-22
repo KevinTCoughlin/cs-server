@@ -603,6 +603,39 @@ assert_not_contains "the docker sidecar mounts nothing" "${sidecar}" " -v "
 run_line=$(grep '^docker run -d --name scoutzknivez ' "${LOG}")
 assert_contains "docker server points at the sidecar" "${run_line}" "-e FASTDL_URL=http://192.0.2.10:27080/cstrike/ "
 
+# --- Metrics endpoint ---------------------------------------------------------
+use_runtimes podman
+fresh_home
+install
+expect_ok "install without metrics"
+assert_not_contains "no metrics port unless asked for" "$(cat "${UNIT}")" "METRICS"
+install CS_METRICS_PORT=9137
+expect_ok "install with metrics"
+unit=$(cat "${UNIT}")
+assert_contains "metrics: the endpoint is on" "${unit}" "Environment=METRICS_PORT=9137"
+assert_contains "metrics: published on loopback only" "${unit}" "PublishPort=127.0.0.1:9137:9137/tcp"
+assert_contains "metrics: the game port is still published" "${unit}" "PublishPort=27015:27015/udp"
+install CS_METRICS_PORT=9137 CS_METRICS_BIND=192.0.2.10 CS_PROFILE=lan
+expect_ok "metrics on host networking"
+unit=$(cat "${UNIT}")
+assert_contains "metrics on host networking: binds the address itself" "${unit}" "Environment=METRICS_BIND=192.0.2.10"
+assert_not_contains "metrics on host networking: nothing to publish" "${unit}" "PublishPort="
+install CS_METRICS_PORT=80
+expect_die "privileged CS_METRICS_PORT" "Invalid CS_METRICS_PORT"
+install CS_METRICS_PORT=9137 CS_METRICS_BIND=localhost
+expect_die "bad CS_METRICS_BIND" "Invalid CS_METRICS_BIND"
+fresh_home
+install CS_LAN_KIT=2 CS_METRICS_PORT=9200
+expect_ok "LAN kit with metrics"
+assert_contains "LAN kit metrics: lan1" "$(cat "${HOME_DIR}/.config/containers/systemd/cs-server-lan1.container")" "Environment=METRICS_PORT=9200"
+assert_contains "LAN kit metrics: lan2 on the next port" "$(cat "${HOME_DIR}/.config/containers/systemd/cs-server-lan2.container")" "Environment=METRICS_PORT=9201"
+use_runtimes docker
+fresh_home
+install CS_METRICS_PORT=9137
+expect_ok "docker install with metrics"
+run_line=$(grep '^docker run -d --name scoutzknivez ' "${LOG}")
+assert_contains "docker metrics flags" "${run_line}" "-e METRICS_PORT=9137 -p 127.0.0.1:9137:9137/tcp"
+
 # --- Firewall recipe: mentioned, never applied -------------------------------
 cat > "${STUBS}/nft" <<'EOF'
 #!/bin/sh
