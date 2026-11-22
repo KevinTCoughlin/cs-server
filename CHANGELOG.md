@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Nobody could join: "STEAM validation rejected".** The image carried Half-Life's Steam app id (70) in `steam_appid.txt` for every game. The engine normally corrects that file at start, but cannot on the read-only root filesystem (since 1.1.0), so a Counter-Strike server signed on to Steam as Half-Life and refused every player's ticket. Bots, the server browser and the health check were unaffected, which is why no test caught it. Each game's image now carries its own id (`GAME_APPID` in `scripts/game-env.sh`)
+
 ### Added
 - **Match mode (5v5).** `MODE=match` (or `just mode match`) runs a competitive match on every map: warmup with `.ready`, a knife round whose winners choose sides (`.stay` / `.switch`), the live match (first to 16 of 30, sides swapped after 15 with the score kept and money reset) and `.pause` / `.unpause`, which holds a freeze time. Server commands (`match_start`, `match_live`, `match_reset`, `match_status`, …) do the same from the console. `plugins/amxmodx/scripting/match.sma`, `config/modes/match.cfg` (#73)
 - **Vanilla mode.** `MODE=vanilla` (or `just mode vanilla` on a running server) is stock Counter-Strike: normal gravity, buying, objectives, no scout-and-knife loadout, and its own plugin list without bunny hop, kill sounds and advertisements (`plugins/amxmodx/modes/vanilla.ini`). A mode can now carry a plugin list as well as settings (#73)

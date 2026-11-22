@@ -249,6 +249,12 @@ listeners=$("${ENGINE}" exec "${NAME}" sh -c 'cat /proc/net/tcp /proc/net/tcp6 2
     awk -v port="${port_hex}" '$4 == "0A" && substr($2, length($2) - 4) == port { n++ } END { print n + 0 }')
 assert_eq "nothing listens on the game port over TCP" 0 "${listeners}"
 
+# The engine cannot write steam_appid.txt on a read-only root, and with
+# another game's id (Half-Life's 70) Steam turns every player away with
+# "STEAM validation rejected". Only a real client can test the sign-on itself.
+appid=$("${ENGINE}" exec "${NAME}" cat /hlds/steam_appid.txt)
+assert_eq "steam_appid.txt is Counter-Strike's Steam app id" 10 "${appid}"
+
 # --- Plugins ----------------------------------------------------------------
 # Every plugin listed in plugins.ini must have loaded.
 listed=$(grep -cE '^[A-Za-z0-9_]+\.amxx' "${ROOT}/plugins/amxmodx/plugins.ini" || true)

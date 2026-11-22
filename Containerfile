@@ -185,9 +185,14 @@ RUN if [ "${GAME}" = tfc ]; then rm -f libstdc++.so.6 libgcc_s.so.1; fi && \
             done' sh {} +; \
     fi
 
-# Ensure binaries are executable and set Steam app ID
-RUN chmod +x hlds_linux hlds_run && \
-    echo 70 > steam_appid.txt
+# Ensure binaries are executable and set the game's Steam app id. The engine
+# would write it at start, but the root filesystem is read-only: with
+# Half-Life's 70 left here a Counter-Strike server signs on to Steam as the
+# wrong game and every player is turned away ("STEAM validation rejected").
+RUN . /usr/local/share/cs-server/game.env && \
+    chmod +x hlds_linux hlds_run && \
+    echo "${GAME_APPID}" > steam_appid.txt && \
+    grep -qx '[0-9][0-9]' steam_appid.txt
 
 # The builder stage ends here: /hlds is the ~1 GB engine + game payload and
 # only changes with the pinned versions above. Repo content (maps, sounds,
