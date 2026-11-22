@@ -52,4 +52,17 @@ if ! grep -Eq "LAN_MODE: ['\"]?1['\"]?$" <<<"${output}" || ! grep -Eq "NOMASTER:
     exit 1
 fi
 
+# Windows override: NOMASTER=1 and nothing else; the hardening stays.
+output=$("${COMPOSE[@]}" -f compose.yml -f compose.windows.yml config)
+if ! grep -Eq "NOMASTER: ['\"]?1['\"]?$" <<<"${output}"; then
+    printf 'compose.windows.yml must set NOMASTER=1\n' >&2
+    exit 1
+fi
+for kept in 'read_only: true' 'no-new-privileges:true' 'target: /hlds/state' 'target: /hlds/cstrike/server.cfg'; do
+    if ! grep -qF -- "${kept}" <<<"${output}"; then
+        printf 'compose.windows.yml must keep "%s" from compose.yml\n' "${kept}" >&2
+        exit 1
+    fi
+done
+
 printf 'compose tests passed\n'
