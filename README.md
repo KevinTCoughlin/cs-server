@@ -381,6 +381,35 @@ curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/insta
 
 Don't set `sv_downloadurl` in `server.cfg`: that file is re-run on every map and would override the variable. This project's own server uses `https://kevintcoughlin.com/cs-server/cstrike/`, which is the `docs/cstrike/` directory of this repository on GitHub Pages; a fork that enables Pages can do the same with the recipe below.
 
+### FastDL from the same machine
+
+No web host of your own? The image can serve its maps itself. `CS_FASTDL=1`
+adds a sidecar: a second small container from the same image that runs a
+static web server on `27080/tcp` and points the game server at it.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | CS_FASTDL=1 bash
+```
+
+- It serves the game's `maps`, `sound`, `sprites`, `models`, `gfx`,
+  `overviews` and `.wad` files, and nothing else: no settings, ban lists,
+  admin files or plugins, and no directory listings. It mounts nothing, runs
+  read-only with every capability dropped, and needs no internet.
+- Clients are sent to `http://<this machine's first address>:27080/cstrike/`.
+  `CS_FASTDL_HOST` names another address or host name (a public server
+  behind a router needs its public one, and `27080/tcp` forwarded);
+  `CS_FASTDL_PORT` changes the port. An explicit `FASTDL_URL` still wins.
+- Open `27080/tcp` in the host firewall for the players' network.
+- One sidecar (`cs-server-fastdl`) serves every Counter-Strike server on the
+  machine. `CS_FASTDL=1 bash install.sh --uninstall` removes it along with
+  the server; without `CS_FASTDL=1` it stays for the others.
+- By hand: `podman run -d --entrypoint /fastdl.sh -p 27080:27080 --read-only --cap-drop ALL <image>`
+  and `FASTDL_URL=http://<host>:27080/cstrike/` on the server.
+
+The sidecar needs an image from 1.4.0 or newer; the installer says so when
+the image has none. It serves what is in the image. Maps you add later go into the image with a
+rebuild (`just fetch-maps && just build`), as they do for the game server.
+
 ### Syncing Content
 
 ```bash
@@ -476,6 +505,31 @@ In an existing Quadlet unit, replace `PublishPort=27015:27015/udp` with
 - Tested here between two containers on one network (broadcast query answered,
   with and without an uplink). Whether a given client's LAN tab lists it also
   depends on that client and on the switch or access point passing broadcasts.
+
+### LAN kit: several match servers in one command
+
+For an event with more than ten players: `CS_LAN_KIT=<n>` installs `n`
+servers (1 to 8) named `lan1` to `lan<n>` on consecutive ports from
+`CS_PORT` (default 27015), each with the LAN profile, [match mode](#match-5v5)
+and no bots, plus one [FastDL sidecar](#fastdl-from-the-same-machine) for
+all of them.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | CS_LAN_KIT=4 bash
+# from a checkout: just lan-kit 4
+```
+
+Each server is an ordinary [instance](#several-servers-on-one-host)
+(`cs-server-lan1`, `~/.config/cs-server-lan1`, its own bans and stats), so
+`systemctl --user restart cs-server-lan2` and the other commands work per
+server. `CS_MODE=vanilla` (or `scoutz`) and `CS_BOTS=1` change what the kit
+runs. Open the game ports (UDP) and `27080/tcp` in the host firewall.
+`CS_LAN_KIT=4 bash install.sh --uninstall` removes all four and the sidecar,
+asking about each server's config and saved state.
+
+The LAN tab only looks at a handful of ports from 27015 up. If a server on
+a higher port does not show there, players join it with
+`connect <address>:<port>`.
 
 ### No internet
 

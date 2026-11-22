@@ -88,6 +88,7 @@ cleanup() {
         printf '[e2e] container %s kept; log at %s\n' "${NAME}" "${LOG}" >&2
     else
         "${ENGINE}" rm -f "${NAME}" >/dev/null 2>&1 || true
+    "${ENGINE}" rm -f "${NAME}-fastdl" >/dev/null 2>&1 || true
         if [[ -n "${STATE_DIR}" ]]; then
             rm -rf "${STATE_DIR}"
         else
@@ -543,6 +544,44 @@ assert_eq "MODE=vanilla starts on a stock map" de_dust2 "${map}"
 expect_cvar mapcyclefile mapcycle-dust2.txt "MODE=vanilla uses the stock rotation"
 expect_cvar sv_gravity 800 "vanilla gravity at startup"
 step "MODE=vanilla starts in vanilla"
+
+# --- FastDL sidecar -----------------------------------------------------------
+# The same image under another entrypoint serves maps and assets over HTTP,
+# and nothing else: no settings, no admin files, no directory listings.
+if [[ "${ENGINE}" != "container" ]]; then
+    FASTDL_NAME="${NAME}-fastdl"
+    "${ENGINE}" rm -f "${FASTDL_NAME}" >/dev/null 2>&1 || true
+    "${ENGINE}" run -d --name "${FASTDL_NAME}" --entrypoint /fastdl.sh --network none \
+        --cap-drop ALL --security-opt no-new-privileges --read-only "${IMAGE}" >/dev/null
+    served=0
+    for _ in $(seq $((20 * SCALE))); do
+        if "${ENGINE}" exec "${FASTDL_NAME}" /fastdl.sh check 2>/dev/null; then
+            served=1
+            break
+        fi
+        sleep 1
+    done
+    assert_eq "the FastDL sidecar serves the default map" 1 "${served}"
+    # http_status <path>: the status code the sidecar answers with.
+    http_status() {
+        # shellcheck disable=SC2016 # expanded by the container's bash
+        "${ENGINE}" exec "${FASTDL_NAME}" bash -c 'exec 3<>/dev/tcp/127.0.0.1/27080 && printf "HEAD %s HTTP/1.0\r\n\r\n" "$1" >&3 && read -r -t 3 -u 3 _ code _ && echo "${code}"' bash "$1"
+    }
+    for path in /cstrike/maps/scoutzknivez.bsp /cstrike/cstrike.wad; do
+        code=$(http_status "${path}")
+        assert_eq "FastDL serves ${path}" 200 "${code}"
+    done
+    for path in /cstrike/server.cfg /cstrike/addons/amxmodx/configs/users.ini /cstrike/maps/../server.cfg /cstrike/maps/ /; do
+        code=$(http_status "${path}")
+        assert_eq "FastDL does not serve ${path}" 404 "${code}"
+    done
+    started=$(date +%s)
+    "${ENGINE}" stop -t 10 "${FASTDL_NAME}" >/dev/null
+    took=$(($(date +%s) - started))
+    [[ "${took}" -lt 8 ]] || fail "the FastDL sidecar ignored SIGTERM (stopped after ${took}s)"
+    "${ENGINE}" rm -f "${FASTDL_NAME}" >/dev/null
+    step "FastDL sidecar: serves maps and wads, nothing else, stops on SIGTERM"
+fi
 
 # --- Offline LAN server -------------------------------------------------------
 # A LAN box may have no uplink: with no network at all the server must come

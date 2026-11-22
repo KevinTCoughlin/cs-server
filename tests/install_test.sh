@@ -39,6 +39,7 @@ case "$1" in
     pull) [ "${FAKE_PULL_FAIL:-0}" = 0 ] || exit 1 ;;
     run)
         case "$*" in
+            *"test -x /fastdl.sh"*) exit "${FAKE_NO_FASTDL:-0}" ;;
             *"--entrypoint sh"*"cd /hlds/cstrike "*) cd "${FAKE_IMAGE_CONFIG}" && tar -cf - server.cfg mapcycle*.txt modes ;;
             # Another game: its stock settings and one map cycle, no modes.
             *"--entrypoint sh"*) cd "${FAKE_IMAGE_CONFIG}" && tar -cf - server.cfg mapcycle.txt ;;
@@ -499,6 +500,108 @@ done
 for absent in cstrike "-e MAP=" "-e MODE=" /modes; do
     assert_not_contains "docker game: nothing of Counter-Strike (${absent})" "${run_line}" "${absent}"
 done
+
+# --- Mode, bots, FastDL sidecar and the LAN kit -------------------------------
+use_runtimes podman
+fresh_home
+install CS_MODE=match CS_BOTS=0
+expect_ok "install in match mode"
+unit=$(cat "${UNIT}")
+for line in "Environment=MODE=match" "Environment=MAP=de_dust2" "Environment=MAPCYCLE=mapcycle-dust2.txt" "Environment=BOTS=0"; do
+    assert_contains "match mode unit" "${unit}" "${line}"
+done
+assert_not_contains "no sidecar unless asked for" "${calls}" "fastdl"
+install CS_MODE=surf
+expect_die "bad CS_MODE" "Invalid CS_MODE"
+install CS_MODE=match CS_GAME=dod
+expect_die "CS_MODE with another game" "CS_MODE is Counter-Strike only"
+install CS_BOTS=yes
+expect_die "bad CS_BOTS" "Invalid CS_BOTS"
+
+fresh_home
+install CS_FASTDL=1
+expect_ok "install with the FastDL sidecar"
+FASTDL_UNIT="${HOME_DIR}/.config/containers/systemd/cs-server-fastdl.container"
+[[ -f "${FASTDL_UNIT}" ]] || fail "no unit for the FastDL sidecar"
+sidecar=$(cat "${FASTDL_UNIT}")
+for line in "ContainerName=cs-server-fastdl" "PodmanArgs=--entrypoint /fastdl.sh" "PublishPort=27080:27080/tcp" \
+    "ReadOnly=true" "DropCapability=ALL" "NoNewPrivileges=true" "HealthCmd=/fastdl.sh check"; do
+    assert_contains "sidecar unit" "${sidecar}" "${line}"
+done
+assert_not_contains "the sidecar mounts nothing" "${sidecar}" "Volume="
+assert_contains "the sidecar is started" "${calls}" "systemctl --user restart cs-server-fastdl"
+unit=$(cat "${UNIT}")
+assert_contains "the server points clients at the sidecar" "${unit}" "Environment=FASTDL_URL=http://192.0.2.10:27080/cstrike/"
+assert_not_contains "the game port stays UDP only" "${unit}" "/tcp"
+install CS_FASTDL=1 CS_FASTDL_HOST=lan.example CS_FASTDL_PORT=8080
+expect_ok "sidecar with a host name and port"
+assert_contains "host and port reach the URL" "$(cat "${UNIT}")" "Environment=FASTDL_URL=http://lan.example:8080/cstrike/"
+install CS_FASTDL=1 FASTDL_URL=https://cdn.example/cstrike/
+expect_ok "sidecar with an explicit URL"
+assert_contains "an explicit FASTDL_URL wins" "$(cat "${UNIT}")" "Environment=FASTDL_URL=https://cdn.example/cstrike/"
+install CS_FASTDL=1 FAKE_NO_FASTDL=1
+expect_die "image from before the sidecar" "has no FastDL server"
+install CS_FASTDL=1 'CS_FASTDL_HOST=a b'
+expect_die "bad CS_FASTDL_HOST" "Invalid CS_FASTDL_HOST"
+install CS_FASTDL=1 CS_FASTDL_PORT=80
+expect_die "privileged CS_FASTDL_PORT" "Invalid CS_FASTDL_PORT"
+install CS_INSTANCE=fastdl
+expect_die "instance named like the sidecar" "name of the FastDL sidecar"
+ANSWERS=$'n\nn' install -- --uninstall
+expect_ok "uninstall without CS_FASTDL"
+[[ -f "${FASTDL_UNIT}" ]] || fail "the sidecar was removed without CS_FASTDL=1"
+ANSWERS=$'n\nn' install CS_FASTDL=1 -- --uninstall
+expect_ok "uninstall with CS_FASTDL=1"
+[[ ! -e "${FASTDL_UNIT}" ]] || fail "the sidecar survived an uninstall with CS_FASTDL=1"
+
+fresh_home
+install CS_LAN_KIT=3 CS_PORT=27020
+expect_ok "LAN kit"
+for i in 1 2 3; do
+    kit_unit="${HOME_DIR}/.config/containers/systemd/cs-server-lan${i}.container"
+    [[ -f "${kit_unit}" ]] || fail "LAN kit: no unit for lan${i}"
+    unit=$(cat "${kit_unit}")
+    for line in "Network=host" "Environment=PORT=$((27019 + i))" "Environment=LAN_MODE=1" "Environment=MODE=match" \
+        "Environment=BOTS=0" "Volume=cs-server-state-lan${i}:/hlds/state" \
+        "Environment=FASTDL_URL=http://192.0.2.10:27080/cstrike/"; do
+        assert_contains "LAN kit lan${i}" "${unit}" "${line}"
+    done
+    [[ -f "${HOME_DIR}/.config/cs-server-lan${i}/modes/match.cfg" ]] || fail "LAN kit: lan${i} has no config"
+done
+[[ ! -e "${UNIT}" ]] || fail "the LAN kit installed the default server too"
+[[ -f "${FASTDL_UNIT}" ]] || fail "LAN kit: no FastDL sidecar"
+count=$(grep -c '^podman pull ' "${LOG}")
+assert_eq "LAN kit pulls the image once" 1 "${count}"
+count=$(grep -c 'restart cs-server-fastdl' "${LOG}")
+assert_eq "LAN kit starts one sidecar" 1 "${count}"
+assert_contains "LAN kit summary" "${output}" "LAN kit: 3 match servers on ports 27020 to 27022/udp"
+install CS_LAN_KIT=2 CS_MODE=vanilla CS_BOTS=1
+expect_ok "LAN kit in another mode"
+assert_contains "LAN kit honours CS_MODE" "$(cat "${HOME_DIR}/.config/containers/systemd/cs-server-lan1.container")" "Environment=MODE=vanilla"
+install CS_LAN_KIT=9
+expect_die "LAN kit too large" "Invalid CS_LAN_KIT"
+install CS_LAN_KIT=2 CS_INSTANCE=a
+expect_die "LAN kit with an instance name" "names its own servers"
+install CS_LAN_KIT=2 -- --print-unit
+expect_die "LAN kit with --print-unit" "does not take CS_LAN_KIT"
+ANSWERS=$'y\ny\ny\ny\ny\ny' install CS_LAN_KIT=3 FAKE_VOLUME=1 -- --uninstall
+expect_ok "LAN kit uninstall"
+for i in 1 2 3; do
+    [[ ! -e "${HOME_DIR}/.config/containers/systemd/cs-server-lan${i}.container" ]] || fail "LAN kit uninstall left lan${i}"
+done
+[[ ! -e "${FASTDL_UNIT}" ]] || fail "LAN kit uninstall left the sidecar"
+
+use_runtimes docker
+fresh_home
+install CS_FASTDL=1
+expect_ok "docker install with the FastDL sidecar"
+sidecar=$(grep '^docker run -d --name cs-server-fastdl ' "${LOG}")
+for flag in "--entrypoint /fastdl.sh" "-p 27080:27080/tcp" "--read-only" "--cap-drop ALL" "--security-opt no-new-privileges"; do
+    assert_contains "docker sidecar flag" "${sidecar}" "${flag}"
+done
+assert_not_contains "the docker sidecar mounts nothing" "${sidecar}" " -v "
+run_line=$(grep '^docker run -d --name scoutzknivez ' "${LOG}")
+assert_contains "docker server points at the sidecar" "${run_line}" "-e FASTDL_URL=http://192.0.2.10:27080/cstrike/ "
 
 # --- Firewall recipe: mentioned, never applied -------------------------------
 cat > "${STUBS}/nft" <<'EOF'

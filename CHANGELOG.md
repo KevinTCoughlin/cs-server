@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+- **FastDL sidecar.** `CS_FASTDL=1` makes `install.sh` also run a second container from the same image (`/fastdl.sh`, busybox httpd on `27080/tcp`) that serves the game's maps, sounds, sprites, models, gfx, overviews and `.wad` files to clients over HTTP, and points the server's `FASTDL_URL` at it. It serves nothing else (no settings, admin files or directory listings), mounts nothing and needs no internet. `CS_FASTDL_HOST` / `CS_FASTDL_PORT` set the address clients use (#75)
+- **LAN kit.** `CS_LAN_KIT=<n>` (`just lan-kit <n>`) installs `n` servers (`lan1`..`lan<n>`, 1 to 8) on consecutive ports with the LAN profile, match mode, no bots and one FastDL sidecar, and removes them again with `--uninstall` (#83)
+- **`CS_MODE` and `CS_BOTS` in the installer.** The mode a server starts in (`scoutz`, `knife`, `vanilla`, `match`) and whether it has bots, without editing the unit afterwards
+
 ## [1.3.0] - 2026-11-22
 
 ### Fixed
