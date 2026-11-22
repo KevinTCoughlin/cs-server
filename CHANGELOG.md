@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-22
+
 ### Fixed
 - **Builds no longer fail on a transient Steam download error.** SteamCMD is run up to three times when it stops with `App '90' state is 0x10E after update job`, which failed one game's image in the 1.3.0 release run
 
@@ -160,7 +162,8 @@ First tagged release. Images for it are on ghcr.io as `1.0.0`, `1.0` and `1` (`l
 - .env.example documenting environment variables
 - Quadlet systemd unit file shipped in-repo
 
-[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/KevinTCoughlin/cs-server/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.1.1...v1.2.0
