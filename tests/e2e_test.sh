@@ -214,7 +214,7 @@ boot() {
         -e NOMASTER=1 -e LAN_MODE=1 -e FASTDL_URL="${FASTDL}" "$@" "${IMAGE}" >/dev/null
     "${ENGINE}" logs -f "${NAME}" > "${LOG}" 2>&1 &
     LOG_PID=$!
-    wait_log '\[SK\] mode: scoutz' 240 >/dev/null || fail "the server did not finish loading its first map"
+    wait_log "\[SK\] mode: ${BOOT_MODE:-scoutz}" 240 >/dev/null || fail "the server did not finish loading its first map"
 }
 
 # --- Boot -------------------------------------------------------------------
@@ -257,12 +257,12 @@ plugins=$(all_running "amxx plugins" "${listed}")
 step "${modules} Metamod plugins and ${plugins} AMX Mod X plugins running"
 
 # --- Startup state ----------------------------------------------------------
-gravity=$(sed -n 's/^sv_gravity[[:space:]]*"\{0,1\}\([0-9]*\).*/\1/p' "${ROOT}/config/server.cfg")
+gravity=$(sed -n 's/^sv_gravity[[:space:]]*"\{0,1\}\([0-9]*\).*/\1/p' "${ROOT}/config/modes/scoutz.cfg")
 knife_gravity=$(sed -n 's/^sv_gravity[[:space:]]*"\{0,1\}\([0-9]*\).*/\1/p' "${ROOT}/config/modes/knife.cfg")
 [[ -n "${gravity}" && -n "${knife_gravity}" && "${gravity}" != "${knife_gravity}" ]] ||
-    fail "expected different sv_gravity values in config/server.cfg and config/modes/knife.cfg"
+    fail "expected different sv_gravity values in config/modes/scoutz.cfg and config/modes/knife.cfg"
 
-expect_cvar sv_gravity "${gravity}" "scoutz gravity from server.cfg"
+expect_cvar sv_gravity "${gravity}" "scoutz gravity from modes/scoutz.cfg"
 expect_cvar mapcyclefile mapcycle.txt "default mapcycle"
 expect_cvar sv_downloadurl "${FASTDL}" "FASTDL_URL sets the download URL"
 map=$(current_map)
@@ -317,6 +317,26 @@ expect_cvar sv_downloadurl "${FASTDL}" "the download URL survives map changes"
 map=$(current_map)
 assert_eq "map after switching back" scoutzknivez "${map}"
 step "switched back to scoutz"
+
+# --- scoutz -> vanilla -> scoutz --------------------------------------------
+# The mode has its own plugin list (plugins/amxmodx/modes/vanilla.ini), read
+# on the changelevel. Same map as above, for the same reason.
+vanilla_listed=$(grep -cE '^[A-Za-z0-9_]+\.amxx' "${ROOT}/plugins/amxmodx/modes/vanilla.ini" || true)
+[[ "${vanilla_listed}" -gt 0 && "${vanilla_listed}" -lt "${listed}" ]] ||
+    fail "expected modes/vanilla.ini to list fewer plugins than plugins.ini"
+switch_mode vanilla mapcycle-dust2.txt scoutzknivez scoutzknivez
+expect_cvar sv_gravity 800 "vanilla gravity from modes/vanilla.cfg"
+expect_cvar mp_startmoney 800 "vanilla start money"
+vanilla_plugins=$(all_running "amxx plugins" "${vanilla_listed}")
+assert_eq "vanilla runs its own plugin list" "${vanilla_listed}" "${vanilla_plugins}"
+step "switched to vanilla (${vanilla_plugins} plugins)"
+
+switch_mode scoutz mapcycle.txt scoutzknivez
+expect_cvar sv_gravity "${gravity}" "vanilla settings do not leak back into scoutz"
+expect_cvar mp_startmoney 16000 "scoutz start money is back"
+back=$(all_running "amxx plugins" "${listed}")
+assert_eq "plugins.ini is back after vanilla" "${plugins}" "${back}"
+step "switched back to scoutz from vanilla"
 
 # Grenade maps: only when the he_ map is in this image (local builds with maps/).
 if map_in_image he_dodgeball2; then
@@ -459,6 +479,19 @@ if [[ "${players}" -gt 1 ]]; then
 fi
 expect_cvar bot_quota 0 "BOTS=0 survives server.cfg being re-run"
 step "BOTS=0 keeps bots off"
+
+# --- MODE=vanilla from a cold start -------------------------------------------
+# The plugin list comes from the command line here, not from a mode switch:
+# AMX Mod X must not overwrite it from core.ini.
+"${ENGINE}" rm -f "${NAME}" >/dev/null
+BOOT_MODE=vanilla boot -e BOTS=0 -e MODE=vanilla
+vanilla_plugins=$(all_running "amxx plugins" "${vanilla_listed}")
+assert_eq "MODE=vanilla starts with its own plugin list" "${vanilla_listed}" "${vanilla_plugins}"
+map=$(current_map)
+assert_eq "MODE=vanilla starts on a stock map" de_dust2 "${map}"
+expect_cvar mapcyclefile mapcycle-dust2.txt "MODE=vanilla uses the stock rotation"
+expect_cvar sv_gravity 800 "vanilla gravity at startup"
+step "MODE=vanilla starts in vanilla"
 
 # --- Offline LAN server -------------------------------------------------------
 # A LAN box may have no uplink: with no network at all the server must come

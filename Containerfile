@@ -260,6 +260,7 @@ COPY --chown=hlds:hlds sound/ /hlds/cstrike/sound/
 COPY --from=plugins --chown=hlds:hlds /out/ /hlds/cstrike/addons/amxmodx/plugins/
 COPY --chown=hlds:hlds plugins/amxmodx/AQS.ini     /hlds/cstrike/addons/amxmodx/configs/AQS.ini
 COPY --chown=hlds:hlds plugins/amxmodx/plugins.ini /hlds/cstrike/addons/amxmodx/configs/plugins.ini
+COPY --chown=hlds:hlds plugins/amxmodx/modes/      /hlds/cstrike/addons/amxmodx/configs/modes/
 COPY --chown=hlds:hlds plugins/metamod/plugins.ini /hlds/cstrike/addons/metamod/plugins.ini
 
 COPY --chown=hlds:hlds config/liblist.gam   /hlds/cstrike/liblist.gam
@@ -268,6 +269,12 @@ COPY --chown=hlds:hlds config/autoexec.cfg  /hlds/cstrike/autoexec.cfg
 COPY --chown=hlds:hlds config/mapcycle*.txt /hlds/cstrike/
 COPY --chown=hlds:hlds config/modes/        /hlds/cstrike/modes/
 COPY --chown=hlds:hlds config/server.cfg    /hlds/cstrike/server.cfg
+
+# core.ini names the plugin list (amxx_plugins) and would overwrite the one
+# entrypoint.sh passes for a mode with its own list. Without the line AMX Mod X
+# keeps a value that is already set and falls back to plugins.ini otherwise.
+RUN sed -i '/^amxx_plugins[[:space:]]/d' /hlds/cstrike/addons/amxmodx/configs/core.ini && \
+    ! grep -q '^amxx_plugins[[:space:]]' /hlds/cstrike/addons/amxmodx/configs/core.ini
 
 # ---------------------------------------------------------------------------
 # Stage 2b: the other games run their stock content, prepared in the builder

@@ -3,10 +3,12 @@
 //
 // Spawn loadout and game modes.
 //
-//   scoutz  scout + knife (default)
-//   knife   knife only; buying and weapon pickups blocked ("Nipper Friday").
-//           On grenade-fight maps (he_*, e.g. he_dodgeball2) HE grenades
-//           placed by the map can be picked up; everything else stays blocked.
+//   scoutz   scout + knife (default)
+//   knife    knife only; buying and weapon pickups blocked ("Nipper Friday").
+//            On grenade-fight maps (he_*, e.g. he_dodgeball2) HE grenades
+//            placed by the map can be picked up; everything else stays blocked.
+//   vanilla  stock Counter-Strike: the plugin leaves spawns and buying alone
+//            and only applies the mode's settings.
 //
 // The mode lives in `localinfo sk_mode`, which survives map changes. On each
 // map the plugin execs server.cfg, modes/<mode>.cfg and, if present,
@@ -14,10 +16,15 @@
 // modes/knife_he.cfg). The engine does not re-run server.cfg on changelevel
 // here, so without the first exec mode settings would leak across switches.
 //
+// A mode can have its own plugin list, addons/amxmodx/configs/modes/<mode>.ini.
+// AMX Mod X reads the list named by `localinfo amxx_plugins` on every map
+// load, so a switch points it at that file (or clears it: plugins.ini)
+// before the changelevel. entrypoint.sh does the same for MODE at startup.
+//
 // `localinfo sk_bots 0` (set by BOTS=0) keeps bots off: server.cfg sets
 // bot_quota, and re-running it would otherwise bring them back on every map.
 //
-// sk_switchmode <scoutz|knife> <mapcyclefile> [map]
+// sk_switchmode <scoutz|knife|vanilla> <mapcyclefile> [map]
 //   Server command (console/FIFO only). Announces the switch and changes level
 //   at the next round end, never mid-round. Without a map, the first map of
 //   the mapcycle that exists on disk is used. A no-op if already in that mode
@@ -39,6 +46,7 @@ const Float:SWITCH_DEADLINE = 180.0;
 
 new g_szMode[MODE_LEN];
 new bool:g_bKnifeOnly;
+new bool:g_bLoadout;
 new g_szMapPrefix[32];
 new bool:g_bGrenadeMap;
 
@@ -48,7 +56,7 @@ new g_szPendingMap[64];
 new bool:g_bSwitchPending;
 
 public plugin_init() {
-    register_plugin("ScoutzKnivez", "1.2", "cs-server");
+    register_plugin("ScoutzKnivez", "1.3", "cs-server");
 
     load_mode();
 
@@ -71,6 +79,7 @@ load_mode() {
         copy(g_szMode, charsmax(g_szMode), "scoutz");
     }
     g_bKnifeOnly = bool:equal(g_szMode, "knife");
+    g_bLoadout = bool:(g_bKnifeOnly || equal(g_szMode, "scoutz"));
 
     new szMap[64];
     get_mapname(szMap, charsmax(szMap));
@@ -82,7 +91,7 @@ load_mode() {
 }
 
 bool:is_valid_mode(const mode[]) {
-    return bool:(equal(mode, "scoutz") || equal(mode, "knife"));
+    return bool:(equal(mode, "scoutz") || equal(mode, "knife") || equal(mode, "vanilla"));
 }
 
 public exec_mode_cfg() {
@@ -109,7 +118,7 @@ public exec_mode_cfg() {
 }
 
 public on_spawn(id) {
-    if (!is_user_alive(id))
+    if (!g_bLoadout || !is_user_alive(id))
         return HAM_IGNORED;
 
     strip_user_weapons(id);
@@ -156,7 +165,7 @@ public CS_OnBuyAttempt(id, item) {
 
 public cmd_switchmode() {
     if (read_argc() < 3) {
-        server_print("usage: sk_switchmode <scoutz|knife> <mapcyclefile> [map]");
+        server_print("usage: sk_switchmode <scoutz|knife|vanilla> <mapcyclefile> [map]");
         return PLUGIN_HANDLED;
     }
 
@@ -166,7 +175,7 @@ public cmd_switchmode() {
     read_argv(3, szMap, charsmax(szMap));
 
     if (!is_valid_mode(szMode)) {
-        server_print("[SK] unknown mode '%s' (scoutz|knife)", szMode);
+        server_print("[SK] unknown mode '%s' (scoutz|knife|vanilla)", szMode);
         return PLUGIN_HANDLED;
     }
     if (!is_safe_name(szCycle) || !file_exists(szCycle)) {
@@ -200,6 +209,8 @@ public cmd_switchmode() {
 
     if (equal(szMode, "knife")) {
         client_print(0, print_chat, "[SERVER] Nipper Friday! Knives only on %s from the end of this round. Maps by NIPPER.", szMap);
+    } else if (equal(szMode, "vanilla")) {
+        client_print(0, print_chat, "[SERVER] Classic Counter-Strike on %s from the end of this round.", szMap);
     } else {
         client_print(0, print_chat, "[SERVER] Back to ScoutzKnivez on %s at the end of this round.", szMap);
     }
@@ -221,6 +232,9 @@ public do_switch() {
     g_bSwitchPending = false;
 
     set_localinfo("sk_mode", g_szPendingMode);
+    new szPlugins[96];
+    formatex(szPlugins, charsmax(szPlugins), "addons/amxmodx/configs/modes/%s.ini", g_szPendingMode);
+    set_localinfo("amxx_plugins", file_exists(szPlugins) ? szPlugins : "");
     set_cvar_string("mapcyclefile", g_szPendingCycle);
     log_amx("[SK] switching to %s (%s, %s)", g_szPendingMode, g_szPendingCycle, g_szPendingMap);
     server_cmd("changelevel %s", g_szPendingMap);

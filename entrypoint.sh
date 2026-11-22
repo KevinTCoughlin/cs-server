@@ -14,14 +14,19 @@ if [[ -f "${GAME_ENV}" ]]; then
     # shellcheck disable=SC1090 # generated at image build
     source "${GAME_ENV}"
 fi
-MAP="${MAP:-${GAME_MAP}}"
 MAXPLAYERS="${MAXPLAYERS:-20}"
 PORT="${PORT:-27015}"
 BOTS="${BOTS:-1}"
 NOMASTER="${NOMASTER:-0}"
-MAPCYCLE="${MAPCYCLE:-mapcycle.txt}"
 LAN_MODE="${LAN_MODE:-0}"
 MODE="${MODE:-scoutz}"
+# Vanilla starts on a stock map with the stock rotation unless told otherwise.
+if [[ "${GAME}" = "cstrike" && "${MODE}" = "vanilla" ]]; then
+    MAP="${MAP:-de_dust2}"
+    MAPCYCLE="${MAPCYCLE:-mapcycle-dust2.txt}"
+fi
+MAP="${MAP:-${GAME_MAP}}"
+MAPCYCLE="${MAPCYCLE:-mapcycle.txt}"
 FASTDL_URL="${FASTDL_URL:-}"
 LOGS="${LOGS:-1}"
 LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"
@@ -129,9 +134,9 @@ if [[ -n "${LOGADDRESS}" && "${LOGS}" != "1" ]]; then
     exit 1
 fi
 case "${MODE}" in
-    scoutz | knife) ;;
+    scoutz | knife | vanilla) ;;
     *)
-        echo "[entrypoint] MODE must be scoutz or knife" >&2
+        echo "[entrypoint] MODE must be scoutz, knife or vanilla" >&2
         exit 1
         ;;
 esac
@@ -258,6 +263,10 @@ exec 3<> "${FIFO}"
 MODE_ARGS=()
 if [[ "${GAME}" = "cstrike" ]]; then
     MODE_ARGS=(+localinfo sk_mode "${MODE}")
+    # A mode with its own plugin list (see scoutzknivez.sma).
+    if [[ -f "${GAME}/addons/amxmodx/configs/modes/${MODE}.ini" ]]; then
+        MODE_ARGS+=(+localinfo amxx_plugins "addons/amxmodx/configs/modes/${MODE}.ini")
+    fi
 fi
 if [[ "${GAME_BOTS}" != "1" ]]; then
     BOT_QUOTA_ARGS=()

@@ -122,6 +122,11 @@ test:
 e2e: build
     bash tests/e2e_test.sh {{ENGINE}} {{IMAGE}}
 
+# Regenerate quadlet/scoutzknivez.container from install.sh, the one place
+# the unit is defined (tests/install_test.sh fails when they differ)
+quadlet:
+    CS_SERVER_IMAGE=localhost/cs-server:latest bash install.sh --print-unit > quadlet/scoutzknivez.container
+
 # Build another game's image (localhost/cs-server:<game>) and test it:
 # czero, dod, tfc, valve, gearbox, dmc or ricochet
 game name:

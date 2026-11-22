@@ -10,6 +10,7 @@
 #                             mapcycle-nipper.txt, or mapcycle-nipper-xmas.txt
 #                             from Dec 1 to Jan 6 (the Christmas rotation)
 #   mode.sh <engine> scoutz   scout + knife, mapcycle.txt (default)
+#   mode.sh <engine> vanilla  stock Counter-Strike, mapcycle-dust2.txt
 #   mode.sh <engine> auto     nipper from Fri 17:00 to Sat 04:00 local time,
 #                             scoutz otherwise; what the Friday schedule runs
 #
@@ -29,7 +30,7 @@ END_HOUR="${NIPPER_END_HOUR:-4}"
 SEASON="${NIPPER_SEASON:-}"
 
 usage() {
-    echo "usage: ${0##*/} <container|podman|docker> <nipper|scoutz|auto>" >&2
+    echo "usage: ${0##*/} <container|podman|docker> <nipper|scoutz|vanilla|auto>" >&2
     exit 2
 }
 
@@ -86,6 +87,7 @@ case "${MODE}" in
         esac
         ;;
     scoutz) COMMAND="sk_switchmode scoutz mapcycle.txt" ;;
+    vanilla) COMMAND="sk_switchmode vanilla mapcycle-dust2.txt" ;;
     *) usage ;;
 esac
 
