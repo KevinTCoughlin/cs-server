@@ -47,6 +47,11 @@ sudo usermod -aG docker "${USER_NAME}"
 HOME_DIR=$(getent passwd "${USER_NAME}" | cut -d: -f6)
 OWNER=$(id -u "${USER_NAME}")
 sudo -u "${USER_NAME}" mkdir -p "${HOME_DIR}/backups"
+# The checkout may not be traversable by another uid (GitHub's /home/runner is not).
+sudo cp "${ROOT}/ops/backup-state.sh" "${HOME_DIR}/cs-server-backup"
+sudo chown "${USER_NAME}" "${HOME_DIR}/cs-server-backup"
+sudo chmod 755 "${HOME_DIR}/cs-server-backup"
+SCRIPT="${HOME_DIR}/cs-server-backup"
 
 sudo docker volume rm -f "${VOL}" >/dev/null 2>&1 || true
 sudo docker volume create "${VOL}" >/dev/null
@@ -63,7 +68,7 @@ printf 'seeded volume checksum (uid 10001 file): %s\n' "${original}"
 
 sudo -u "${USER_NAME}" env HOME="${HOME_DIR}" CS_RUNTIME=docker CS_SERVER_IMAGE=busybox \
     CS_STATE_VOLUME="${VOL}" CS_BACKUP_DIR="${HOME_DIR}/backups" \
-    bash "${ROOT}/ops/backup-state.sh"
+    bash "${SCRIPT}"
 archive=$(sudo find "${HOME_DIR}/backups" -maxdepth 1 -type f -name "${VOL}-*.tar.gz" | head -n 1)
 [[ -n "${archive}" ]] || fail "no archive was written"
 mode_owner=$(sudo stat -c '%u %a' "${archive}")
@@ -87,7 +92,7 @@ printf 'checksum after clobber: %s\n' "${changed}"
 
 sudo -u "${USER_NAME}" env HOME="${HOME_DIR}" CS_RUNTIME=docker CS_SERVER_IMAGE=busybox \
     CS_STATE_VOLUME="${VOL}" CS_BACKUP_DIR="${HOME_DIR}/backups" \
-    bash "${ROOT}/ops/backup-state.sh" --restore "${archive}"
+    bash "${SCRIPT}" --restore "${archive}"
 restored=$(vol_sum)
 printf 'checksum after restore: %s\n' "${restored}"
 assert_eq "restore puts the original bytes back" "${original}" "${restored}"
@@ -101,7 +106,7 @@ printf 'not an archive\n' | sudo -u "${USER_NAME}" tee "${bad_archive}" >/dev/nu
 set +e
 bad_out=$(sudo -u "${USER_NAME}" env HOME="${HOME_DIR}" CS_RUNTIME=docker CS_SERVER_IMAGE=busybox \
     CS_STATE_VOLUME="${VOL}" \
-    bash "${ROOT}/ops/backup-state.sh" --restore "${bad_archive}" 2>&1)
+    bash "${SCRIPT}" --restore "${bad_archive}" 2>&1)
 bad_status=$?
 set -e
 [[ "${bad_status}" -ne 0 ]] || fail "malformed archive restore succeeded: ${bad_out}"
@@ -117,7 +122,7 @@ trunc_before=$(vol_sum)
 set +e
 trunc_out=$(sudo -u "${USER_NAME}" env HOME="${HOME_DIR}" CS_RUNTIME=docker CS_SERVER_IMAGE=busybox \
     CS_STATE_VOLUME="${VOL}" \
-    bash "${ROOT}/ops/backup-state.sh" --restore "${trunc}" 2>&1)
+    bash "${SCRIPT}" --restore "${trunc}" 2>&1)
 trunc_status=$?
 set -e
 [[ "${trunc_status}" -ne 0 ]] || fail "truncated archive restore succeeded: ${trunc_out}"
