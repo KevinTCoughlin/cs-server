@@ -40,7 +40,12 @@ DEBIAN13=$(os_file debian 13)
 DEBIAN12=$(os_file debian 12)
 UBUNTU=$(os_file ubuntu 24.04)
 UNKNOWN=$(os_file arch 1)
-KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyOnlyForTheDryRun kevin@host"
+KEY_DIR="${WORK}/keys"
+mkdir -p "${KEY_DIR}"
+ssh-keygen -t ed25519 -f "${KEY_DIR}/id_ed25519" -N "" -q
+KEY=$(cat "${KEY_DIR}/id_ed25519.pub")
+SSH_KEYGEN=$(command -v ssh-keygen)
+MKTEMP=$(command -v mktemp)
 
 # PATH hides the host's sshd, ufw, podman and apt so the plan is the distro's.
 run_boot() {
@@ -67,9 +72,6 @@ expect_die "root is not a deploy user" "not root"
 run_boot "${DEBIAN13}" --user BadName --dry-run
 expect_die "uppercase user" "Invalid deploy user"
 
-run_boot "${DEBIAN13}" --ssh-key "ssh-ed25519 not-a-key" --dry-run
-expect_die "malformed key" "Not an OpenSSH public key"
-
 run_boot "${DEBIAN13}" --ssh-key $'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyOnlyForTheDryRun\nPermitRootLogin yes' --dry-run
 expect_die "key with a newline" "single line"
 
@@ -82,7 +84,7 @@ assert_contains "debian 13 user" "${output}" "Deploy user: cstest193c (will crea
 assert_contains "debian 13 engine" "${output}" "Engine: podman (Debian 13 ships Podman 5)"
 assert_contains "debian 13 packages" "${output}" "podman uidmap"
 assert_not_contains "debian 13 is not Docker" "${output}" "docker.io"
-assert_contains "debian 13 leaves sshd" "${output}" "leaving sshd unchanged"
+assert_contains "debian 13 leaves sshd" "${output}" "authentication unchanged"
 assert_contains "debian 13 firewall" "${output}" "Firewall: nftables, SSH 22/tcp, game 27015/udp, query-flood unit"
 assert_contains "debian 13 linger" "${output}" "Linger: loginctl enable-linger cstest193c"
 assert_contains "debian 13 backups" "${output}" "Backups: on, daily, keep 14"
@@ -106,14 +108,46 @@ expect_ok "ubuntu 24.04 dry-run"
 assert_contains "ubuntu engine" "${output}" "Engine: podman (Ubuntu 24.04 ships Podman 4.9; health-gated auto-update rollback needs Podman 5)"
 assert_contains "ubuntu packages" "${output}" "podman uidmap"
 
-run_boot "${DEBIAN13}" --user cstest193c --dry-run --ssh-key "${KEY}"
-expect_ok "dry-run with a key"
-assert_contains "a key means sshd will be hardened" "${output}" "will disable root login and password authentication"
+# ssh-keygen and mktemp, and nothing else the host firewall would add.
+SSH_TOOLS="${WORK}/ssh-tools"
+mkdir -p "${SSH_TOOLS}"
+ln -s "${SSH_KEYGEN}" "${SSH_TOOLS}/ssh-keygen"
+ln -s "${MKTEMP}" "${SSH_TOOLS}/mktemp"
+ln -s "$(command -v chmod)" "${SSH_TOOLS}/chmod"
+ln -s "$(command -v rm)" "${SSH_TOOLS}/rm"
+output=$(env -i PATH="${SSH_TOOLS}" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run --ssh-key "${KEY}" 2>&1)
+status=$?
+expect_ok "dry-run with a real key"
+assert_contains "a key does not harden ssh" "${output}" "authentication unchanged"
+assert_not_contains "a key does not disable passwords" "${output}" "will disable root login"
 
-printf '%s\n\n# comment\n%s extra\n' "${KEY}" "${KEY}" > "${WORK}/keys"
-run_boot "${DEBIAN13}" --user cstest193c --dry-run --ssh-key-file "${WORK}/keys"
+printf '%s\n\n# comment\n%s extra\n' "${KEY}" "${KEY}" > "${WORK}/keyfile"
+output=$(env -i PATH="${SSH_TOOLS}" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run --ssh-key-file "${WORK}/keyfile" 2>&1)
+status=$?
 expect_ok "key file"
-assert_contains "key file hardens ssh" "${output}" "will disable root login and password authentication"
+assert_contains "key file leaves sshd" "${output}" "authentication unchanged"
+
+output=$(env -i PATH="${SSH_TOOLS}" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run --ssh-key "ssh-ed25519 AAAA not-a-key" 2>&1) && status=0 || status=$?
+if [[ "${status}" -eq 0 ]]; then
+    fail "malformed key was accepted: ${output}"
+fi
+assert_contains "ssh-keygen rejects a bad key" "${output}" "ssh-keygen rejected it"
+
+run_boot "${DEBIAN13}" --user cstest193c --harden-ssh --dry-run
+expect_die "harden without a key" "no valid authorized key"
+
+# A piped script has no checkout beside it. The printed command must be a
+# path that a later shell can still run, not a temp file.
+cp "${ROOT}/ops/bootstrap-vps.sh" "${WORK}/bootstrap-vps.sh"
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 \
+    "${BASH_BIN}" "${WORK}/bootstrap-vps.sh" --user cstest193c --dry-run --no-install 2>&1)
+status=$?
+expect_ok "piped dry-run"
+assert_contains "piped installer is persistent" "${output}" "/usr/local/lib/cs-server/install.sh"
+assert_not_contains "piped installer is not a temp file" "${output}" "/tmp/"
 
 run_boot "${DEBIAN13}" --user cstest193c --dry-run
 # CS_BACKUP is in the environment of run_boot only if we pass it. The default

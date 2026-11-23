@@ -49,11 +49,28 @@ curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/ops/b
   | sudo bash -s -- --ssh-key "ssh-ed25519 AAAA... you@host"
 ```
 
-`--ssh-key` (or `--ssh-key-file`, or `CS_SSH_PUBLIC_KEY`) is how root login and password authentication get turned off. The script does that only after the deploy user has a key, so a password session cannot be locked out. Open a second SSH session before closing the first.
+`--ssh-key` (or `--ssh-key-file`, or `CS_SSH_PUBLIC_KEY`) installs a public key for the deploy user. `ssh-keygen -l` checks the key; a malformed key is rejected. The bootstrap does not change how SSH accepts logins. Root and password login stay as the VPS image left them.
 
-The deploy user is `cs` (`--user` or `CS_DEPLOY_USER`). The server listens on `27015/udp`. `CS_FASTDL=1` also opens `27080/tcp`. Daily backups of the state volume (bans, admins, stats, logs) go to `~cs/cs-server-backups` and keep 14 (`CS_BACKUP=0` or `--no-backup` turns them off).
+The deploy user is `cs` (`--user` or `CS_DEPLOY_USER`) and is added to the `sudo` group. The server listens on `27015/udp`. `CS_FASTDL=1` also opens `27080/tcp`. Daily backups of the state volume (bans, admins, stats, logs) go to `~cs/cs-server-backups` and keep 14 (`CS_BACKUP=0` or `--no-backup` turns them off). The timer records the engine this install selected (`podman` or `docker`) and the keep count in `~cs/.config/cs-server/backup.env`, so a later backup does not switch engines.
 
-`--dry-run` prints the plan and changes nothing. `--no-install` does the host setup and prints the `install.sh` command.
+`--dry-run` prints the plan and changes nothing. `--no-install` does the host setup and prints an `install.sh` command. From a git checkout that path is the file in the checkout. From `curl | bash` the script saves a copy at `/usr/local/lib/cs-server/install.sh` and prints that path, which is still there after the bootstrap exits.
+
+### Turn off SSH passwords
+
+Do this only after a second terminal can log in with the key and use sudo. On the second terminal:
+
+```bash
+ssh cs@<this-host>
+sudo -v
+```
+
+Leave that session open. On the first terminal:
+
+```bash
+sudo bash ops/bootstrap-vps.sh --harden-ssh
+```
+
+`--harden-ssh` refuses to run unless `cs` has a valid `authorized_keys` (`ssh-keygen -l -f`) and is allowed to sudo. It writes the sshd drop-in, runs `sshd -t`, and reloads sshd only when that check passes. A failed check removes the drop-in and does not reload.
 
 ### Provider firewall
 
@@ -83,7 +100,7 @@ sudo -u cs env XDG_RUNTIME_DIR=/run/user/$(id -u cs) \
 sudo -u cs systemctl --user start scoutzknivez
 ```
 
-Stop the server first. The command replaces the `cs-server-state` volume (bans, admins, stats, logs). Config in `~cs/.config/cs-server/` is not inside the volume; copy that directory separately when you want it kept.
+Stop the server first. The archive is mode 0600 and owned by `cs`. Restore streams it into a staging volume on stdin (the game image runs as UID 10001 and cannot read that file from a bind mount), checks that it extracted, then swaps it into `cs-server-state`. A malformed or truncated archive leaves the volume as it was. Config in `~cs/.config/cs-server/` is not inside the volume; copy that directory separately when you want it kept.
 
 ## Zed
 

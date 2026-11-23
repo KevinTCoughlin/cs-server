@@ -11,5 +11,8 @@ Documentation=https://github.com/KevinTCoughlin/cs-server#deploy-on-a-fresh-vps
 
 [Service]
 Type=oneshot
+# install.sh writes this. It pins CS_RUNTIME and CS_BACKUP_KEEP so a host
+# with both engines does not back up through whichever one is found first.
+EnvironmentFile=%h/.config/cs-server/backup.env
 ExecStart=%h/.local/bin/cs-server-backup
 Nice=10

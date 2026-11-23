@@ -112,6 +112,11 @@ if [[ "${CS_BACKUP}" != "0" && "${CS_BACKUP}" != "1" ]]; then
     printf '[error] Invalid CS_BACKUP: %s (expected 0 or 1)\n' "${CS_BACKUP}" >&2
     exit 1
 fi
+CS_BACKUP_KEEP="${CS_BACKUP_KEEP:-14}"
+if [[ ! "${CS_BACKUP_KEEP}" =~ ^[0-9]+$ ]] || [[ "${CS_BACKUP_KEEP}" -lt 1 ]]; then
+    printf '[error] Invalid CS_BACKUP_KEEP: %s (expected a positive integer)\n' "${CS_BACKUP_KEEP}" >&2
+    exit 1
+fi
 RUNTIME_CHOICE="${CS_RUNTIME:-auto}"
 case "${RUNTIME_CHOICE}" in
     auto | podman | docker) ;;
@@ -845,7 +850,12 @@ install_backup() {
     fi
     dest="${HOME}/.local/bin/cs-server-backup"
     unit_dir="${HOME}/.config/systemd/user"
-    mkdir -p "${HOME}/.local/bin" "${unit_dir}"
+    mkdir -p "${HOME}/.local/bin" "${HOME}/.config/cs-server" "${unit_dir}"
+    # The timer must keep the engine this install selected. Re-detecting at
+    # backup time would pick Podman whenever it is also installed.
+    printf 'CS_RUNTIME=%s\nCS_BACKUP_KEEP=%s\n' "${RUNTIME}" "${CS_BACKUP_KEEP}" \
+        > "${HOME}/.config/cs-server/backup.env"
+    chmod 644 "${HOME}/.config/cs-server/backup.env"
     cp "${ops}/backup-state.sh" "${dest}"
     chmod 755 "${dest}"
     cp "${ops}/systemd/cs-server-backup.service" "${unit_dir}/cs-server-backup.service"

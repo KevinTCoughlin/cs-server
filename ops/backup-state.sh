@@ -19,8 +19,10 @@
 #   cs-server-backup --restore ~/cs-server-backups/cs-server-state-20261123T041500Z.tar.gz
 #   systemctl --user start scoutzknivez
 #
-# Podman uses `volume export` / `volume import`. Docker tars the volume with
-# the server image (CS_SERVER_IMAGE, or the image the running container uses).
+# The archive is mode 0600 and owned by the user who ran the backup. The game
+# image runs as UID 10001, which cannot read that file through a bind mount, so
+# restore streams it on stdin into a staging volume, and only then swaps it
+# into the real volume. A bad or truncated archive never touches the live data.
 set -euo pipefail
 umask 077
 
@@ -160,49 +162,93 @@ write_archive() {
     chmod 600 "${archive}"
 }
 
-clear_mountpoint() {
-    local volume="$1" mp=""
-    mp=$(${RUNTIME} volume inspect --format '{{.Mountpoint}}' "${volume}")
-    case "${mp}" in
-        /*/volumes/"${volume}"/_data) ;;
-        *) error "Refusing to clear unexpected mountpoint: ${mp}" ;;
-    esac
-    if [[ "${RUNTIME}" == "podman" ]]; then
-        podman unshare find "${mp}" -mindepth 1 -delete
-    else
-        # The Docker mount is root-owned. Clear it from inside a container.
-        local image
-        image=$(server_image)
-        # `*` is literal when the directory has no match; skip those names.
-        # shellcheck disable=SC2016 # this script runs inside the container
-        ${RUNTIME} run --rm --network none --memory 128m --entrypoint /bin/sh \
-            -v "${volume}:/volume" \
-            "${image}" \
-            -c 'cd /volume && for f in .* *; do case "$f" in .|..) continue ;; "*" | ".*") [ -e "$f" ] || continue ;; esac; rm -rf -- "$f"; done'
+# Move the extracted tree into the live volume. The container script rolls
+# the live files back if the copy fails. The archive is not mounted here.
+commit_staging() {
+    local live="$1" staging="$2" image="$3" script
+    # shellcheck disable=SC2016 # the script runs inside the container
+    script=$(cat <<'EOS'
+set -eu
+rollback() {
+    if [ -d /live/.cs-restore-old ]; then
+        cd /live/.cs-restore-old || exit 1
+        for f in .* *; do
+            case "$f" in
+                .|..) continue ;;
+            esac
+            if [ -e "$f" ] || [ -L "$f" ]; then
+                mv -- "$f" /live/
+            fi
+        done
+        rm -rf /live/.cs-restore-old
     fi
+}
+trap rollback EXIT
+mkdir -p /live/.cs-restore-old
+cd /live
+for f in .* *; do
+    case "$f" in
+        .|..|.cs-restore-old) continue ;;
+    esac
+    if [ -e "$f" ] || [ -L "$f" ]; then
+        mv -- "$f" /live/.cs-restore-old/
+    fi
+done
+cd /staging
+for f in .* *; do
+    case "$f" in
+        .|..) continue ;;
+    esac
+    if [ -e "$f" ] || [ -L "$f" ]; then
+        cp -a -- "$f" /live/
+    fi
+done
+rm -rf /live/.cs-restore-old
+trap - EXIT
+EOS
+)
+    ${RUNTIME} run --rm --network none --memory 128m --user 0 \
+        --entrypoint /bin/sh \
+        -v "${live}:/live" \
+        -v "${staging}:/staging:ro" \
+        "${image}" \
+        -c "${script}"
+}
+
+drop_staging() {
+    local staging="$1"
+    ${RUNTIME} volume rm -f "${staging}" >/dev/null 2>&1 || true
 }
 
 restore_volume() {
-    local volume="$1" archive="$2" tmp="" image="" dir="" base=""
-    volume_busy "${volume}" && error "Stop the server using ${volume} before restoring"
-    ${RUNTIME} volume inspect "${volume}" >/dev/null
-    gzip -t -- "${archive}"
-    clear_mountpoint "${volume}"
-    if [[ "${RUNTIME}" == "podman" ]]; then
-        tmp=$(mktemp)
-        gzip -dc -- "${archive}" > "${tmp}"
-        podman volume import "${volume}" "${tmp}"
-        rm -f "${tmp}"
-    else
-        image=$(server_image)
-        dir=$(dirname "${archive}")
-        base=$(basename "${archive}")
-        ${RUNTIME} run --rm --network none --memory 128m --entrypoint tar \
-            -v "${volume}:/volume" \
-            -v "${dir}:/backup:ro" \
-            "${image}" \
-            -C /volume -xzf "/backup/${base}"
+    local volume="$1" archive="$2" image="" staging=""
+    if volume_busy "${volume}"; then
+        error "Stop the server using ${volume} before restoring"
     fi
+    ${RUNTIME} volume inspect "${volume}" >/dev/null
+    # Reject a truncated gzip before any volume is created.
+    if ! gzip -t -- "${archive}"; then
+        error "Archive is malformed or truncated; ${volume} was not changed"
+    fi
+    image=$(server_image)
+    staging="${volume}-restore-staging"
+    drop_staging "${staging}"
+    ${RUNTIME} volume create "${staging}" >/dev/null
+    # The host user opens the 0600 archive. The container (UID 10001 in the
+    # game image) only reads the bytes on stdin.
+    if ! gzip -dc -- "${archive}" | ${RUNTIME} run -i --rm --network none --memory 128m --user 0 \
+        --entrypoint tar \
+        -v "${staging}:/staging" \
+        "${image}" \
+        -C /staging -xf -; then
+        drop_staging "${staging}"
+        error "Archive did not extract; ${volume} was not changed"
+    fi
+    if ! commit_staging "${volume}" "${staging}" "${image}"; then
+        drop_staging "${staging}"
+        error "Could not swap in the restored files; ${volume} was left unchanged or rolled back"
+    fi
+    drop_staging "${staging}"
     info "Restored ${volume} from ${archive}"
 }
 

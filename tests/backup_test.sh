@@ -37,10 +37,17 @@ case "${cmd}" in
             inspect)
                 printf '%s\n' "${FAKE_VOLUME}"
                 ;;
+            create | rm)
+                exit 0
+                ;;
             import)
                 tar -C "${FAKE_VOLUME}" -xf "$2"
                 ;;
         esac
+        ;;
+    run)
+        # A streamed extract that fails must not be treated as success.
+        exit 1
         ;;
     unshare)
         "$@"
@@ -104,8 +111,6 @@ assert_eq "archive is private" "600" "$(mode_of "${archive}")"
 gzip -t -- "${archive}" || fail "archive is not gzip"
 listing=$(gzip -dc -- "${archive}" | tar -tf -)
 assert_contains "archive contains banned.cfg" "${listing}" "banned.cfg"
-saved="${WORK}/cs-server-state-20200101T000000Z.tar.gz"
-cp "${archive}" "${saved}"
 
 # Older than the new archive, so rotation drops the earliest names.
 rm -rf "${BACKUPS}"
@@ -122,17 +127,29 @@ if [[ -f "${BACKUPS}/cs-server-state-20200101T000000Z.tar.gz" ]]; then
     fail "the oldest archive was kept"
 fi
 
+# A bad archive must not replace the live bytes. The stubbed engine refuses
+# the extract; gzip rejects the file before that when it is not gzip at all.
 printf 'changed\n' > "${VOLUME}/banned.cfg"
-run_backup --restore "${saved}"
-expect_ok "restore"
-assert_eq "restore puts the file back" "banned" "$(cat "${VOLUME}/banned.cfg")"
+before=$(sha256sum "${VOLUME}/banned.cfg")
+printf 'this is not gzip\n' > "${WORK}/cs-server-state-20200102T000000Z.tar.gz"
+run_backup --restore "${WORK}/cs-server-state-20200102T000000Z.tar.gz"
+expect_die "malformed archive" "not changed"
+assert_eq "malformed archive leaves the volume" "changed" "$(cat "${VOLUME}/banned.cfg")"
+# Valid gzip framing around a truncated tar payload.
+printf 'banned\n' | gzip -c | head -c 12 > "${WORK}/cs-server-state-20200103T000000Z.tar.gz" || true
+run_backup --restore "${WORK}/cs-server-state-20200103T000000Z.tar.gz"
+expect_die "truncated archive" "not changed"
+assert_eq "truncated archive leaves the volume" "changed" "$(cat "${VOLUME}/banned.cfg")"
+after=$(sha256sum "${VOLUME}/banned.cfg")
+assert_eq "failed restores keep the same checksum" "${before}" "${after}"
+printf 'volume checksum before and after a bad restore: %s\n' "${before}"
 
 run_backup --restore "${WORK}/no-such.tar.gz"
 expect_die "missing archive" "Usage:"
 
 output=$(env PATH="${STUBS}:${PATH}" CALLS="${WORK}/calls" FAKE_VOLUME="${VOLUME}" \
     FAKE_RUNNING=1 CS_BACKUP_DIR="${BACKUPS}" CS_RUNTIME=podman \
-    bash "${ROOT}/ops/backup-state.sh" --restore "${saved}" 2>&1) && status=0 || status=$?
+    bash "${ROOT}/ops/backup-state.sh" --restore "${WORK}/cs-server-state-20200102T000000Z.tar.gz" 2>&1) && status=0 || status=$?
 if [[ "${status}" -eq 0 ]]; then
     fail "restore while the server is running should fail: ${output}"
 fi
@@ -143,5 +160,34 @@ env PATH="${STUBS}:${PATH}" CS_BACKUP_KEEP=0 CS_RUNTIME=podman \
 if [[ "${status}" -eq 0 ]]; then
     fail "CS_BACKUP_KEEP=0 should fail"
 fi
+
+# Docker hosts the game, and Podman is also on PATH. CS_RUNTIME must win.
+BOTH="${WORK}/both"
+mkdir -p "${BOTH}" "${WORK}/both-vol/volumes/cs-server-state/_data"
+cat > "${BOTH}/podman" <<'EOF'
+#!/bin/bash
+printf 'podman %s\n' "$*" >> "${CALLS}"
+if [[ "$1" == volume && "$2" == ls ]]; then
+    printf 'cs-server-state\n'
+fi
+EOF
+cat > "${BOTH}/docker" <<'EOF'
+#!/bin/bash
+printf 'docker %s\n' "$*" >> "${CALLS}"
+if [[ "$1" == volume && "$2" == ls ]]; then
+    printf 'cs-server-state\n'
+fi
+if [[ "$1" == volume && "$2" == export ]]; then
+    tar -C "${FAKE_VOLUME}" -cf - .
+fi
+EOF
+chmod +x "${BOTH}/podman" "${BOTH}/docker"
+: > "${WORK}/both-calls"
+env PATH="${BOTH}:${PATH}" CALLS="${WORK}/both-calls" FAKE_VOLUME="${WORK}/both-vol/volumes/cs-server-state/_data" \
+    CS_BACKUP_DIR="${WORK}/both-backups" CS_RUNTIME=docker CS_SERVER_IMAGE=busybox \
+    bash "${ROOT}/ops/backup-state.sh" >/dev/null
+both_log=$(cat "${WORK}/both-calls")
+assert_contains "docker is used when both engines exist" "${both_log}" "docker volume ls"
+assert_not_contains "podman is not used when CS_RUNTIME=docker" "${both_log}" "podman "
 
 printf 'backup tests passed\n'

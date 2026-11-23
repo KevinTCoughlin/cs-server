@@ -49,6 +49,7 @@ jobs:
           bash tests/ops_test.sh
           bash tests/bootstrap_test.sh
           bash tests/backup_test.sh
+          bash tests/backup_docker_test.sh
           bash tests/compose_test.sh
 
   bootstrap:

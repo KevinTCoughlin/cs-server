@@ -18,8 +18,10 @@
 # What it does, as root:
 #   1. Create a deploy user (default cs; --user / CS_DEPLOY_USER)
 #   2. Install an SSH public key (--ssh-key, --ssh-key-file, CS_SSH_PUBLIC_KEY)
-#   3. Turn off root login and password authentication, only after that user
-#      has a key, so a password session cannot be locked out
+#   3. Leave SSH authentication as the VPS image set it. --harden-ssh is a
+#      later, separate step: it refuses to run until the deploy user has a
+#      valid authorized key and sudo access, and it checks sshd with sshd -t
+#      before reloading
 #   4. Install Podman or Docker, from the distro, after reading the Podman
 #      version when Podman is already installed
 #   5. Enable unattended-upgrades and fail2ban's sshd jail
@@ -29,7 +31,9 @@
 #   7. loginctl enable-linger for the deploy user
 #   8. Run install.sh as that user (CS_BACKUP=1 unless CS_BACKUP=0)
 #
-# --no-install does the host setup and prints the install.sh command.
+# --no-install does the host setup and prints an install.sh command whose
+# path still exists after this process exits (/usr/local/lib/cs-server/install.sh
+# when the script was piped in). --harden-ssh only changes sshd.
 # A machine with under about 1.8 GB of RAM and no swap gets a 1 GiB swap file.
 # Ubuntu's unprivileged-user-namespace restriction is relaxed when it is on,
 # which rootless Podman needs.
@@ -43,6 +47,8 @@ SSH_KEY="${CS_SSH_PUBLIC_KEY:-}"
 SSH_KEY_FILE=""
 DRY_RUN=0
 RUN_INSTALL=1
+HARDEN_SSH=0
+INSTALLER_STORE="/usr/local/lib/cs-server/install.sh"
 if [[ -z "${CS_BACKUP+x}" ]]; then
     CS_BACKUP=1
 fi
@@ -86,10 +92,15 @@ Options:
   --user NAME         Deploy user (default: cs, or CS_DEPLOY_USER)
   --ssh-key KEY       OpenSSH public key for that user (or CS_SSH_PUBLIC_KEY)
   --ssh-key-file PATH File of public keys (one per line)
-  --no-install        Set the host up and print the install.sh command
+  --no-install        Set the host up and print a lasting install.sh command
   --no-backup         Do not install daily state-volume backups (CS_BACKUP=0)
+  --harden-ssh        Disable root and password SSH, and nothing else
   --dry-run           Print what would be done; change nothing
   --help              Show this help
+
+SSH logins are not changed unless you pass --harden-ssh. Before that, from a
+second terminal: ssh <user>@<host> and then sudo -v. Run --harden-ssh only
+after both succeed.
 
 Environment (passed through to install.sh when set):
   CS_SERVER_VERSION, CS_SERVER_IMAGE, CS_PORT, CS_FASTDL, CS_FASTDL_PORT,
@@ -180,13 +191,19 @@ valid_port() {
 }
 
 validate_ssh_key() {
-    local key="$1"
+    local key="$1" tmp=""
     if [[ "${key}" == *$'\n'* || "${key}" == *$'\r'* ]]; then
         error "An SSH public key must be a single line"
     fi
-    if [[ ! "${key}" =~ ^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com)[[:space:]]+[A-Za-z0-9+/]{20,}=*([[:space:]].*)?$ ]]; then
-        error "Not an OpenSSH public key: ${key:0:40}"
+    command -v ssh-keygen >/dev/null 2>&1 || error "ssh-keygen is required to check an SSH public key"
+    tmp=$(mktemp)
+    chmod 600 "${tmp}"
+    printf '%s\n' "${key}" > "${tmp}"
+    if ! ssh-keygen -l -f "${tmp}" >/dev/null 2>&1; then
+        rm -f "${tmp}"
+        error "Not an OpenSSH public key (ssh-keygen rejected it): ${key:0:40}"
     fi
+    rm -f "${tmp}"
 }
 
 parse_args() {
@@ -195,6 +212,7 @@ parse_args() {
             --dry-run) DRY_RUN=1; shift ;;
             --no-install) RUN_INSTALL=0; shift ;;
             --no-backup) CS_BACKUP=0; shift ;;
+            --harden-ssh) HARDEN_SSH=1; shift ;;
             --user)
                 [[ $# -ge 2 ]] || error "--user needs a name"
                 DEPLOY_USER="$2"
@@ -334,27 +352,24 @@ deploy_home() {
     printf '%s\n' "${home}"
 }
 
-user_has_key() {
+# ssh-keygen -l accepts a file of one or more public keys and rejects a bad line.
+authorized_keys_ok() {
     local auth="$1"
     [[ -s "${auth}" ]] || return 1
-    grep -qE '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-|sk-ssh-|sk-ecdsa-)[[:space:]]' "${auth}"
+    command -v ssh-keygen >/dev/null 2>&1 || return 1
+    ssh-keygen -l -f "${auth}" >/dev/null 2>&1
 }
 
-will_harden_ssh() {
-    local home auth
-    if [[ ${#SSH_KEYS[@]} -gt 0 ]]; then
-        return 0
-    fi
-    if ! command -v id >/dev/null 2>&1 || ! id "${DEPLOY_USER}" >/dev/null 2>&1; then
-        return 1
-    fi
-    home=$(deploy_home)
-    auth="${home}/.ssh/authorized_keys"
-    user_has_key "${auth}"
+# sudo -l -U reports whether the account is allowed to run sudo. It does not
+# need the account's password. The human check before --harden-ssh is sudo -v
+# in a real session, which does.
+deploy_can_sudo() {
+    command -v sudo >/dev/null 2>&1 || return 1
+    sudo -n -l -U "${DEPLOY_USER}" >/dev/null 2>&1
 }
 
 fill_packages() {
-    PACKAGES=(ca-certificates curl nftables fail2ban unattended-upgrades dbus-user-session)
+    PACKAGES=(ca-certificates curl nftables fail2ban unattended-upgrades dbus-user-session sudo)
     if [[ "${ENGINE}" == "podman" ]]; then
         PACKAGES+=(podman uidmap)
     else
@@ -380,6 +395,31 @@ installer_path() {
         return 0
     fi
     return 1
+}
+
+# A checkout already has install.sh. A piped bootstrap saves a copy that is
+# still there after this process exits, instead of a temp file.
+printed_installer() {
+    local path=""
+    if path=$(installer_path); then
+        printf '%s\n' "${path}"
+        return 0
+    fi
+    printf '%s\n' "${INSTALLER_STORE}"
+}
+
+save_installer() {
+    local path="" tmp=""
+    if path=$(installer_path); then
+        printf '%s\n' "${path}"
+        return 0
+    fi
+    install -d -m 755 /usr/local/lib/cs-server
+    tmp=$(mktemp)
+    curl -fsSL "${RAW_BASE}/install.sh" -o "${tmp}"
+    install -m 644 "${tmp}" "${INSTALLER_STORE}"
+    rm -f "${tmp}"
+    printf '%s\n' "${INSTALLER_STORE}"
 }
 
 # INSTALL_ENV is the environment install.sh runs with.
@@ -425,11 +465,7 @@ print_plan() {
     fi
     info "Engine: ${ENGINE} (${ENGINE_WHY})"
     info "Packages: ${PACKAGES[*]}"
-    if will_harden_ssh; then
-        info "SSH: will disable root login and password authentication"
-    else
-        info "SSH: leaving sshd unchanged (no key for the deploy user)"
-    fi
+    info "SSH: authentication unchanged (run --harden-ssh after key login and sudo -v work)"
     info "Hardening: unattended-upgrades, fail2ban sshd jail"
     info "Firewall: $(firewall_words)"
     info "Linger: loginctl enable-linger ${DEPLOY_USER}"
@@ -441,11 +477,7 @@ print_plan() {
     if mem_is_small; then
         info "Swap: add a 1 GiB swap file (this host has little RAM and little swap)"
     fi
-    if installer=$(installer_path); then
-        :
-    else
-        installer="${RAW_BASE}/install.sh"
-    fi
+    installer=$(printed_installer)
     build_install_env "${uid}" "${home}"
     info "Install command:"
     print_install_command "${installer}"
@@ -501,44 +533,57 @@ install_ssh_keys() {
     done
 }
 
+sshd_bin() {
+    local bin=""
+    bin=$(command -v sshd 2>/dev/null || true)
+    if [[ -z "${bin}" && -x /usr/sbin/sshd ]]; then
+        bin=/usr/sbin/sshd
+    fi
+    printf '%s\n' "${bin}"
+}
+
+# --harden-ssh only. The ordinary bootstrap never calls this.
 harden_ssh() {
-    local home auth drop sshd_bin
+    local home auth drop bin
+    if [[ ${#SSH_KEYS[@]} -gt 0 && "${DRY_RUN}" != "1" ]]; then
+        install_ssh_keys
+    fi
     home=$(deploy_home)
     auth="${home}/.ssh/authorized_keys"
-    if ! user_has_key "${auth}"; then
-        warn "No SSH public key for ${DEPLOY_USER}. sshd is unchanged, so a password login stays possible."
-        warn "Pass --ssh-key and run this script again to turn off root and password logins."
-        return 0
+    if ! authorized_keys_ok "${auth}"; then
+        error "${DEPLOY_USER} has no valid authorized key at ${auth}. From a second terminal, confirm 'ssh ${DEPLOY_USER}@<this-host>' works, then run --harden-ssh."
     fi
-    sshd_bin=$(command -v sshd 2>/dev/null || true)
-    if [[ -z "${sshd_bin}" && -x /usr/sbin/sshd ]]; then
-        sshd_bin=/usr/sbin/sshd
+    if ! deploy_can_sudo; then
+        error "${DEPLOY_USER} cannot use sudo. From a second terminal, as that user, confirm 'sudo -v' succeeds, then run --harden-ssh."
     fi
-    if [[ -z "${sshd_bin}" ]]; then
-        warn "sshd is not installed; SSH settings were not changed"
-        return 0
+    bin=$(sshd_bin)
+    [[ -n "${bin}" ]] || error "sshd is not installed; nothing was changed"
+    if [[ "${DRY_RUN}" == "1" ]]; then
+        info "SSH: would disable root login and password authentication after sshd -t"
+        info "Dry run: nothing was changed"
+        exit 0
     fi
     drop=/etc/ssh/sshd_config.d/99-cs-server.conf
     mkdir -p /etc/ssh/sshd_config.d
     cat > "${drop}" <<'EOF'
-# Managed by ops/bootstrap-vps.sh.
+# Managed by ops/bootstrap-vps.sh --harden-ssh.
 # Root login and passwords are off because the deploy user has an SSH key.
 PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 EOF
     chmod 644 "${drop}"
-    if ! "${sshd_bin}" -t; then
+    if ! "${bin}" -t; then
         rm -f "${drop}"
-        error "sshd rejected the drop-in. It was removed and sshd was not reloaded."
+        error "sshd -t rejected the drop-in. It was removed and sshd was not reloaded."
     fi
-    if ! "${sshd_bin}" -T | grep -qi '^permitrootlogin no$'; then
+    if ! "${bin}" -T | grep -qi '^permitrootlogin no$'; then
         rm -f "${drop}"
-        error "sshd still permits root login (sshd_config.d is not included, or an earlier setting wins). The drop-in was removed."
+        error "sshd still permits root login (sshd_config.d is not included, or an earlier setting wins). The drop-in was removed and sshd was not reloaded."
     fi
-    if ! "${sshd_bin}" -T | grep -qi '^passwordauthentication no$'; then
+    if ! "${bin}" -T | grep -qi '^passwordauthentication no$'; then
         rm -f "${drop}"
-        error "sshd still allows password authentication. The drop-in was removed."
+        error "sshd still allows password authentication. The drop-in was removed and sshd was not reloaded."
     fi
     if systemctl cat ssh.service >/dev/null 2>&1; then
         systemctl reload ssh
@@ -546,7 +591,6 @@ EOF
         systemctl reload sshd
     fi
     ok "sshd: root login off, password authentication off"
-    warn "Open a second SSH session as ${DEPLOY_USER} before closing this one."
 }
 
 install_packages() {
@@ -576,6 +620,12 @@ recheck_engine_version() {
 }
 
 configure_access() {
+    if getent group sudo >/dev/null 2>&1; then
+        usermod -aG sudo "${DEPLOY_USER}"
+        ok "${DEPLOY_USER} is in the sudo group"
+    else
+        warn "No sudo group; ${DEPLOY_USER} was not granted sudo"
+    fi
     if [[ "${ENGINE}" == "docker" ]]; then
         usermod -aG docker "${DEPLOY_USER}"
         systemctl enable --now docker.service
@@ -737,17 +787,11 @@ enable_linger_user() {
 }
 
 run_installer() {
-    local installer="" uid home downloaded=0 waited=0 runuser_bin=""
+    local installer="" uid home waited=0 runuser_bin=""
     home=$(deploy_home)
     uid=$(id -u "${DEPLOY_USER}")
-    if ! installer=$(installer_path); then
-        installer=$(mktemp)
-        TMP_INSTALLER="${installer}"
-        curl -fsSL "${RAW_BASE}/install.sh" -o "${installer}"
-        # The deploy user has to be able to read it. bash does not need +x.
-        chmod 644 "${installer}"
-        downloaded=1
-    fi
+    # Persistent path: a piped --no-install must still be runnable after exit.
+    installer=$(save_installer)
     systemctl start "user@${uid}.service"
     while [[ "${waited}" -lt 10 ]]; do
         [[ -d "/run/user/${uid}" ]] && break
@@ -768,14 +812,17 @@ run_installer() {
     fi
     [[ -n "${runuser_bin}" ]] || error "runuser is not installed (package util-linux)"
     "${runuser_bin}" -u "${DEPLOY_USER}" -- env "${INSTALL_ENV[@]}" bash "${installer}"
-    if [[ "${downloaded}" == "1" ]]; then
-        rm -f "${installer}"
-        TMP_INSTALLER=""
-    fi
 }
 
 parse_args "$@"
 validate
+if [[ "${HARDEN_SSH}" == "1" ]]; then
+    if [[ "${DRY_RUN}" != "1" ]]; then
+        require_root
+    fi
+    harden_ssh
+    exit 0
+fi
 load_os
 choose_engine
 fill_packages
@@ -791,7 +838,10 @@ fi
 require_root
 create_user
 install_ssh_keys
-harden_ssh
+info "SSH authentication was not changed."
+info "From a second terminal: ssh ${DEPLOY_USER}@<this-host>"
+info "Then, as ${DEPLOY_USER}: sudo -v"
+info "After both succeed: sudo bash ops/bootstrap-vps.sh --harden-ssh"
 install_packages
 recheck_engine_version
 configure_access

@@ -436,6 +436,9 @@ assert_eq "backup script is the repo's" "$(cat "${ROOT}/ops/backup-state.sh")" "
 assert_eq "backup service is the repo's" "$(cat "${ROOT}/ops/systemd/cs-server-backup.service")" "$(cat "${HOME_DIR}/.config/systemd/user/cs-server-backup.service")"
 assert_eq "backup timer is the repo's" "$(cat "${ROOT}/ops/systemd/cs-server-backup.timer")" "$(cat "${HOME_DIR}/.config/systemd/user/cs-server-backup.timer")"
 assert_contains "backup timer enabled" "${calls}" "systemctl --user enable --now cs-server-backup.timer"
+assert_contains "backup unit pins the runtime" "$(cat "${HOME_DIR}/.config/systemd/user/cs-server-backup.service")" "EnvironmentFile=%h/.config/cs-server/backup.env"
+assert_eq "backup env remembers podman" "CS_RUNTIME=podman
+CS_BACKUP_KEEP=14" "$(cat "${HOME_DIR}/.config/cs-server/backup.env")"
 install CS_BACKUP=yes
 expect_die "bad CS_BACKUP" "Invalid CS_BACKUP"
 
@@ -478,6 +481,17 @@ install FAKE_CONTAINER=1 CS_BACKUP=1
 expect_ok "docker install with backups"
 assert_contains "docker backups enable the timer" "${calls}" "systemctl --user enable --now cs-server-backup.timer"
 assert_contains "docker backups enable lingering" "${calls}" "loginctl enable-linger tester"
+assert_eq "docker-only backup env" "CS_RUNTIME=docker
+CS_BACKUP_KEEP=14" "$(cat "${HOME_DIR}/.config/cs-server/backup.env")"
+# Podman is installed too. The backup must stay on the engine that hosts the game.
+use_runtimes podman docker
+fresh_home
+install FAKE_CONTAINER=1 CS_RUNTIME=docker CS_BACKUP=1
+expect_ok "docker backup while podman is also installed"
+assert_not_contains "backup install does not switch to podman" "${calls}" "podman "
+assert_eq "backup env stays on docker" "CS_RUNTIME=docker
+CS_BACKUP_KEEP=14" "$(cat "${HOME_DIR}/.config/cs-server/backup.env")"
+use_runtimes docker
 # Docker's built-in seccomp profile: no profile is named, none is read out of
 # the image, and one saved by an earlier installer is removed.
 assert_not_contains "docker run names no seccomp profile" "${run_line}" "seccomp"

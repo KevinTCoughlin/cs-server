@@ -118,6 +118,7 @@ test:
     bash tests/ops_test.sh
     bash tests/bootstrap_test.sh
     bash tests/backup_test.sh
+    bash tests/backup_docker_test.sh
     {{ if ENGINE == "container" { "echo 'compose tests skipped: Apple container has no compose'" } else { "bash tests/compose_test.sh" } }}
 
 # Checks plugins, mode switching, every mapcycle map and graceful shutdown
