@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Once a day. Persistent so a VPS that was off still takes a backup after it
+# boots. RandomizedDelaySec keeps it off the exact minute.
+
+[Unit]
+Description=Daily backup of the CS 1.6 server state
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

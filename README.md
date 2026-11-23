@@ -20,15 +20,70 @@ Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack.
 curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash
 ```
 
-Requires [Podman](https://podman.io/getting-started/installation) (rootless) or [Docker](https://docs.docker.com/get-docker/). The script pulls the image from ghcr.io, creates config files, and starts the server on port 27015. With Podman it installs a systemd Quadlet unit for auto-start; with Docker it creates a container with restart policy. For production, set `CS_SERVER_IMAGE` to an immutable image digest instead of the mutable `latest` tag.
+Requires [Podman](https://podman.io/getting-started/installation) 4.4 or newer (5 or newer for health-gated updates) or [Docker](https://docs.docker.com/get-docker/). The script pulls the image from ghcr.io, creates config files, and starts the server on port 27015. With Podman it installs a systemd Quadlet unit for auto-start; with Docker it creates a container with restart policy.
 
-That runs the newest build of `main` (`:latest`). To run a release instead, name it; see [Releases, upgrade and rollback](#releases-upgrade-and-rollback):
+That runs the current release (`1.4.2`, the newest version in [CHANGELOG.md](CHANGELOG.md); `DEFAULT_VERSION` in `install.sh`). `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` override it. A digest pin is `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:…`. The moving `main` build is `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server:latest`. See [Releases, upgrade and rollback](#releases-upgrade-and-rollback). The installer from the release tag, with the version named:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.4.2/install.sh | CS_SERVER_VERSION=1.4.2 bash
 ```
 
+On a new VPS, use [Deploy on a fresh VPS](#deploy-on-a-fresh-vps) instead of this one-liner.
+
 To uninstall: `curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash -s -- --uninstall`
+
+## Deploy on a fresh VPS
+
+One command on a new KVM VPS. It creates an unprivileged user, installs the container engine, turns on unattended upgrades and fail2ban, opens the firewall, and runs `install.sh`.
+
+| Host | Engine | Notes |
+|------|--------|-------|
+| Debian 13 | Distro Podman 5 | Recommended. A failed automatic update is rolled back |
+| Ubuntu 24.04 | Distro Podman 4.9 | Quadlet works. No `Notify=healthy`, so a bad automatic update stays |
+| Debian 12 | Distro Docker | Distro Podman is 4.3, which has no Quadlet |
+
+A 1 GB VPS is enough for the server's 512 MB limit. When RAM is under about 1.8 GB and there is no swap, the bootstrap adds a 1 GiB swap file so pulling the image can finish. Ubuntu 24.04 restricts unprivileged user namespaces; the bootstrap relaxes that so rootless Podman can start.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/ops/bootstrap-vps.sh \
+  | sudo bash -s -- --ssh-key "ssh-ed25519 AAAA... you@host"
+```
+
+`--ssh-key` (or `--ssh-key-file`, or `CS_SSH_PUBLIC_KEY`) is how root login and password authentication get turned off. The script does that only after the deploy user has a key, so a password session cannot be locked out. Open a second SSH session before closing the first.
+
+The deploy user is `cs` (`--user` or `CS_DEPLOY_USER`). The server listens on `27015/udp`. `CS_FASTDL=1` also opens `27080/tcp`. Daily backups of the state volume (bans, admins, stats, logs) go to `~cs/cs-server-backups` and keep 14 (`CS_BACKUP=0` or `--no-backup` turns them off).
+
+`--dry-run` prints the plan and changes nothing. `--no-install` does the host setup and prints the `install.sh` command.
+
+### Provider firewall
+
+In the provider panel (SolusVM, Virtualizor, RackNerd), allow SSH (`22/tcp`, or the port sshd uses) and `27015/udp`. That filter sits in front of the VM. With FastDL, also allow its TCP port. GoldSrc uses UDP for the game, queries and rcon.
+
+### Steam game server token
+
+A public server needs a Game Server Login Token or Steam will not list it. Create one at <https://steamcommunity.com/dev/managegameservers> for App ID **10** (Counter-Strike), one token per server, and add it to `~cs/.config/cs-server/server.cfg`:
+
+```
+sv_setsteamaccount "YOUR_TOKEN"
+```
+
+Restart the service. `CS_PROFILE=lan` does not log in to Steam and needs no token.
+
+### DDoS
+
+The bootstrap loads [`ops/firewall/cs-server.nft`](ops/firewall/cs-server.nft), which rate-limits connectionless query packets per source address. That stops a query flood from tying up the game thread. A volumetric UDP flood fills a cheap VPS's uplink before that filter can help. For that, put a filtered host in front (an OVH VPS, which includes game DDoS filtering, over WireGuard) or a UDP game-filtering provider, and publish the protected address.
+
+### Restore a backup
+
+```bash
+sudo -u cs systemctl --user stop scoutzknivez
+sudo -u cs env XDG_RUNTIME_DIR=/run/user/$(id -u cs) \
+  /home/cs/.local/bin/cs-server-backup \
+  --restore /home/cs/cs-server-backups/cs-server-state-YYYYMMDDTHHMMSSZ.tar.gz
+sudo -u cs systemctl --user start scoutzknivez
+```
+
+Stop the server first. The command replaces the `cs-server-state` volume (bans, admins, stats, logs). Config in `~cs/.config/cs-server/` is not inside the volume; copy that directory separately when you want it kept.
 
 ## Zed
 
@@ -589,7 +644,7 @@ curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/insta
 | Service / container | `scoutzknivez` | `dod-server` |
 | Config directory | `~/.config/cs-server` | `~/.config/dod-server` |
 | State volume | `cs-server-state` | `dod-server-state` |
-| Image | `:latest` or `:<version>` | `:dod` or `:<version>-dod` |
+| Image | pinned release (`1.4.2`) | `1.4.2-dod` |
 
 The config directory holds the game's `server.cfg` and `mapcycle.txt`, copied
 from the image on the first install and mounted read-only; edit them and
@@ -815,7 +870,9 @@ Each release is a git tag (`v1.0.0`), a [GitHub release](https://github.com/Kevi
 | `nightly` | Weekly rebuild of `main` (fresh base image) | Testing |
 | `@sha256:…` | Never | Exactly one build, including its base image |
 
-**Pin** a version at install time with `CS_SERVER_VERSION` (as above), or any image reference with `CS_SERVER_IMAGE`. The installer prints the digest of what it pulled; note it down, because it is what you roll back to.
+**Pin.** A fresh `install.sh` runs the release named by `DEFAULT_VERSION` in that script (currently `1.4.2`, kept equal to the newest `## [x.y.z]` heading in [CHANGELOG.md](CHANGELOG.md)). `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` still override it. `:latest` moves with every push to `main` and is not the default; set `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server:latest` to run it. `compose.yml` and [`quadlet/scoutzknivez.container`](quadlet/scoutzknivez.container) stay on `localhost/cs-server:latest` because those are local builds (`just quadlet`). The checked-in unit's `Notify=healthy` needs Podman 5; on Podman 4.4 through 4.9 the installer omits that line. The installer prints the digest of what it pulled; note it down, because it is what you roll back to.
+
+A release tag's copy of `install.sh` is the script from that tag. Pass `CS_SERVER_VERSION` when you curl a tag. The copy on `main` carries `DEFAULT_VERSION`.
 
 **Upgrade** by running the installer again with the new version. Config in `~/.config/cs-server/` is kept, the unit is rewritten, and a running server is restarted onto the new image (players get the 30 second countdown):
 
@@ -857,7 +914,7 @@ Read the [changelog](CHANGELOG.md) before crossing a major version: a newer imag
 
 With Docker the installer replaces the container, so the same commands upgrade and roll back. On macOS the image is built from your checkout: `git checkout v1.0.0 && cs-server update`.
 
-**Unattended updates (Podman, optional).** `CS_AUTO_UPDATE=1` adds `AutoUpdate=registry` to the unit and enables `podman-auto-update.timer`, which checks daily whether the tag points at a new image. Use it with a moving tag (`CS_SERVER_VERSION=1` or `1.0`), not `1.0.0`. The unit only counts as started once the server answers its health check, so if a new image does not come up, Podman puts the previous one back. An update restarts the server, countdown included, whenever the timer fires; skip this if restarts must be planned.
+**Unattended updates (Podman, optional).** `CS_AUTO_UPDATE=1` adds `AutoUpdate=registry` to the unit and enables `podman-auto-update.timer`, which checks daily whether the tag points at a new image. Use it with a moving tag (`CS_SERVER_VERSION=1` or `1.0`), not `1.0.0`. On Podman 5 the unit only counts as started once the server answers its health check, so if a new image does not come up, Podman puts the previous one back. Podman 4.4 through 4.9 still pull and restart, and the installer says that a bad image stays. An update restarts the server, countdown included, whenever the timer fires; skip this if restarts must be planned.
 
 ### Graceful Shutdown
 
@@ -874,7 +931,7 @@ The Quadlet gives the container 45 seconds for the shutdown sequence, with a 50-
 
 ### Auto-Start
 
-The Quadlet is configured with `WantedBy=default.target`, so the server starts automatically on boot (after `loginctl enable-linger` is set for the user).
+The Quadlet is configured with `WantedBy=default.target`. `install.sh` runs `loginctl enable-linger` for the user (or prints `sudo loginctl enable-linger <user>` when it cannot), so the server starts at boot.
 
 ### Crash Recovery
 
@@ -962,7 +1019,7 @@ flooder lock everyone else out.
 
 The file limits port 27015; edit `define game_port` for another port. It
 works for rootless Podman and for Docker alike (it hooks in before NAT).
-Nothing installs or loads it for you: `install.sh` only points at it.
+`install.sh` only points at it. [`ops/bootstrap-vps.sh`](ops/bootstrap-vps.sh) installs and enables the unit on a new VPS, and adds an input policy for SSH and `27015/udp` when the host has neither firewalld nor ufw.
 
 ## Performance Tuning
 
@@ -994,11 +1051,11 @@ sudo cpupower frequency-set -g performance
 
 - Keep `/etc/systemd/system` and user Quadlet units under configuration management.
 - Review image updates before deploying; retain the previous digest for rollback.
-- Back up `${HOME}/.config/cs-server/`, especially `server.cfg` and map cycles.
+- Back up `${HOME}/.config/cs-server/`, especially `server.cfg` and map cycles. `CS_BACKUP=1` (on for the VPS bootstrap) also archives the state volume daily; see [Restore a backup](#restore-a-backup).
 - Restore by stopping the service, replacing that directory from backup with
   owner-only permissions (`chmod 700` on the directory and `chmod 600` on its
   files), then restarting the service.
-- Configure host firewall rules for UDP/TCP `27015` and monitor the service with systemd/journald.
+- Allow `27015/udp` on the host firewall and monitor the service with systemd/journald.
 - Set journald or Docker log retention limits appropriate for the host.
 
 ## License

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+- **A one-command VPS setup.** `ops/bootstrap-vps.sh` (root, once, idempotent, `--dry-run`) creates a deploy user, installs an SSH key, and turns off root and password SSH only after that user has a key. It installs Podman on Debian 13 and Ubuntu 24.04, or Docker on Debian 12 (distro Podman there is older than Quadlet), plus unattended-upgrades, fail2ban's sshd jail, and the nftables query-flood unit. SSH and `27015/udp` are allowed with nftables, or with ufw when ufw is installed, or with firewalld when firewalld is already running. It enables lingering and runs `install.sh` as that user. `CS_FASTDL=1` also opens the FastDL port. A host with under about 1.8 GB of RAM and no swap gets a 1 GiB swap file
+- **Daily backups of the state volume.** `ops/backup-state.sh` and a systemd user timer write `~/cs-server-backups/<volume>-<utc>.tar.gz` and keep 14 (`CS_BACKUP_KEEP`). `install.sh` installs them with `CS_BACKUP=1`; the VPS bootstrap turns that on. `--restore` puts an archive back after the server is stopped
+
+### Changed
+- **`install.sh` pins the current release instead of `:latest`.** The default tag is `DEFAULT_VERSION` in `install.sh`, kept equal to the newest `## [x.y.z]` in this file by `tests/install_test.sh`. `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` still override it. `compose.yml` and the checked-in Quadlet unit stay on `localhost/cs-server:latest` (a local build)
+- **Podman older than 4.4 is refused** on the Quadlet path, with a pointer to Docker. Podman 4.4 through 4.9 still install, without `Notify=healthy`, and the installer warns that an automatic update cannot roll back. The unit in the repository targets Podman 5
+- **The installer enables lingering** (`loginctl enable-linger`) on the Podman/Quadlet path, and when backups are installed. When it cannot, it prints the sudo command. The server then starts at boot
+
 ## [1.4.2] - 2026-11-22
 
 ### Fixed

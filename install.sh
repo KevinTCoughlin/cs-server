@@ -16,11 +16,15 @@
 #   5. Starts the server
 #
 # Optional settings (environment):
-#   CS_SERVER_VERSION  release to run instead of :latest: 1.0.0 (exact), 1.0 or
-#                      1 (newest patch / minor of that line)
-#   CS_SERVER_IMAGE    full image reference instead, e.g. one pinned by digest
+#   CS_SERVER_VERSION  release to run instead of the pinned one (DEFAULT_VERSION
+#                      below): 1.0.0 (exact), 1.0 or 1 (newest patch / minor)
+#   CS_SERVER_IMAGE    full image reference instead, e.g. one pinned by digest,
+#                      or ghcr.io/kevintcoughlin/cs-server:latest for main's build
+#   CS_RUNTIME         podman or docker. Default: podman when it is installed
+#   CS_BACKUP=1        daily archive of the state volume (ops/backup-state.sh)
 #   CS_AUTO_UPDATE=1   Podman only: let podman-auto-update pull new images for
-#                      the tag (use with CS_SERVER_VERSION=1 or 1.0)
+#                      the tag (use with CS_SERVER_VERSION=1 or 1.0). Rollback
+#                      of a bad image needs Podman 5 (Notify=healthy)
 #   CS_RCON=1          generate an rcon_password for network rcon (off by
 #                      default; the local console needs none)
 #   FASTDL_URL         http(s) URL that serves your cstrike/ content
@@ -60,7 +64,14 @@ REPO="KevinTCoughlin/cs-server"
 REGISTRY="ghcr.io"
 # Image names are lowercase; engines reject the repository's mixed case.
 IMAGE_REPO="${REGISTRY}/kevintcoughlin/cs-server"
-VERSION="${CS_SERVER_VERSION:-}"
+# Newest released version in CHANGELOG.md (the first ## [x.y.z] heading).
+# tests/install_test.sh fails when this and that heading differ, so a release
+# that renames [Unreleased] updates this too. :latest is not the default:
+# that tag moves with every push to main. CS_SERVER_VERSION and
+# CS_SERVER_IMAGE still override it. The same comparison lives in
+# ops/bootstrap-vps.sh (version_ge); keep the two copies in step.
+DEFAULT_VERSION="1.4.2"
+VERSION="${CS_SERVER_VERSION:-${DEFAULT_VERSION}}"
 VERSION="${VERSION#v}"
 if [[ -n "${VERSION}" && ! "${VERSION}" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
     printf '[error] Invalid CS_SERVER_VERSION: %s (expected 1.0.0, 1.0 or 1)\n' "${CS_SERVER_VERSION}" >&2
@@ -89,6 +100,26 @@ if [[ "${GAME}" != "cstrike" ]]; then
 fi
 IMAGE="${CS_SERVER_IMAGE:-${IMAGE}}"
 AUTO_UPDATE="${CS_AUTO_UPDATE:-0}"
+# Podman 5 emits Notify=healthy. check_podman_quadlet clears this on 4.4–4.9.
+# --print-unit does not detect a version, so the unit in the repository
+# (just quadlet) is the Podman 5 unit.
+PODMAN_NOTIFY=1
+PODMAN_CHECKED=0
+LINGER_DONE=0
+BACKUP_DONE=0
+CS_BACKUP="${CS_BACKUP:-0}"
+if [[ "${CS_BACKUP}" != "0" && "${CS_BACKUP}" != "1" ]]; then
+    printf '[error] Invalid CS_BACKUP: %s (expected 0 or 1)\n' "${CS_BACKUP}" >&2
+    exit 1
+fi
+RUNTIME_CHOICE="${CS_RUNTIME:-auto}"
+case "${RUNTIME_CHOICE}" in
+    auto | podman | docker) ;;
+    *)
+        printf '[error] Invalid CS_RUNTIME: %s (expected podman, docker or auto)\n' "${CS_RUNTIME}" >&2
+        exit 1
+        ;;
+esac
 # The default instance keeps the names every earlier release used. A named
 # one (CS_INSTANCE) gets its own service, config directory and state volume.
 INSTANCE="${CS_INSTANCE:-}"
@@ -274,8 +305,10 @@ Supports Podman (preferred) and Docker. The script auto-detects
 which runtime is available, preferring Podman when both are present.
 
 Environment:
-  CS_SERVER_VERSION=<v>    Run a release instead of :latest: 1.0.0, 1.0 or 1
-  CS_SERVER_IMAGE=<image>  Run this image reference instead (e.g. a digest)
+  CS_SERVER_VERSION=<v>    Release instead of the pinned one (${DEFAULT_VERSION}): 1.0.0, 1.0 or 1
+  CS_SERVER_IMAGE=<image>  Run this image reference instead (e.g. a digest, or :latest)
+  CS_RUNTIME=<engine>      podman or docker (default: podman if it is installed)
+  CS_BACKUP=1              Daily archive of the state volume, 14 copies
   CS_AUTO_UPDATE=1         Podman: pull new images for the tag automatically
   CS_RCON=1                Generate an rcon_password (network rcon is off by default)
   FASTDL_URL=<url>         http(s) URL that serves your cstrike/ content
@@ -335,6 +368,19 @@ detect_runtime() {
     git clone https://github.com/${REPO}.git && cd cs-server
     ops/cs-server install
   See README: 'macOS / Apple silicon'."
+    fi
+
+    if [[ "${RUNTIME_CHOICE}" == "podman" ]]; then
+        command -v podman &>/dev/null || error "CS_RUNTIME=podman but podman is not installed"
+        RUNTIME="podman"
+        ok "Podman selected (CS_RUNTIME=podman): $(command -v podman)"
+        return 0
+    fi
+    if [[ "${RUNTIME_CHOICE}" == "docker" ]]; then
+        command -v docker &>/dev/null || error "CS_RUNTIME=docker but docker is not installed"
+        RUNTIME="docker"
+        ok "Docker selected (CS_RUNTIME=docker): $(command -v docker)"
+        return 0
     fi
 
     if command -v podman &>/dev/null; then
@@ -458,10 +504,16 @@ do_install() {
 
     detect_runtime
 
-    # Verify podman rootless mode
+    # The Quadlet unit is a user unit, so it needs lingering to start at boot.
+    # Podman before 4.4 has no Quadlet. Notify=healthy (rollback of a bad
+    # auto-update) needs Podman 5; 4.4 through 4.9 omit that line.
     if [[ "${RUNTIME}" == "podman" ]]; then
         if ! podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null | grep -q true; then
             warn "Podman rootless mode not detected — the server may require root"
+        fi
+        if [[ "${PODMAN_CHECKED}" != "1" ]]; then
+            check_podman_quadlet
+            PODMAN_CHECKED=1
         fi
     fi
 
@@ -682,6 +734,131 @@ remove_fastdl() {
     ok "FastDL sidecar removed"
 }
 
+# --- Podman version, lingering, backups ------------------------------------
+
+# version_ge A B is true when A is at least B. Same function as
+# ops/bootstrap-vps.sh; keep the two copies in step.
+version_ge() {
+    local left="$1" right="$2" li ri
+    while [[ -n "${left}" || -n "${right}" ]]; do
+        li="${left%%.*}"
+        ri="${right%%.*}"
+        if [[ "${left}" == *.* ]]; then left="${left#*.}"; else left=""; fi
+        if [[ "${right}" == *.* ]]; then right="${right#*.}"; else right=""; fi
+        li="${li%%[^0-9]*}"
+        ri="${ri%%[^0-9]*}"
+        li="${li:-0}"
+        ri="${ri:-0}"
+        if ((10#${li} > 10#${ri})); then return 0; fi
+        if ((10#${li} < 10#${ri})); then return 1; fi
+    done
+    return 0
+}
+
+podman_cli_version() {
+    local raw=""
+    raw=$(podman version --format '{{.Version}}' 2>/dev/null || true)
+    if [[ ! "${raw}" =~ ^[0-9]+\.[0-9]+ ]]; then
+        raw=$(podman --version 2>/dev/null || true)
+    fi
+    if [[ "${raw}" =~ ([0-9]+\.[0-9]+(\.[0-9]+)?) ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    return 1
+}
+
+check_podman_quadlet() {
+    local ver=""
+    if ! ver=$(podman_cli_version); then
+        error "Could not read the Podman version. Quadlet needs Podman 4.4 or newer. On Debian 12, ops/bootstrap-vps.sh installs Docker; or re-run with CS_RUNTIME=docker."
+    fi
+    if ! version_ge "${ver}" 4.4; then
+        error "Podman ${ver} is older than 4.4, which systemd Quadlet needs. Install Podman 4.4 or newer, or use Docker (Debian 12: ops/bootstrap-vps.sh, or CS_RUNTIME=docker)."
+    fi
+    if version_ge "${ver}" 5.0; then
+        PODMAN_NOTIFY=1
+        ok "Podman ${ver}"
+    else
+        PODMAN_NOTIFY=0
+        warn "Podman ${ver} has no Notify=healthy (that needs Podman 5). The server still runs. Automatic-update rollback is unavailable on this version."
+    fi
+}
+
+# User Quadlet units start at boot only when the user's manager does.
+enable_linger() {
+    local user
+    [[ "${LINGER_DONE}" == "1" ]] && return 0
+    LINGER_DONE=1
+    user="${USER:-}"
+    if [[ -z "${user}" ]] && command -v id >/dev/null 2>&1; then
+        user=$(id -un 2>/dev/null || true)
+    fi
+    if [[ -z "${user}" ]]; then
+        warn "Could not tell which user to enable lingering for. The server starts at boot after: sudo loginctl enable-linger <user>"
+        return 0
+    fi
+    if command -v loginctl >/dev/null 2>&1; then
+        if loginctl show-user "${user}" -p Linger 2>/dev/null | grep -q '^Linger=yes$'; then
+            ok "Lingering is already enabled for ${user}"
+            return 0
+        fi
+        if loginctl enable-linger "${user}"; then
+            ok "Lingering enabled for ${user} (the server starts at boot)"
+            return 0
+        fi
+    fi
+    if command -v sudo >/dev/null 2>&1 && sudo -n loginctl enable-linger "${user}"; then
+        ok "Lingering enabled for ${user} (the server starts at boot)"
+        return 0
+    fi
+    warn "Could not enable lingering for ${user}. The server starts at boot only after: sudo loginctl enable-linger ${user}"
+}
+
+# Copy ops/backup-state.sh and its user timer. A curled install.sh downloads
+# them from the same repository; a checkout uses the files beside this script.
+install_backup() {
+    local script_path script_dir ops="" fetched="" dest unit_dir
+    [[ "${CS_BACKUP}" == "1" ]] || return 0
+    [[ "${BACKUP_DONE}" == "1" ]] && return 0
+    script_path="${BASH_SOURCE[0]}"
+    script_dir="."
+    if [[ "${script_path}" == */* ]]; then
+        script_dir="${script_path%/*}"
+    fi
+    if [[ -f "${script_dir}/ops/backup-state.sh" ]]; then
+        ops="${script_dir}/ops"
+    else
+        command -v curl >/dev/null 2>&1 || error "curl is required to download the backup units (CS_BACKUP=1)"
+        fetched=$(mktemp -d)
+        mkdir -p "${fetched}/systemd"
+        curl -fsSL "https://raw.githubusercontent.com/${REPO}/main/ops/backup-state.sh" \
+            -o "${fetched}/backup-state.sh" \
+            || error "Could not download ops/backup-state.sh"
+        curl -fsSL "https://raw.githubusercontent.com/${REPO}/main/ops/systemd/cs-server-backup.service" \
+            -o "${fetched}/systemd/cs-server-backup.service" \
+            || error "Could not download ops/systemd/cs-server-backup.service"
+        curl -fsSL "https://raw.githubusercontent.com/${REPO}/main/ops/systemd/cs-server-backup.timer" \
+            -o "${fetched}/systemd/cs-server-backup.timer" \
+            || error "Could not download ops/systemd/cs-server-backup.timer"
+        ops="${fetched}"
+    fi
+    dest="${HOME}/.local/bin/cs-server-backup"
+    unit_dir="${HOME}/.config/systemd/user"
+    mkdir -p "${HOME}/.local/bin" "${unit_dir}"
+    cp "${ops}/backup-state.sh" "${dest}"
+    chmod 755 "${dest}"
+    cp "${ops}/systemd/cs-server-backup.service" "${unit_dir}/cs-server-backup.service"
+    cp "${ops}/systemd/cs-server-backup.timer" "${unit_dir}/cs-server-backup.timer"
+    chmod 644 "${unit_dir}/cs-server-backup.service" "${unit_dir}/cs-server-backup.timer"
+    [[ -z "${fetched}" ]] || rm -rf "${fetched}"
+    systemctl --user daemon-reload
+    systemctl --user enable --now cs-server-backup.timer
+    enable_linger
+    BACKUP_DONE=1
+    ok "Daily backups of the state volume: ${HOME}/cs-server-backups (keeps ${CS_BACKUP_KEEP:-14})"
+}
+
 # --- Quadlet unit -----------------------------------------------------------
 
 # The one definition of the unit. quadlet/scoutzknivez.container in the
@@ -693,9 +870,9 @@ quadlet_unit() {
     if [[ -n "${FASTDL_URL}" ]]; then
         fastdl_env=$'\n'"Environment=FASTDL_URL=${FASTDL_URL//%/%%}"
     fi
-    # podman-auto-update pulls the tag, restarts the unit and, because the
-    # unit only counts as started once healthy (Notify=healthy), puts the
-    # previous image back when the new one does not come up.
+    # podman-auto-update pulls the tag and restarts the unit. On Podman 5 the
+    # unit only counts as started once healthy (Notify=healthy), so a new
+    # image that does not come up is rolled back. Podman 4.4–4.9 omit the line.
     local server_ip_env=""
     if [[ -n "${SERVER_IP}" ]]; then
         server_ip_env=$'\n'"Environment=SERVER_IP=${SERVER_IP}"
@@ -710,6 +887,12 @@ quadlet_unit() {
     local auto_update=""
     if [[ "${AUTO_UPDATE}" == "1" ]]; then
         auto_update=$'\n'"AutoUpdate=registry"
+    fi
+    # The checked-in unit keeps this line: it is the Podman 5 default.
+    # install.sh drops it when the installed Podman is 4.4 through 4.9.
+    local notify=""
+    if [[ "${PODMAN_NOTIFY}" == "1" ]]; then
+        notify=$'\n# Notify=healthy needs Podman 5 or newer. install.sh omits this line on Podman 4.4 to 4.9:\n# the server still runs, and an automatic update cannot roll a bad image back.\nNotify=healthy'
     fi
     # Metrics listen inside the container; they are published on one host
     # address only (loopback unless CS_METRICS_BIND). On host networking the
@@ -762,8 +945,7 @@ HealthCmd=/healthcheck.sh
 HealthInterval=30s
 HealthTimeout=5s
 HealthStartPeriod=60s
-HealthRetries=3
-Notify=healthy
+HealthRetries=3${notify}
 
 [Service]
 Restart=on-failure
@@ -781,6 +963,8 @@ QUADLET
 # --- Podman install (Quadlet) -----------------------------------------------
 
 install_podman() {
+    # The unit is a user unit. Lingering is what starts it at boot.
+    enable_linger
     # A running server keeps its old image until restarted (upgrade, rollback).
     local was_active=0
     if systemctl --user is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
@@ -1062,6 +1246,7 @@ elif [[ "${ACTION}" == "uninstall" ]]; then
     fi
 elif [[ -n "${LAN_KIT}" ]]; then
     run_kit do_install
+    install_backup
     check_host_tuning
     echo ""
     info "LAN kit: ${LAN_KIT} ${MODE} servers on ports ${PORT} to $((PORT + LAN_KIT - 1))/udp, maps from ${FASTDL_URL}"
@@ -1069,5 +1254,6 @@ elif [[ -n "${LAN_KIT}" ]]; then
     echo "      Remove them all: CS_LAN_KIT=${LAN_KIT} bash install.sh --uninstall"
 else
     do_install
+    install_backup
     check_host_tuning
 fi

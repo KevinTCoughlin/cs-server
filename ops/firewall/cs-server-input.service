@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Loads ops/firewall/cs-server-input.nft at boot. Installed by
+# ops/bootstrap-vps.sh only when the host has neither firewalld nor ufw.
+# The query-flood unit (cs-server-firewall.service) is separate and stays
+# installed beside this one.
+
+[Unit]
+Description=Allow SSH and the CS 1.6 port (nftables)
+Documentation=https://github.com/KevinTCoughlin/cs-server#deploy-on-a-fresh-vps
+Wants=network-pre.target
+Before=network-pre.target
+After=nftables.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/cs-server/input.nft
+ExecReload=/usr/sbin/nft -f /etc/cs-server/input.nft
+ExecStop=/usr/sbin/nft delete table inet cs_server_input
+
+[Install]
+WantedBy=multi-user.target

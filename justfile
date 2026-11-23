@@ -98,7 +98,7 @@ lint:
 
 # Lint shell scripts with shellcheck
 shellcheck:
-    shellcheck entrypoint.sh install.sh scripts/i386-compat.sh scripts/mode.sh scripts/fetch-maps.sh scripts/healthcheck.sh scripts/game-env.sh scripts/release-notes.sh ops/cs-server tests/*.sh
+    shellcheck entrypoint.sh install.sh scripts/i386-compat.sh scripts/mode.sh scripts/fetch-maps.sh scripts/healthcheck.sh scripts/game-env.sh scripts/release-notes.sh ops/cs-server ops/bootstrap-vps.sh ops/backup-state.sh tests/*.sh
 
 # Run all checks
 check: lint shellcheck test
@@ -116,6 +116,8 @@ test:
     bash tests/release_notes_test.sh
     bash tests/firewall_test.sh
     bash tests/ops_test.sh
+    bash tests/bootstrap_test.sh
+    bash tests/backup_test.sh
     {{ if ENGINE == "container" { "echo 'compose tests skipped: Apple container has no compose'" } else { "bash tests/compose_test.sh" } }}
 
 # Checks plugins, mode switching, every mapcycle map and graceful shutdown
