@@ -359,8 +359,9 @@ RUN . /usr/local/share/cs-server/game.env && \
         done; \
     fi
 
-# Docker's upstream default seccomp profile; install.sh reads it out of the
-# image for `docker run` (see ops/seccomp/README.md).
+# Docker's upstream default seccomp profile. Nothing current uses it:
+# install.sh from 1.1 to 1.4 reads it out of the image for `docker run` and
+# would otherwise run unconfined (see ops/seccomp/README.md).
 COPY --chmod=644 ops/seccomp/docker-default.json /usr/local/share/cs-server/seccomp.json
 
 # Create Steam SDK symlink for steamclient.so (fixes Docker Desktop on Windows)

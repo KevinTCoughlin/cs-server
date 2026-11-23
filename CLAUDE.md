@@ -43,7 +43,7 @@ scripts/fetch-maps.sh      Fetch sha256-pinned maps from maps/manifest.tsv
 ops/cs-server              macOS launchd service wrapper (Apple container)
 ops/launchd/               launchd agent templates (server + Nipper Friday)
 ops/systemd/               Nipper Friday systemd user timer (Linux)
-ops/seccomp/               Docker's upstream default seccomp profile (vendored; Docker 29's built-in one breaks i386 socket())
+ops/seccomp/               Docker's upstream default seccomp profile, kept in the image only for installers 1.1-1.4 (nothing current passes a profile; Docker 29.4.2 alone broke i386 sockets, install.sh refuses it)
 ops/firewall/              nftables query-flood rate limit + boot unit (opt-in, never auto-applied)
 config/
   server.cfg               Game server settings (gravity, air control, rounds)

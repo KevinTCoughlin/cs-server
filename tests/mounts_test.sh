@@ -84,15 +84,16 @@ expect install.sh 1 "ReadOnly=true"
 expect install.sh 1 "--read-only"
 expect install.sh 2 "/tmp"
 
-# Docker runs under the vendored upstream default seccomp profile; nothing
-# runs unconfined except install.sh's fallback for images without the file.
-expect compose.yml 1 "seccomp:./ops/seccomp/docker-default.json"
-expect Containerfile 1 "ops/seccomp/docker-default.json /usr/local/share/cs-server/seccomp.json"
-expect ops/seccomp/docker-default.json 1 '"defaultAction": "SCMP_ACT_ERRNO"'
-if grep -n 'seccomp[=:]unconfined' compose.yml quadlet/scoutzknivez.container justfile tests/e2e_test.sh .github/workflows/*.yml >&2; then
-    printf 'no deployment path or test may run with seccomp=unconfined\n' >&2
+# Docker and Podman run the server under their built-in seccomp profiles: no
+# deployment path names a profile or turns seccomp off. The image still
+# carries Docker's upstream default for installers from 1.1 to 1.4, which
+# read it out of the image (ops/seccomp/README.md).
+if grep -n 'seccomp[=:]' compose.yml compose.lan.yml compose.windows.yml quadlet/scoutzknivez.container justfile install.sh tests/e2e_test.sh tests/e2e_game_test.sh .github/workflows/*.yml >&2; then
+    printf 'no deployment path or test may pass a seccomp option\n' >&2
     failed=1
 fi
+expect Containerfile 1 "ops/seccomp/docker-default.json /usr/local/share/cs-server/seccomp.json"
+expect ops/seccomp/docker-default.json 1 '"defaultAction": "SCMP_ACT_ERRNO"'
 
 # net.core.* sysctls belong to the host: a rootless container that asks for
 # them does not start (crun: open /proc/sys/net/core/rmem_max: Permission denied).

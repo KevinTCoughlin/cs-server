@@ -36,6 +36,7 @@ cat > "${STUBS}/engine" <<'EOF'
 printf '%s %s\n' "${0##*/}" "$*" >> "${CALLS}"
 case "$1" in
     info) echo true ;;
+    version) echo "${FAKE_DOCKER_VERSION:-29.10.0}" ;;
     pull) [ "${FAKE_PULL_FAIL:-0}" = 0 ] || exit 1 ;;
     run)
         case "$*" in
@@ -43,10 +44,6 @@ case "$1" in
             *"--entrypoint sh"*"cd /hlds/cstrike "*) cd "${FAKE_IMAGE_CONFIG}" && tar -cf - server.cfg mapcycle*.txt modes ;;
             # Another game: its stock settings and one map cycle, no modes.
             *"--entrypoint sh"*) cd "${FAKE_IMAGE_CONFIG}" && tar -cf - server.cfg mapcycle.txt ;;
-            *"--entrypoint cat"*)
-                [ "${FAKE_SECCOMP:-1}" = 1 ] || exit 1
-                echo '{"defaultAction":"SCMP_ACT_ERRNO"}'
-                ;;
         esac
         ;;
     container) [ "${FAKE_CONTAINER:-0}" = 1 ] && echo true ;;
@@ -375,7 +372,7 @@ run_line=$(grep '^docker run -d ' "${LOG}")
 for name in "${CONFIG_NAMES[@]}"; do
     assert_contains "docker mounts ${name}" "${run_line}" "-v ${CONFIG}/${name}:/hlds/cstrike/${name}:ro"
 done
-for flag in "--name scoutzknivez" "--restart on-failure:10" "--security-opt seccomp=${CONFIG}/seccomp.json" \
+for flag in "--name scoutzknivez" "--restart on-failure:10" \
     "--security-opt no-new-privileges" "--cap-drop ALL" "-p 27015:27015/udp" \
     "-v ${CONFIG}/modes:/hlds/cstrike/modes:ro" "--memory 512m" "--cpus 2" "-e MODE=scoutz"; do
     assert_contains "docker run flag" "${run_line}" "${flag}"
@@ -384,17 +381,23 @@ if [[ "${run_line}" != *" ghcr.io/kevintcoughlin/cs-server:latest" ]]; then
     fail "docker run: the default image must be the last argument: ${run_line}"
 fi
 assert_not_contains "docker path uses no systemd" "${calls}" "systemctl"
-assert_contains "reads the seccomp profile out of the image" "${calls}" \
-    "docker run --rm --network none --entrypoint cat ghcr.io/kevintcoughlin/cs-server:latest /usr/local/share/cs-server/seccomp.json"
-assert_eq "the profile is saved for docker run" '{"defaultAction":"SCMP_ACT_ERRNO"}' "$(cat "${CONFIG}/seccomp.json")"
-
-fresh_home
-install FAKE_CONTAINER=1 FAKE_SECCOMP=0
-expect_ok "docker install of an image without a seccomp profile"
+# Docker's built-in seccomp profile: no profile is named, none is read out of
+# the image, and one saved by an earlier installer is removed.
+assert_not_contains "docker run names no seccomp profile" "${run_line}" "seccomp"
+assert_not_contains "no profile is read out of the image" "${calls}" "seccomp.json"
+printf '{}\n' > "${CONFIG}/seccomp.json"
+install FAKE_CONTAINER=1
+expect_ok "docker reinstall over an earlier install"
+[[ ! -e "${CONFIG}/seccomp.json" ]] || fail "a seccomp.json from an earlier installer was left behind"
 run_line=$(grep '^docker run -d ' "${LOG}")
-assert_contains "falls back to unconfined" "${run_line}" "--security-opt seccomp=unconfined "
-assert_contains "and says so" "${output}" "has no seccomp profile"
-[[ ! -e "${CONFIG}/seccomp.json" ]] || fail "a failed profile read left a seccomp.json behind"
+
+# Docker 29.4.2 blocks every 32-bit socket (moby/moby#52506).
+install FAKE_DOCKER_VERSION=29.4.2
+expect_die "Docker 29.4.2" "Docker Engine 29.4.2 cannot run 32-bit programs"
+assert_not_contains "Docker 29.4.2: nothing is started" "${calls}" "docker run -d"
+install FAKE_DOCKER_VERSION=29.4.3
+expect_ok "Docker 29.4.3"
+run_line=$(grep '^docker run -d ' "${LOG}")
 assert_not_contains "docker publishes no TCP port" "${run_line}" "/tcp"
 assert_not_contains "docker: no FastDL URL unless asked for" "${run_line}" "FASTDL_URL"
 count=$(count_lines "${CONFIG}/server.cfg" "rcon_password")

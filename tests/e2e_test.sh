@@ -52,14 +52,14 @@ if [[ -z "${ENGINE}" ]]; then
 fi
 
 # Same hardening as the deployment paths: read-only root, a tmpfs for the
-# console FIFO, a state volume. Docker runs under its upstream default seccomp
-# profile, not the built-in one (see ops/seccomp/README.md). Apple container gets a state folder
+# console FIFO, a state volume. Docker runs under its built-in seccomp
+# profile. Apple container gets a state folder
 # and a writable root, as in ops/cs-server.
 STATE="cs-e2e-state-$$"
 STATE_DIR=""
 READ_ONLY=1
 case "${ENGINE}" in
-    docker) RUN_FLAGS=(--cap-drop ALL --security-opt no-new-privileges:true --security-opt "seccomp=${ROOT}/ops/seccomp/docker-default.json" --read-only --tmpfs /tmp -v "${STATE}:/hlds/state") ;;
+    docker) RUN_FLAGS=(--cap-drop ALL --security-opt no-new-privileges:true --read-only --tmpfs /tmp -v "${STATE}:/hlds/state") ;;
     podman) RUN_FLAGS=(--cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp -v "${STATE}:/hlds/state") ;;
     container)
         STATE_DIR=$(mktemp -d)

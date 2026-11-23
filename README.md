@@ -63,15 +63,9 @@ The server starts on port **27015**. Connect with your CS 1.6 client:
 connect <your-lan-ip>:27015
 ```
 
-> **Docker users:** replace `podman` with `docker` in the commands below, and
-> on x86_64 hosts add
-> `--security-opt seccomp=ops/seccomp/docker-default.json` (the file is in
-> this repository). The seccomp profile built into Docker 29 rejects HLDS's
-> 32-bit `socket()` call with `ENOSYS`, so the server can't open its port and
-> crash-loops (`UDP_OpenSocket … Function not implemented`); that file is
-> Docker's own upstream default profile, which works. Podman's default
-> profile and Apple `container` are unaffected; `compose.yml` and
-> `install.sh` already set it. See [Container Hardening](#container-hardening).
+> **Docker users:** replace `podman` with `docker` in the commands below.
+> Docker Engine 29.4.2 cannot run this server (its seccomp profile blocked
+> every 32-bit socket; fixed in 29.4.3): update Docker if you are on it.
 
 ### Option 2: Build from source
 
@@ -204,7 +198,7 @@ systemctl --user edit scoutzknivez
 systemctl --user restart scoutzknivez
 
 # Docker (from a checkout; see "Docker users" above for the profile)
-docker run -d --security-opt seccomp=ops/seccomp/docker-default.json \
+docker run -d \
   -p 27015:27015/udp \
   -e MAP=de_dust2 \
   -e MAPCYCLE=mapcycle-dust2.txt \
@@ -891,16 +885,13 @@ The Quadlet is configured with `WantedBy=default.target`, so the server starts a
 
 - **No Linux capabilities** — all capabilities dropped via `DropCapability=ALL`
 - **No privilege escalation** — `NoNewPrivileges=true` prevents gaining new privileges via setuid/setgid binaries
-- **Seccomp** — the server always runs under a default-deny seccomp profile.
-  The Quadlet unit uses Podman's default. On Docker, the profile built into
-  Docker 29 blocks the 32-bit `socket()` syscall the i386 HLDS binary needs,
-  so `compose.yml` and `install.sh` pass Docker's own upstream default
-  profile as a file instead
-  ([`ops/seccomp/docker-default.json`](ops/seccomp/README.md); `compose.yml`
-  is shared, so this also applies under `podman compose`). Earlier versions
-  ran Docker with `seccomp=unconfined`; `install.sh` still falls back to
-  that, with a warning, for an image older than 1.1.0, which carries no
-  profile
+- **Seccomp** — the server runs under the engine's built-in default-deny
+  seccomp profile on Podman and Docker; no deployment path names a profile
+  or turns seccomp off. Docker Engine 29.4.2 is the one release whose profile
+  breaks 32-bit programs
+  ([moby/moby#52506](https://github.com/moby/moby/issues/52506)); `install.sh`
+  refuses it. See [`ops/seccomp/README.md`](ops/seccomp/README.md) for the
+  profile the image still carries for older installers
 - **Read-only root filesystem** — `ReadOnly=true` (Quadlet), `read_only: true`
   (Compose), `--read-only` (`install.sh` on Docker). The server can write to
   two places only: the [state volume](#saved-state-and-logs) and a tmpfs on
