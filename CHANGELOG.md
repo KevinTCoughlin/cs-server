@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-22
+
 ### Changed
 - **Docker runs the server under its built-in seccomp profile again.** The fault that made this project pass its own copy of Docker's default profile was specific to Docker Engine 29.4.2 ([moby/moby#52506](https://github.com/moby/moby/issues/52506), fixed in 29.4.3). `compose.yml` and `install.sh` no longer pass a profile, and `install.sh` refuses Docker 29.4.2 with the fix named. The image keeps the file for installers from 1.1 to 1.4, which read it out of the image. A weekly workflow starts the published image on the newest Docker under the built-in profile (#97)
 
@@ -165,7 +167,8 @@ First tagged release. Images for it are on ghcr.io as `1.0.0`, `1.0` and `1` (`l
 - .env.example documenting environment variables
 - Quadlet systemd unit file shipped in-repo
 
-[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/KevinTCoughlin/cs-server/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/KevinTCoughlin/cs-server/compare/v1.2.0...v1.2.1

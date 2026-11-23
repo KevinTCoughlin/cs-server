@@ -496,7 +496,7 @@ footer p{max-width:60em}
       <div class="card">
         <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="16" height="6" rx="1"/><rect x="4" y="14" width="16" height="6" rx="1"/><path d="M8 7h.01M8 17h.01"/></svg></div>
         <h3>More than one server</h3>
-        <p><code>CS_INSTANCE=match2 CS_PORT=27016</code> adds a second server on the same machine with its own settings, bans and stats. <code>CS_PROFILE=lan</code> puts one in the LAN tab.</p>
+        <p><code>CS_INSTANCE=match2 CS_PORT=27016</code> adds a second server on the same machine with its own settings, bans and stats. <code>CS_LAN_KIT=4</code> sets up four match servers for an event in one go. <a href="#lankit">LAN kit</a>.</p>
       </div>
     </div>
   </div>
@@ -597,6 +597,7 @@ footer p{max-width:60em}
             <li><strong>Everyone connects from the CS 1.6 console.</strong> Type <code>connect &lt;server-lan-ip&gt;:27015</code>. The installer prints the address when it finishes.</li>
             <li><strong>Keep it to the house.</strong> Run the installer with <code>CS_PROFILE=lan</code> in front of <code>bash</code>. The server then shows up in everyone's LAN tab and needs no internet connection.</li>
             <li><strong>Or let friends join from their houses.</strong> Leave <code>LAN_MODE=0</code> (the default), allow 27015 UDP through the host firewall, forward it on your router, and share your public IP.</li>
+            <li><strong>More than ten of you?</strong> <code>CS_LAN_KIT=3</code> installs three match servers on ports 27015 to 27017 and serves the maps from the same machine. See <a href="#lankit">LAN kit</a>.</li>
             <li><strong>Only two of you? Bots fill in.</strong> ZBots fill the server up to 10 players and leave as people join. Set <code>BOTS=0</code> to turn them off.</li>
             <li><strong>Make Friday a Nipper Friday.</strong> Knives only on NIPPER's classic maps, with his Christmas maps through Jan 6. See <a href="#nipper">Nipper Friday</a>.</li>
             <li><strong>Switch it up.</strong> Type <code>rtv</code> in chat to vote for a new map. For classic Dust 2, set <code>MAP=de_dust2</code> and <code>MAPCYCLE=mapcycle-dust2.txt</code> in the same unit file and restart.</li>
@@ -712,6 +713,37 @@ footer p{max-width:60em}
         </div>
       </details>
 
+      <details id="lankit">
+        <summary>LAN kit <small>Several match servers and local map downloads</small></summary>
+        <div class="d-body">
+          <p>For an event with more players than one server holds. One command installs the servers, puts them in the LAN tab and serves their maps from the same machine, so nothing depends on the internet.</p>
+          <pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | CS_LAN_KIT=4 bash</pre>
+          <ol>
+            <li><strong>Four servers.</strong> <code>lan1</code> to <code>lan4</code> on ports 27015 to 27018, each with its own settings, bans and stats. Any number from 1 to 8.</li>
+            <li><strong>Match mode, no bots.</strong> Each starts in the <a href="#modes">5v5 match mode</a>. <code>CS_MODE=vanilla</code> or <code>scoutz</code> and <code>CS_BOTS=1</code> change that.</li>
+            <li><strong>Maps over HTTP.</strong> A small web server from the same image hands maps to players on port 27080, much faster than the game connection. It serves maps and assets only: no settings, no admin files.</li>
+            <li><strong>Open the ports.</strong> The game ports (UDP) and 27080 (TCP) in the machine's firewall.</li>
+            <li><strong>Afterwards.</strong> The same command with <code>--uninstall</code> removes all of them.</li>
+          </ol>
+          <p class="note">Just want the map server next to one ordinary server? <code>CS_FASTDL=1</code> adds it to any install. The LAN tab only looks at a few ports above 27015; players reach a server on a higher port with <code>connect &lt;address&gt;:&lt;port&gt;</code>.</p>
+        </div>
+      </details>
+
+      <details id="metrics">
+        <summary>Metrics <small>Players, map and server FPS for Prometheus</small></summary>
+        <div class="d-body">
+          <p>Every server keeps count of players and bots, the running map, uptime and its own frames per second, in Prometheus format. The numbers come from the game itself, so they are there for a LAN-only server too. Nothing listens until you ask for a port:</p>
+          <pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | CS_METRICS_PORT=9137 bash</pre>
+          <pre>$ curl -s http://127.0.0.1:9137/metrics
+hlds_players{type="human"} 3
+hlds_players{type="bot"} 7
+hlds_map_info{map="scoutzknivez"} 1
+hlds_server_fps 870.4
+hlds_up 1</pre>
+          <p class="note">The port is published on the machine's own loopback address only; <code>CS_METRICS_BIND</code> names another. There is no login on it, so keep it off the internet. Without a port, <code>podman exec scoutzknivez cat /hlds/.runtime/metrics.prom</code> shows the same numbers.</p>
+        </div>
+      </details>
+
       <details id="nipper">
         <summary>Nipper Friday <small>Knife-only mode on NIPPER's maps</small></summary>
         <div class="d-body">
@@ -787,7 +819,7 @@ footer p{max-width:60em}
       <details>
         <summary>FastDL <small>Fast map downloads for clients</small></summary>
         <div class="d-body">
-          <p>Custom maps (and Quake sounds, if you add them) are served from this site over HTTP for fast client downloads. That is this project's own server. A server you install sends custom content itself until you set <code>FASTDL_URL</code> (container environment, or on the installer's command line) to a host that serves your <code>cstrike/</code> files. NIPPER's maps aren't served here (see <a href="#nipper">Nipper Friday</a>).</p>
+          <p>Custom maps (and Quake sounds, if you add them) are served from this site over HTTP for fast client downloads. That is this project's own server. A server you install sends custom content itself until you set <code>FASTDL_URL</code> (container environment, or on the installer's command line) to a host that serves your <code>cstrike/</code> files, or run the installer with <code>CS_FASTDL=1</code>, which serves them from the same machine (see <a href="#lankit">LAN kit</a>). NIPPER's maps aren't served here (see <a href="#nipper">Nipper Friday</a>).</p>
           <pre>https://kevintcoughlin.com/cs-server/cstrike/</pre>
         </div>
       </details>
