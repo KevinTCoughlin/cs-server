@@ -58,7 +58,7 @@ new g_szPendingMap[64];
 new bool:g_bSwitchPending;
 
 public plugin_init() {
-    register_plugin("ScoutzKnivez", "1.3", "cs-server");
+    register_plugin("ScoutzKnivez", "1.4", "cs-server");
 
     load_mode();
 
@@ -67,12 +67,35 @@ public plugin_init() {
     RegisterHam(Ham_Touch, "weaponbox", "on_weaponbox_touch");
 
     register_logevent("on_round_end", 2, "1=Round_End");
+
+    new pcvarQuota = get_cvar_pointer("bot_quota");
+    if (pcvarQuota && bots_off()) {
+        hook_cvar_change(pcvarQuota, "on_bot_quota");
+    }
     register_srvcmd("sk_switchmode", "cmd_switchmode");
 }
 
 public plugin_cfg() {
     // Queue after the engine's startup execs so the mode's settings win.
     set_task(0.5, "exec_mode_cfg");
+}
+
+// Bots off: server.cfg sets bot_quota on every map (the engine runs it at
+// map start, exec_mode_cfg again half a second later), and the game adds a
+// bot on the very next frame. Until exec_mode_cfg put the 0 back, a bot
+// joined on every start and was kicked again; a map change shortly after
+// has crashed in that bot's navigation code (CNavArea::UpdateOnOpenList).
+// Holding the cvar at 0 as it changes leaves no frame for a bot to join.
+public on_bot_quota(pcvar, const szOld[], const szNew[]) {
+    if (str_to_num(szNew) != 0) {
+        set_pcvar_num(pcvar, 0);
+    }
+}
+
+bool:bots_off() {
+    new szBots[4];
+    get_localinfo("sk_bots", szBots, charsmax(szBots));
+    return bool:equal(szBots, "0");
 }
 
 load_mode() {
@@ -111,9 +134,7 @@ public exec_mode_cfg() {
             server_cmd("exec %s", szCfg);
         }
     }
-    new szBots[4];
-    get_localinfo("sk_bots", szBots, charsmax(szBots));
-    if (equal(szBots, "0")) {
+    if (bots_off()) {
         server_cmd("bot_quota 0");
     }
     log_amx("[SK] mode: %s%s", g_szMode, g_bGrenadeMap ? " (grenade pickups on)" : "");

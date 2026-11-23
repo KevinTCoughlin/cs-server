@@ -561,6 +561,13 @@ if [[ "${players}" -gt 1 ]]; then
     fail "bots joined with BOTS=0 after a map change (players: ${players})"
 fi
 expect_cvar bot_quota 0 "BOTS=0 survives server.cfg being re-run"
+# Not even for a moment: server.cfg sets bot_quota on every map start, and a
+# bot that joined before the plugin put the 0 back was kicked half a second
+# later. A map change soon after has crashed in that bot's navigation code.
+# (websitebot.amxx's spectator is the one fake client allowed.)
+if joined=$(tr -d '\r' < "${LOG}" | grep -a '<BOT><>" joined team "\(CT\|TERRORIST\)"'); then
+    fail "a bot joined a team with BOTS=0: ${joined}"
+fi
 # This boot has no METRICS_PORT: nothing listens, the file is still kept.
 if "${ENGINE}" exec "${NAME}" bash -c 'exec 3<>/dev/tcp/127.0.0.1/9137' 2>/dev/null; then
     fail "the metrics endpoint listens without METRICS_PORT"
