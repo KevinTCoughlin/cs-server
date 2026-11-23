@@ -2,7 +2,10 @@
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-11-22
+
 ### Fixed
+- **A server with `SERVER_IP` no longer crash-loops when it starts before the network.** After a reboot the service can start before Wi-Fi or DHCP has delivered the address; the engine then could not bind (`Couldn't allocate dedicated server IP port`) and was restarted until it could. The entrypoint now waits for the address to be on an interface, up to `SERVER_IP_WAIT` seconds (default 30)
 - **A server with bots off could crash on a map change soon after it started.** `server.cfg` sets `bot_quota` at every map start, so with `BOTS=0` one bot joined and was kicked again half a second later, when the plugin put the quota back to 0. A map change within a second or two of that has crashed in the game library's bot navigation code (`CNavArea::UpdateOnOpenList`); it failed the amd64 end-to-end test in the 1.4.0 and 1.4.1 release runs. The plugin now holds `bot_quota` at 0 as it changes, so no bot joins at all (#122)
 
 ## [1.4.1] - 2026-11-22
@@ -170,7 +173,8 @@ First tagged release. Images for it are on ghcr.io as `1.0.0`, `1.0` and `1` (`l
 - .env.example documenting environment variables
 - Quadlet systemd unit file shipped in-repo
 
-[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/KevinTCoughlin/cs-server/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/KevinTCoughlin/cs-server/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.2.1...v1.3.0

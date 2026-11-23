@@ -144,6 +144,7 @@ tests/
 | `PORT` | `27015` | Server port |
 | `BOTS` | `1` | Enable ZBots (1=on, 0=off) |
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
+| `SERVER_IP_WAIT` | `30` | Seconds the entrypoint waits for `SERVER_IP` to be bindable (a UDP bind through perl; `HLDS_BIND_CHECK` stubs it in tests) before starting anyway with a warning |
 | `MODE` | `scoutz` | Startup game mode: `scoutz`, `knife`, `vanilla` or `match` (vanilla and match default `MAP` to `de_dust2` and `MAPCYCLE` to `mapcycle-dust2.txt`) |
 | `FASTDL_URL` | empty | http(s) URL for `sv_downloadurl`; passed on the HLDS command line, never set in `server.cfg` (re-exec'd every map) |
 | `LOGS` | `1` | `+log on`; files land in the state volume (`/hlds/state/logs`) |

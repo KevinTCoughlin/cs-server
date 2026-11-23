@@ -33,6 +33,8 @@ LOGS="${LOGS:-1}"
 LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"
 LOGADDRESS="${LOGADDRESS:-}"
 SERVER_IP="${SERVER_IP:-}"
+# How long to wait for SERVER_IP to be on an interface before starting.
+SERVER_IP_WAIT="${SERVER_IP_WAIT:-30}"
 # Prometheus endpoint: off unless METRICS_PORT is set.
 METRICS_PORT="${METRICS_PORT:-}"
 METRICS_BIND="${METRICS_BIND:-0.0.0.0}"
@@ -137,6 +139,7 @@ validate_filename "MAP" "${MAP}"
 validate_filename "MAPCYCLE" "${MAPCYCLE}"
 validate_url "FASTDL_URL" "${FASTDL_URL}"
 validate_ipv4 "SERVER_IP" "${SERVER_IP}"
+validate_integer "SERVER_IP_WAIT" "${SERVER_IP_WAIT}" 0 600
 if [[ -n "${LOGADDRESS}" && "${LOGS}" != "1" ]]; then
     echo "[entrypoint] LOGADDRESS needs LOGS=1" >&2
     exit 1
@@ -318,6 +321,31 @@ fi
 # Without +ip HLDS takes the address its hostname resolves to. On host
 # networking that can be a VPN or bridge address, and Steam then never
 # answers; SERVER_IP names the address to bind and report.
+#
+# The address has to be on an interface first. After a reboot a service can
+# start before Wi-Fi or DHCP has delivered it; the engine then cannot bind,
+# stops with "Couldn't allocate dedicated server IP port" and is restarted
+# in a loop until the address shows up. Wait for it instead (SERVER_IP_WAIT
+# seconds, 0 to skip), by trying to bind a UDP socket to it.
+address_is_local() {
+    # shellcheck disable=SC2016 # $ARGV is perl's
+    "${HLDS_BIND_CHECK:-perl}" -MIO::Socket::INET \
+        -e 'exit(IO::Socket::INET->new(LocalAddr => $ARGV[0], Proto => "udp") ? 0 : 1)' "$1" 2>/dev/null
+}
+if [[ -n "${SERVER_IP}" && "$((10#${SERVER_IP_WAIT}))" -gt 0 ]]; then
+    waited=0
+    until address_is_local "${SERVER_IP}"; do
+        if [[ "${waited}" -eq 0 ]]; then
+            echo "[entrypoint] Waiting up to ${SERVER_IP_WAIT}s for ${SERVER_IP} to be on an interface"
+        fi
+        if [[ "${waited}" -ge "$((10#${SERVER_IP_WAIT}))" ]]; then
+            echo "[entrypoint] WARNING: ${SERVER_IP} is still not on any interface; starting anyway" >&2
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+fi
 if [[ -n "${SERVER_IP}" ]]; then
     IP_ARGS=(+ip "${SERVER_IP}")
 else
