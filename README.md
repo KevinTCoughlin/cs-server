@@ -25,7 +25,7 @@ Requires [Podman](https://podman.io/getting-started/installation) (rootless) or 
 That runs the newest build of `main` (`:latest`). To run a release instead, name it; see [Releases, upgrade and rollback](#releases-upgrade-and-rollback):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.4.1/install.sh | CS_SERVER_VERSION=1.4.1 bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.4.2/install.sh | CS_SERVER_VERSION=1.4.2 bash
 ```
 
 To uninstall: `curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh | bash -s -- --uninstall`
@@ -437,6 +437,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `LOG_RETENTION_DAYS` | `7` | Delete log files older than this many days (`0` keeps them all) |
 | `LOGADDRESS` | empty | `host:port` of a log receiver such as HLstatsX (`logaddress_add`); needs `LOGS=1` |
 | `SERVER_IP` | empty | IPv4 address to bind and report to Steam (`+ip`); see [Host networking and Steam](#host-networking-and-steam) |
+| `SERVER_IP_WAIT` | `30` | Seconds to wait at start for `SERVER_IP` to be on an interface (after a reboot the service can start before the network has it); 0 does not wait |
 
 Startup rejects invalid booleans, out-of-range ports/player counts, unsafe
 map or mapcycle filenames and malformed FastDL URLs or log addresses instead
@@ -819,7 +820,7 @@ Each release is a git tag (`v1.0.0`), a [GitHub release](https://github.com/Kevi
 **Upgrade** by running the installer again with the new version. Config in `~/.config/cs-server/` is kept, the unit is rewritten, and a running server is restarted onto the new image (players get the 30 second countdown):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.4.1/install.sh | CS_SERVER_VERSION=1.4.1 bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.4.2/install.sh | CS_SERVER_VERSION=1.4.2 bash
 ```
 
 **From 1.0.x to 1.1.0, re-run the installer** rather than editing `Image=`:

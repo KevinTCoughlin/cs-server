@@ -46,6 +46,7 @@ expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.c
 expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.com/$(printf 'a%.0s' {1..120})"
 
 expect_invalid "SERVER_IP must be an IPv4 address" SERVER_IP=example.com
+expect_invalid "SERVER_IP_WAIT must be an integer from 0 to 600" SERVER_IP=192.168.1.5 SERVER_IP_WAIT=forever
 expect_invalid "SERVER_IP must be an IPv4 address" SERVER_IP=192.168.1.256
 expect_invalid "SERVER_IP must be an IPv4 address" SERVER_IP=192.168.1
 expect_invalid "SERVER_IP must be an IPv4 address" "SERVER_IP=192.168.1.5;quit"
@@ -254,7 +255,47 @@ case "${args}" in
     *"+ip "*) printf 'Expected no +ip without SERVER_IP, got: %s\n' "${args}" >&2; exit 1 ;;
 esac
 
-run_stub SERVER_IP=192.168.1.5
+# SERVER_IP: the address must be on an interface before HLDS starts. The
+# check is stubbed: this machine does not have that address.
+cat > "${WORK_DIR}/bind-ok" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+cat > "${WORK_DIR}/bind-later" <<'EOF'
+#!/bin/sh
+count=$(cat "${0%/*}/bind-count" 2>/dev/null || echo 0)
+echo $((count + 1)) > "${0%/*}/bind-count"
+[ "${count}" -ge 2 ]
+EOF
+cat > "${WORK_DIR}/bind-never" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "${WORK_DIR}"/bind-*
+run_stub SERVER_IP=192.168.1.5 HLDS_BIND_CHECK="${WORK_DIR}/bind-later"
+output=$(cat "${WORK_DIR}/output")
+if [[ "${status}" -ne 17 || "${output}" != *"Waiting up to 30s for 192.168.1.5"* || "${output}" == *"starting anyway"* ]]; then
+    printf 'Expected a wait for SERVER_IP and then a start, got %d: %s\n' "${status}" "${output}" >&2
+    exit 1
+fi
+if [[ "$(cat "${WORK_DIR}/bind-count")" -ne 3 ]]; then
+    printf 'Expected the address to be tried until it was there (3 checks)\n' >&2
+    exit 1
+fi
+run_stub SERVER_IP=192.168.1.5 SERVER_IP_WAIT=1 HLDS_BIND_CHECK="${WORK_DIR}/bind-never"
+output=$(cat "${WORK_DIR}/output")
+if [[ "${status}" -ne 17 || "${output}" != *"192.168.1.5 is still not on any interface; starting anyway"* ]]; then
+    printf 'Expected a warning and a start after SERVER_IP_WAIT, got %d: %s\n' "${status}" "${output}" >&2
+    exit 1
+fi
+run_stub SERVER_IP=192.168.1.5 SERVER_IP_WAIT=0 HLDS_BIND_CHECK="${WORK_DIR}/bind-never"
+output=$(cat "${WORK_DIR}/output")
+if [[ "${status}" -ne 17 || "${output}" == *"Waiting"* ]]; then
+    printf 'Expected no wait with SERVER_IP_WAIT=0, got %d: %s\n' "${status}" "${output}" >&2
+    exit 1
+fi
+
+run_stub SERVER_IP=192.168.1.5 HLDS_BIND_CHECK="${WORK_DIR}/bind-ok"
 args=$(cat "${WORK_DIR}/args")
 case "${args}" in
     *" +port 27015 +ip 192.168.1.5 "*) ;;
