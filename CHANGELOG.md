@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **A server with bots off could crash on a map change soon after it started.** `server.cfg` sets `bot_quota` at every map start, so with `BOTS=0` one bot joined and was kicked again half a second later, when the plugin put the quota back to 0. A map change within a second or two of that has crashed in the game library's bot navigation code (`CNavArea::UpdateOnOpenList`); it failed the amd64 end-to-end test in the 1.4.0 and 1.4.1 release runs. The plugin now holds `bot_quota` at 0 as it changes, so no bot joins at all (#122)
+
 ## [1.4.1] - 2026-11-22
 
 ### Changed
