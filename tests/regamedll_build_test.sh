@@ -20,8 +20,14 @@ PATCH=${ROOT}/scripts/regamedll-nav-openlist.patch
 SCRIPT=${ROOT}/scripts/build-regamedll.sh
 
 [[ -f ${PATCH} ]] || fail "missing ${PATCH}"
-assert_contains "patch is the upstream open-list fix" \
-    "$(cat "${PATCH}")" "detach from the A* open list"
+assert_contains "patch value-initializes the open-list marker" \
+    "$(cat "${PATCH}")" "unsigned int m_openMarker = 0;"
+assert_not_contains "patch does not add the UpdateOnOpenList early return" \
+    "$(cat "${PATCH}")" "if (!IsOpen())"
+assert_not_contains "patch does not unlink in the destructor" \
+    "$(cat "${PATCH}")" "~CNavArea"
+assert_not_contains "patch does not clear the list in DestroyNavigationMap" \
+    "$(cat "${PATCH}")" "ClearSearchLists"
 assert_contains "Containerfile rebuilds cs.so from the patch" \
     "$(cat "${ROOT}/Containerfile")" "scripts/build-regamedll.sh"
 assert_contains "Containerfile passes the patch" \
@@ -45,12 +51,13 @@ if [ "$1" = clone ]; then
     unset prev
     mkdir -p "${dest}/regamedll/game_shared/bot" "${dest}/regamedll/extra"
     : > "${dest}/regamedll/game_shared/bot/nav_area.cpp"
+    : > "${dest}/regamedll/game_shared/bot/nav_area.h"
 fi
 if [ "$1" = "-C" ]; then
     dir=$2
     if [ "$3" = apply ]; then
-        printf '%s\n' '// detach from the A* open list before the memory is freed' \
-            >> "${dir}/regamedll/game_shared/bot/nav_area.cpp"
+        printf '%s\n' 'unsigned int m_openMarker = 0;' \
+            >> "${dir}/regamedll/game_shared/bot/nav_area.h"
     fi
 fi
 exit 0

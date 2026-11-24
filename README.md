@@ -7,7 +7,7 @@ Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack.
 ## Stack
 
 - **ReHLDS** 3.15.0.896 — reverse-engineered engine
-- **ReGameDLL_CS** 5.30.0.814 — reverse-engineered game DLL, rebuilt with the navigation open-list fix from [rehlds/ReGameDLL_CS#1202](https://github.com/rehlds/ReGameDLL_CS/pull/1202)
+- **ReGameDLL_CS** 5.30.0.814 — reverse-engineered game DLL, rebuilt so a navigation area's pathfinding links start empty ([rehlds/ReGameDLL_CS#1202](https://github.com/rehlds/ReGameDLL_CS/pull/1202) was closed unmerged; this is the initialization from that change)
 - **Metamod-R** 1.3.0.149 — plugin loader
 - **AMX Mod X** 1.10.0 (build 5488) — scripting platform
 - **ReAPI** 5.29.0.358 — extended API

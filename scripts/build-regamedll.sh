@@ -9,11 +9,15 @@
 #   scripts/build-regamedll.sh <version> <dest-cs.so> <patch>
 #
 # The 5.30.0.814 release (still the latest) leaves CNavArea's A* open-list
-# links uninitialized. CNavArea::UpdateOnOpenList then follows a garbage
-# m_prevOpen and the server segfaults. rehlds/ReGameDLL_CS#1202 fixes that
-# and was closed without being merged; nothing newer has released the change.
-# Nav areas are created with `new CNavArea`, which calls Initialize(), so the
-# patch covers meshes loaded from a .nav file as well as generated ones.
+# fields uninitialized. m_masterMarker starts at 1 and never stays 0, so a
+# leftover m_openMarker that equals the live generation makes IsOpen() true
+# and UpdateOnOpenList follows a garbage m_prevOpen. The patch value-initializes
+# those three fields. rehlds/ReGameDLL_CS#1202 did that and also unlinked in
+# the destructor, cleared the list in DestroyNavigationMap, and returned early
+# from UpdateOnOpenList. That pull request was closed unmerged. The extra
+# three changes are not in this patch: the early return hides a bad call, and
+# map teardown does not read the open list (the next search drops the head
+# before walking it). tests/nav_openlist_repro.cpp is the deterministic case.
 #
 # Built with the i686 cross compiler, which exists on amd64 and arm64, and
 # with libstdc++ linked in. hlds_run puts HLDS's own, much older libstdc++ on
@@ -93,9 +97,9 @@ done
 [[ ${cloned} -eq 1 ]] || die "could not clone ReGameDLL_CS ${version}"
 
 git -C "${src}" apply "${patch}"
-grep -q -F 'detach from the A* open list' \
-    "${src}/regamedll/game_shared/bot/nav_area.cpp" \
-    || die "patch did not apply to nav_area.cpp"
+grep -q -F 'unsigned int m_openMarker = 0;' \
+    "${src}/regamedll/game_shared/bot/nav_area.h" \
+    || die "patch did not apply to nav_area.h"
 
 log "building ${version} ($(nproc) jobs)"
 CC=i686-linux-gnu-gcc CXX=i686-linux-gnu-g++ \
