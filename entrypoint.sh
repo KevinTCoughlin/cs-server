@@ -14,12 +14,51 @@ if [[ -f "${GAME_ENV}" ]]; then
     # shellcheck disable=SC1090 # generated at image build
     source "${GAME_ENV}"
 fi
-MAXPLAYERS="${MAXPLAYERS:-20}"
 PORT="${PORT:-27015}"
 BOTS="${BOTS:-1}"
 NOMASTER="${NOMASTER:-0}"
+# -insecure without -nomaster. Off unless set. NOMASTER=1 already passes both.
+INSECURE="${INSECURE:-0}"
 LAN_MODE="${LAN_MODE:-0}"
+# Steam game server login token (sv_setsteamaccount). Empty: the server still
+# starts; Steam will not list a public server until one is set.
+GSLT="${GSLT:-}"
+# Day of Defeat match password. Ignored for every other game. Empty: none.
+DOD_PASSWORD="${DOD_PASSWORD:-}"
+# MODE is the Counter-Strike mode. Capture whether the operator set it before
+# the default, so an explicit MODE=pub or MODE=match can select DOD_MODE.
+mode_set=0
+if [[ -n "${MODE+x}" ]]; then
+    mode_set=1
+fi
 MODE="${MODE:-scoutz}"
+# Day of Defeat only: pub (24/7 classic) or match (6v6). Default pub.
+DOD_MODE="${DOD_MODE:-}"
+if [[ "${GAME}" == "dod" ]]; then
+    if [[ -z "${DOD_MODE}" && "${mode_set}" == "1" ]]; then
+        case "${MODE}" in
+            pub | match) DOD_MODE="${MODE}" ;;
+        esac
+    fi
+    DOD_MODE="${DOD_MODE:-pub}"
+    case "${DOD_MODE}" in
+        pub | match) ;;
+        *)
+            echo "[entrypoint] DOD_MODE must be pub or match" >&2
+            exit 1
+            ;;
+    esac
+    # Slot count is fixed at launch. 16 public, 12 for 6v6, unless MAXPLAYERS
+    # is set. The installer's unit sets it explicitly.
+    if [[ -z "${MAXPLAYERS+x}" ]]; then
+        if [[ "${DOD_MODE}" == "match" ]]; then
+            MAXPLAYERS=12
+        else
+            MAXPLAYERS=16
+        fi
+    fi
+fi
+MAXPLAYERS="${MAXPLAYERS:-20}"
 # Vanilla and match start on a stock map with the stock rotation unless told
 # otherwise.
 if [[ "${GAME}" = "cstrike" && ( "${MODE}" = "vanilla" || "${MODE}" = "match" ) ]]; then
@@ -124,6 +163,7 @@ validate_ipv4() {
 }
 
 validate_boolean "BOTS" "${BOTS}"
+validate_boolean "INSECURE" "${INSECURE}"
 validate_boolean "LOGS" "${LOGS}"
 validate_integer "LOG_RETENTION_DAYS" "${LOG_RETENTION_DAYS}" 0 3650
 validate_logaddress "LOGADDRESS" "${LOGADDRESS}"
@@ -139,6 +179,14 @@ validate_filename "MAP" "${MAP}"
 validate_filename "MAPCYCLE" "${MAPCYCLE}"
 validate_url "FASTDL_URL" "${FASTDL_URL}"
 validate_ipv4 "SERVER_IP" "${SERVER_IP}"
+if [[ -n "${GSLT}" && ! "${GSLT}" =~ ^[A-Fa-f0-9]{32}$ ]]; then
+    echo "[entrypoint] GSLT must be a 32-character hex Steam game server token" >&2
+    exit 1
+fi
+if [[ -n "${DOD_PASSWORD}" && ! "${DOD_PASSWORD}" =~ ^[A-Za-z0-9!@#^*_=+.-]{1,32}$ ]]; then
+    echo "[entrypoint] DOD_PASSWORD must be 1 to 32 characters from letters, digits, and !@#^*_=+.-" >&2
+    exit 1
+fi
 validate_integer "SERVER_IP_WAIT" "${SERVER_IP_WAIT}" 0 600
 if [[ -n "${LOGADDRESS}" && "${LOGS}" != "1" ]]; then
     echo "[entrypoint] LOGADDRESS needs LOGS=1" >&2
@@ -238,6 +286,11 @@ prepare_state() {
         cp "${STATE_DEFAULTS}/users.ini" "${STATE_DIR}/amxmodx/users.ini"
         echo "[entrypoint] Seeded ${STATE_DIR}/amxmodx/users.ini"
     fi
+    # DoDX refuses a dangling stats symlink ("Could not load stats file").
+    # An empty file is enough for it to start a new one. Never overwrite.
+    if [[ -n "${GAME_STATS:-}" && ! -e "${STATE_DIR}/amxmodx/${GAME_STATS}" ]]; then
+        : > "${STATE_DIR}/amxmodx/${GAME_STATS}"
+    fi
 }
 
 # Delete server and AMX Mod X log files older than LOG_RETENTION_DAYS.
@@ -304,7 +357,10 @@ else
 fi
 
 if [[ "${NOMASTER}" = "1" ]]; then
+    # -nomaster silences A2S_INFO. -insecure rides along, as it always has.
     MASTER_ARGS=(-nomaster -insecure)
+elif [[ "${INSECURE}" = "1" ]]; then
+    MASTER_ARGS=(-insecure)
 else
     MASTER_ARGS=()
 fi
@@ -352,6 +408,26 @@ else
     IP_ARGS=()
 fi
 
+# After the cfg execs, so a file cannot clear a token or a match password.
+GSLT_ARGS=()
+if [[ -n "${GSLT}" ]]; then
+    GSLT_ARGS=(+sv_setsteamaccount "${GSLT}")
+fi
+DOD_PASSWORD_ARGS=()
+if [[ "${GAME}" == "dod" && -n "${DOD_PASSWORD}" ]]; then
+    DOD_PASSWORD_ARGS=(+sv_password "${DOD_PASSWORD}")
+fi
+# pub.cfg or match.cfg. A later `exec match.cfg` / `exec pub.cfg` /
+# `exec match-ot.cfg` from the console switches a running server. HLTV is
+# never started: an official KTP game wants a separate 120-second-delay proxy.
+DOD_EXEC_ARGS=()
+if [[ "${GAME}" == "dod" ]]; then
+    # dodmode.amxx reads dod_mode and execs the file again once the map is up.
+    # The command-line exec is early: Day of Defeat resets the hostname and
+    # the clock after it, and the plugin puts them back.
+    DOD_EXEC_ARGS=(+localinfo dod_mode "${DOD_MODE}" +exec "${DOD_MODE}.cfg")
+fi
+
 # File logs go to the state volume (<game>/logs is a link into it). `log on`
 # must come after server.cfg, whose sv_log_onefile decides how files are cut.
 LOG_ARGS=()
@@ -379,12 +455,15 @@ HLDS_ARGS=(
     +mapcyclefile "${MAPCYCLE}"
     "${MODE_ARGS[@]}"
     +exec server.cfg
+    "${DOD_EXEC_ARGS[@]}"
     +exec banned.cfg
     +exec listip.cfg
     "${MASTER_ARGS[@]}"
     "${BOT_QUOTA_ARGS[@]}"
     "${FASTDL_ARGS[@]}"
     "${LOG_ARGS[@]}"
+    "${GSLT_ARGS[@]}"
+    "${DOD_PASSWORD_ARGS[@]}"
 )
 # On non-x86 images (arm64), scripts/i386-compat.sh installs a launcher that
 # runs the i386 hlds_linux under qemu-i386; hand it to hlds_run as the binary.

@@ -4,7 +4,7 @@
 #
 # Archive the server state volume (bans, admins, stats, logs) and restore one.
 #
-#   backup-state.sh                  back up cs-server-state and cs-server-state-*
+#   backup-state.sh                  back up cs-server-state*, dod-server-state and dod-server-*-state
 #   backup-state.sh --restore FILE  replace that volume with one archive
 #
 # Archives go to ~/cs-server-backups (CS_BACKUP_DIR), named
@@ -33,7 +33,7 @@ RUNTIME="${CS_RUNTIME:-}"
 usage() {
     cat <<EOF
 Usage:
-  backup-state.sh                 Archive cs-server-state* into ~/cs-server-backups
+  backup-state.sh                 Archive cs-server-state* and dod-server-state* into ~/cs-server-backups
   backup-state.sh --restore FILE  Put one archive back into its volume
   backup-state.sh --help
 
@@ -87,6 +87,8 @@ volume_busy() {
             name="scoutzknivez"
         elif [[ "${volume}" == cs-server-state-* ]]; then
             name="cs-server-${volume#cs-server-state-}"
+        elif [[ "${volume}" == "dod-server-state" || "${volume}" == dod-server-*-state ]]; then
+            name="${volume%-state}"
         fi
     fi
     [[ -n "${name}" ]] || return 1
@@ -118,7 +120,9 @@ list_volumes() {
     fi
     while IFS= read -r name; do
         case "${name}" in
-            cs-server-state | cs-server-state-*) printf '%s\n' "${name}" ;;
+            cs-server-state | cs-server-state-* | dod-server-state | dod-server-*-state)
+                printf '%s\n' "${name}"
+                ;;
         esac
     done <<< "${listed}"
 }

@@ -91,6 +91,7 @@ assert_contains "debian 13 backups" "${output}" "Backups: on, daily, keep 14"
 assert_contains "debian 13 install command" "${output}" "runuser -u cstest193c"
 assert_contains "debian 13 pins the runtime" "${output}" "CS_RUNTIME=podman"
 assert_contains "debian 13 turns backups on" "${output}" "CS_BACKUP=1"
+assert_not_contains "debian 13 does not install Day of Defeat" "${output}" "CS_GAME=dod"
 assert_contains "debian 13 uses the checkout installer" "${output}" "${ROOT}/install.sh"
 assert_contains "debian 13 changed nothing" "${output}" "Dry run: nothing was changed"
 if id cstest193c >/dev/null 2>&1; then
@@ -159,6 +160,34 @@ assert_contains "CS_BACKUP=0" "${output}" "Backups: off (CS_BACKUP=0)"
 output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_FASTDL=1 \
     "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1)
 assert_contains "FastDL opens its port" "${output}" "fastdl 27080/tcp"
+
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_DOD=1 \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1)
+status=$?
+expect_ok "CS_DOD=1 dry-run"
+assert_contains "dod firewall port" "${output}" "game 27015/udp, dod 27016/udp"
+assert_contains "dod unit is its own install" "${output}" "CS_GAME=dod"
+assert_contains "dod listens on 27016" "${output}" "CS_PORT=27016"
+assert_contains "dod starts in pub" "${output}" "CS_DOD_MODE=pub"
+dod_installs=$(grep -c 'CS_GAME=dod' <<< "${output}" || true)
+assert_eq "one Day of Defeat install command" "1" "${dod_installs}"
+if grep -q 'CS_MODE=' <<< "${output}"; then
+    fail "the Day of Defeat install inherited CS_MODE: ${output}"
+fi
+
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dod --dry-run 2>&1)
+status=$?
+expect_ok "--dod dry-run"
+assert_contains "--dod is CS_DOD=1" "${output}" "dod 27016/udp"
+
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_DOD=yes \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1) && status=0 || status=$?
+expect_die "bad CS_DOD" "Invalid CS_DOD"
+
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_DOD=1 CS_PORT=27016 \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1) && status=0 || status=$?
+expect_die "dod port clashes with CS" "same as CS_PORT"
 
 # firewalld that is already running wins over a ufw binary.
 cat > "${STUBS}/systemctl" <<'EOF'

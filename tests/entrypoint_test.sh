@@ -26,7 +26,11 @@ expect_invalid() {
 
 expect_invalid "BOTS must be 0 or 1" BOTS=2
 expect_invalid "NOMASTER must be 0 or 1" NOMASTER=yes
+expect_invalid "INSECURE must be 0 or 1" INSECURE=yes
 expect_invalid "LAN_MODE must be 0 or 1" LAN_MODE=-1
+expect_invalid "GSLT must be a 32-character hex" GSLT=not-a-token
+expect_invalid "GSLT must be a 32-character hex" GSLT=00112233445566778899AABBCCDDEEF
+expect_invalid "DOD_PASSWORD must be" "DOD_PASSWORD=has space"
 expect_invalid "MAXPLAYERS must be an integer from 1 to 32" MAXPLAYERS=33
 expect_invalid "MAXPLAYERS must be an integer from 1 to 32" MAXPLAYERS=999999999999999999999999999999999999
 expect_invalid "PORT must be an integer from 1 to 65535" PORT=0
@@ -174,7 +178,48 @@ case "${args}" in
     *) printf 'Expected a Day of Defeat image to start -game dod on dod_anzio, got: %s\n' "${args}" >&2; exit 1 ;;
 esac
 case "${args}" in
-    *sk_mode* | *bot_quota*) printf 'Day of Defeat must not get mode or bot arguments, got: %s\n' "${args}" >&2; exit 1 ;;
+    *"+maxplayers 16 "*"+exec server.cfg +localinfo dod_mode pub +exec pub.cfg +exec banned.cfg"*) ;;
+    *) printf 'Expected Day of Defeat pub defaults (16 slots, exec pub.cfg), got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+case "${args}" in
+    *sk_mode* | *bot_quota* | *sv_setsteamaccount* | *sv_password* | *-insecure*)
+        printf 'Day of Defeat pub must not get mode, bot, token, password or -insecure, got: %s\n' "${args}" >&2
+        exit 1
+        ;;
+esac
+expect_invalid "DOD_MODE must be pub or match" HLDS_GAME_ENV="${WORK_DIR}/game.env" DOD_MODE=knife
+run_stub HLDS_GAME_ENV="${WORK_DIR}/game.env" DOD_MODE=match
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"+maxplayers 12 "*"+localinfo dod_mode match +exec match.cfg "*) ;;
+    *) printf 'Expected DOD_MODE=match to be 12 slots exec match.cfg, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+run_stub HLDS_GAME_ENV="${WORK_DIR}/game.env" MODE=match
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"+exec match.cfg "*) ;;
+    *) printf 'Expected MODE=match on Day of Defeat to exec match.cfg, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+run_stub HLDS_GAME_ENV="${WORK_DIR}/game.env" DOD_MODE=match MAXPLAYERS=20
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"+maxplayers 20 "*) ;;
+    *) printf 'Expected an explicit MAXPLAYERS to win, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+run_stub HLDS_GAME_ENV="${WORK_DIR}/game.env" DOD_PASSWORD=scrim
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *" +sv_password scrim") ;;
+    *) printf 'Expected DOD_PASSWORD on the command line, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+run_stub HLDS_GAME_ENV="${WORK_DIR}/game.env" GSLT=00112233445566778899AABBCCDDEEFF INSECURE=1
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"-insecure "*"+sv_setsteamaccount 00112233445566778899AABBCCDDEEFF") ;;
+    *) printf 'Expected -insecure and the GSLT, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+case "${args}" in
+    *-nomaster*) printf 'INSECURE=1 must not pass -nomaster, got: %s\n' "${args}" >&2; exit 1 ;;
 esac
 
 # Condition Zero has ReGameDLL's bots but not the ScoutzKnivez plugin.

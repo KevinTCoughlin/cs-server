@@ -40,6 +40,7 @@ jobs:
           bash tests/entrypoint_test.sh
           bash tests/shutdown_test.sh
           bash tests/mapcycle_test.sh
+          bash tests/dod_config_test.sh
           bash tests/mounts_test.sh
           bash tests/mode_test.sh
           bash tests/fetch_maps_test.sh
