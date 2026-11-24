@@ -51,6 +51,7 @@ jobs:
           bash tests/backup_test.sh
           bash tests/backup_docker_test.sh
           bash tests/compose_test.sh
+          bash tests/regamedll_build_test.sh
 
   bootstrap:
     name: Bootstrap dry-run (${{ matrix.image }})
