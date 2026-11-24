@@ -83,10 +83,15 @@ expect_ok "debian 13 dry-run"
 assert_contains "debian 13 user" "${output}" "Deploy user: cstest193c (will create)"
 assert_contains "debian 13 engine" "${output}" "Engine: podman (Debian 13 ships Podman 5)"
 assert_contains "debian 13 packages" "${output}" "podman uidmap"
+assert_contains "debian 13 installs curl before downloads" "${output}" "install ca-certificates and curl before anything is fetched"
 assert_not_contains "debian 13 is not Docker" "${output}" "docker.io"
 assert_contains "debian 13 leaves sshd" "${output}" "authentication unchanged"
 assert_contains "debian 13 firewall" "${output}" "Firewall: nftables, SSH 22/tcp, game 27015/udp, query-flood unit"
+assert_contains "debian 13 reloads both nftables units" "${output}" "Firewall reload: systemctl reload cs-server-input cs-server-firewall"
 assert_contains "debian 13 linger" "${output}" "Linger: loginctl enable-linger cstest193c"
+assert_contains "debian 13 pulls network-online into boot" "${output}" "Boot: systemctl add-wants multi-user.target network-online.target"
+assert_contains "debian 13 clears an inherited DoD mode" "${output}" "-u CS_DOD_MODE"
+assert_not_contains "debian 13 does not pass a DoD mode" "${output}" "CS_DOD_MODE="
 assert_contains "debian 13 backups" "${output}" "Backups: on, daily, keep 14"
 assert_contains "debian 13 install command" "${output}" "runuser -u cstest193c"
 assert_contains "debian 13 pins the runtime" "${output}" "CS_RUNTIME=podman"
@@ -103,11 +108,13 @@ expect_ok "debian 12 dry-run"
 assert_contains "debian 12 engine" "${output}" "Engine: docker (Debian 12's Podman is 4.3, older than Quadlet (4.4))"
 assert_contains "debian 12 packages" "${output}" "docker.io"
 assert_not_contains "debian 12 does not install podman" "${output}" "podman uidmap"
+assert_not_contains "debian 12 docker does not wait on network-online" "${output}" "add-wants multi-user.target network-online.target"
 
 run_boot "${UBUNTU}" --user cstest193c --dry-run
 expect_ok "ubuntu 24.04 dry-run"
 assert_contains "ubuntu engine" "${output}" "Engine: podman (Ubuntu 24.04 ships Podman 4.9; health-gated auto-update rollback needs Podman 5)"
 assert_contains "ubuntu packages" "${output}" "podman uidmap"
+assert_contains "ubuntu pulls network-online into boot" "${output}" "Boot: systemctl add-wants multi-user.target network-online.target"
 
 # ssh-keygen and mktemp, and nothing else the host firewall would add.
 SSH_TOOLS="${WORK}/ssh-tools"
@@ -174,12 +181,46 @@ assert_eq "one Day of Defeat install command" "1" "${dod_installs}"
 if grep -q 'CS_MODE=' <<< "${output}"; then
     fail "the Day of Defeat install inherited CS_MODE: ${output}"
 fi
+mapfile -t install_cmds < <(grep -F 'runuser -u' <<< "${output}")
+assert_eq "CS and Day of Defeat each get a command" "2" "${#install_cmds[@]}"
+assert_not_contains "pub default is not passed to Counter-Strike" "${install_cmds[0]}" "CS_DOD_MODE="
+case "${install_cmds[1]}" in
+    *'-u CS_DOD_MODE'*'CS_DOD_MODE=pub'*) ;;
+    *) fail "Day of Defeat command must clear CS_DOD_MODE and then set pub: ${install_cmds[1]}" ;;
+esac
 
 output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 \
     "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dod --dry-run 2>&1)
 status=$?
 expect_ok "--dod dry-run"
 assert_contains "--dod is CS_DOD=1" "${output}" "dod 27016/udp"
+
+# An inherited DoD mode used to reach the Counter-Strike install.sh, which
+# exits when CS_DOD_MODE is set for any game other than Day of Defeat.
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 \
+    CS_DOD_MODE=match CS_DOD_PASSWORD=scrim \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dod --dry-run 2>&1)
+status=$?
+expect_ok "DoD mode stays on the DoD install"
+mapfile -t install_cmds < <(grep -F 'runuser -u' <<< "${output}")
+assert_eq "mode leak: two install commands" "2" "${#install_cmds[@]}"
+assert_not_contains "Counter-Strike command has no CS_DOD_MODE value" "${install_cmds[0]}" "CS_DOD_MODE="
+assert_contains "Counter-Strike command clears CS_DOD_MODE" "${install_cmds[0]}" "-u CS_DOD_MODE"
+assert_not_contains "Counter-Strike command has no CS_DOD_PASSWORD value" "${install_cmds[0]}" "CS_DOD_PASSWORD="
+assert_contains "Counter-Strike command clears CS_DOD_PASSWORD" "${install_cmds[0]}" "-u CS_DOD_PASSWORD"
+case "${install_cmds[1]}" in
+    *'-u CS_DOD_MODE'*'CS_DOD_MODE=match'*'CS_DOD_PASSWORD=scrim'*) ;;
+    *) fail "Day of Defeat command must set the mode after clearing it: ${install_cmds[1]}" ;;
+esac
+
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_DOD_MODE=match \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1)
+status=$?
+expect_ok "inherited CS_DOD_MODE without --dod still plans Counter-Strike"
+mapfile -t install_cmds < <(grep -F 'runuser -u' <<< "${output}")
+assert_eq "no second install without --dod" "1" "${#install_cmds[@]}"
+assert_not_contains "inherited mode is not passed to Counter-Strike" "${install_cmds[0]}" "CS_DOD_MODE="
+assert_contains "inherited mode is cleared" "${install_cmds[0]}" "-u CS_DOD_MODE"
 
 output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_DOD=yes \
     "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1) && status=0 || status=$?
@@ -202,6 +243,8 @@ chmod +x "${STUBS}/systemctl" "${STUBS}/ufw"
 output=$(env -i PATH="${STUBS}" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 \
     "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1)
 assert_contains "running firewalld is left in place" "${output}" "Firewall: firewalld, SSH 22/tcp"
+assert_contains "firewalld still reloads the query-flood unit" "${output}" "Firewall reload: systemctl reload cs-server-firewall"
+assert_not_contains "firewalld does not reload the drop-policy unit" "${output}" "cs-server-input"
 
 # ufw, when firewalld is not running, is used instead of a second filter.
 cat > "${STUBS}/systemctl" <<'EOF'
@@ -213,5 +256,24 @@ output=$(env -i PATH="${STUBS}" CS_OS_RELEASE="${UBUNTU}" CS_SSH_PORT=22 \
     "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1)
 assert_contains "ufw is used when it is installed" "${output}" "Firewall: ufw, SSH 22/tcp"
 assert_not_contains "ufw does not also install the drop policy" "${output}" "Firewall: nftables"
+assert_contains "ufw still reloads the query-flood unit" "${output}" "Firewall reload: systemctl reload cs-server-firewall"
+assert_not_contains "ufw does not reload the drop-policy unit" "${output}" "cs-server-input"
+
+# The real run (below the dry-run exit) installs curl before it writes
+# firewall files, and pulls network-online in before install.sh.
+main=$(awk 'found { print } $0 == "parse_args \"$@\"" { found = 1 }' "${ROOT}/ops/bootstrap-vps.sh")
+step_at() {
+    local name="$1" n
+    n=$(printf '%s\n' "${main}" | grep -n -x "${name}" | head -1 | cut -d: -f1)
+    [[ -n "${n}" ]] || fail "main does not call ${name}"
+    printf '%s\n' "${n}"
+}
+curl_at=$(step_at ensure_curl)
+fw_at=$(step_at apply_firewall)
+boot_at=$(step_at enable_network_online)
+install_at=$(step_at run_installer)
+if ((curl_at >= fw_at || fw_at >= boot_at || boot_at >= install_at)); then
+    fail "bootstrap call order: ensure_curl=${curl_at} apply_firewall=${fw_at} enable_network_online=${boot_at} run_installer=${install_at}"
+fi
 
 printf 'bootstrap tests passed\n'

@@ -4,11 +4,18 @@
 #
 # One-time setup for a fresh KVM VPS, then the existing installer.
 #
+#   sudo apt-get update
+#   sudo apt-get install -y ca-certificates curl
 #   curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/ops/bootstrap-vps.sh \
 #     | sudo bash -s -- --ssh-key "ssh-ed25519 AAAA... you@host"
 #
-# Idempotent: a second run creates nothing that is already there. --dry-run
-# prints the plan and changes nothing (this is what CI runs in a container).
+# A minimal image (RackNerd's Debian 13) has apt and no curl. The two apt
+# lines above are how this file is fetched. Running the file itself installs
+# ca-certificates and curl before it downloads anything else.
+#
+# Idempotent: a second run creates nothing that is already there, and reloads
+# the nftables units so a newly added port is applied. --dry-run prints the
+# plan and changes nothing (this is what CI runs in a container).
 #
 # Hosts:
 #   Debian 13     distro Podman 5 (recommended)
@@ -22,15 +29,23 @@
 #      later, separate step: it refuses to run until the deploy user has a
 #      valid authorized key and sudo access, and it checks sshd with sshd -t
 #      before reloading
-#   4. Install Podman or Docker, from the distro, after reading the Podman
-#      version when Podman is already installed
+#   4. Install ca-certificates and curl when either is missing. Install
+#      Podman or Docker from the distro, after reading the Podman version
+#      when Podman is already installed
 #   5. Enable unattended-upgrades and fail2ban's sshd jail
-#   6. Install the query-flood nftables unit. Allow SSH and 27015/udp
-#      (and 27016/udp when CS_DOD=1, and the FastDL port when CS_FASTDL=1)
-#      with nftables, or with ufw when ufw is installed, or with firewalld
-#      when firewalld is already running
-#   7. loginctl enable-linger for the deploy user
-#   8. Run install.sh as that user (CS_BACKUP=1 unless CS_BACKUP=0)
+#   6. Install the query-flood nftables unit and reload it, so a second run
+#      picks up new ports. Allow SSH and 27015/udp (and 27016/udp when
+#      CS_DOD=1, and the FastDL port when CS_FASTDL=1) with nftables, or with
+#      ufw when ufw is installed, or with firewalld when firewalld is already
+#      running. The nftables input policy is reloaded with the query-flood unit
+#   7. loginctl enable-linger for the deploy user. On Podman, also
+#      systemctl add-wants multi-user.target network-online.target: rootless
+#      Quadlets wait for network-online, and with linger that wait runs out
+#      the network-online timeout when nothing else pulls the target into boot
+#   8. Run install.sh as that user (CS_BACKUP=1 unless CS_BACKUP=0).
+#      CS_DOD_MODE and CS_DOD_PASSWORD are passed only to the Day of Defeat
+#      install. An inherited value is removed from the Counter-Strike install,
+#      which exits when it sees one
 #
 # --no-install does the host setup and prints an install.sh command whose
 # path still exists after this process exits (/usr/local/lib/cs-server/install.sh
@@ -58,6 +73,10 @@ GAME_PORT="${CS_PORT:-27015}"
 # Day of Defeat beside Counter-Strike: its own install on 27016/udp.
 DOD="${CS_DOD:-0}"
 DOD_PORT="${CS_DOD_PORT:-27016}"
+# install.sh exits when these are set for any game other than Day of Defeat.
+# Every install.sh invocation clears them; the Day of Defeat environment sets
+# them again afterwards. GNU env applies -u before NAME=VALUE.
+DOD_SCOPED_VARS=(CS_DOD_MODE CS_DOD_PASSWORD)
 FASTDL_PORT="${CS_FASTDL_PORT:-27080}"
 SSH_KEYS=()
 ENGINE=""
@@ -110,8 +129,9 @@ after both succeed.
 Environment (passed through to install.sh when set):
   CS_SERVER_VERSION, CS_SERVER_IMAGE, CS_PORT, CS_FASTDL, CS_FASTDL_PORT,
   CS_MODE, CS_BOTS, CS_PROFILE, SERVER_IP, CS_RCON, CS_GAME, CS_INSTANCE,
-  CS_BACKUP (default 1), CS_SSH_PORT, CS_DOD, CS_DOD_PORT, CS_DOD_MODE,
-  CS_DOD_GSLT, CS_DOD_PASSWORD, CS_GSLT
+  CS_BACKUP (default 1), CS_SSH_PORT, CS_DOD, CS_DOD_PORT, CS_DOD_GSLT, CS_GSLT
+  CS_DOD_MODE (pub or match) and CS_DOD_PASSWORD are Day of Defeat only.
+  They are removed from the Counter-Strike install.
 EOF
     return 0
 }
@@ -445,6 +465,7 @@ save_installer() {
     fi
     install -d -m 755 /usr/local/lib/cs-server
     tmp=$(mktemp)
+    ensure_curl
     curl -fsSL "${RAW_BASE}/install.sh" -o "${tmp}"
     install -m 644 "${tmp}" "${INSTALLER_STORE}"
     rm -f "${tmp}"
@@ -504,8 +525,11 @@ build_dod_install_env() {
 }
 
 print_install_command() {
-    local installer="$1" item
+    local installer="$1" item name
     printf 'runuser -u %q -- env' "${DEPLOY_USER}"
+    for name in "${DOD_SCOPED_VARS[@]}"; do
+        printf ' -u %q' "${name}"
+    done
     for item in "${INSTALL_ENV[@]}"; do
         printf ' %q' "${item}"
     done
@@ -524,10 +548,19 @@ print_plan() {
     fi
     info "Engine: ${ENGINE} (${ENGINE_WHY})"
     info "Packages: ${PACKAGES[*]}"
+    info "Downloads: install ca-certificates and curl before anything is fetched"
     info "SSH: authentication unchanged (run --harden-ssh after key login and sudo -v work)"
     info "Hardening: unattended-upgrades, fail2ban sshd jail"
     info "Firewall: $(firewall_words)"
+    if [[ "${FIREWALL}" == "nftables" ]]; then
+        info "Firewall reload: systemctl reload cs-server-input cs-server-firewall"
+    else
+        info "Firewall reload: systemctl reload cs-server-firewall"
+    fi
     info "Linger: loginctl enable-linger ${DEPLOY_USER}"
+    if [[ "${ENGINE}" == "podman" ]]; then
+        info "Boot: systemctl add-wants multi-user.target network-online.target"
+    fi
     if [[ "${CS_BACKUP}" == "1" ]]; then
         info "Backups: on, daily, keep ${CS_BACKUP_KEEP:-14}, ~${DEPLOY_USER}/cs-server-backups"
     else
@@ -659,6 +692,21 @@ EOF
     ok "sshd: root login off, password authentication off"
 }
 
+# RackNerd's Debian 13 image ships apt and not curl. curl fetches install.sh
+# and the firewall files over HTTPS, which needs a CA bundle. Idempotent: a
+# second run with both already installed does not touch apt.
+ensure_curl() {
+    if command -v curl >/dev/null 2>&1 && dpkg -s ca-certificates >/dev/null 2>&1; then
+        return 0
+    fi
+    export DEBIAN_FRONTEND=noninteractive
+    info "Installing ca-certificates and curl"
+    apt-get update
+    apt-get install -y ca-certificates curl
+    command -v curl >/dev/null 2>&1 || error "curl is not available after installing it"
+    ok "curl and ca-certificates are installed"
+}
+
 install_packages() {
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
@@ -779,6 +827,7 @@ ops_file() {
     dest="${OPS_CACHE}/${rel}"
     mkdir -p "${dest%/*}"
     if [[ ! -f "${dest}" ]]; then
+        ensure_curl
         curl -fsSL "${RAW_BASE}/ops/${rel}" -o "${dest}"
     fi
     printf '%s\n' "${dest}"
@@ -825,11 +874,14 @@ apply_firewall() {
     fi
 
     systemctl daemon-reload
-    systemctl enable --now cs-server-firewall.service
+    # enable --now does not re-run a oneshot that is already active, so a
+    # second run would keep the previous ports. Reload reads the file just
+    # written. Restart covers a unit that is not in a state reload can apply.
+    enable_and_reload cs-server-firewall.service
     ok "Query-flood nftables unit is enabled"
 
     if [[ "${FIREWALL}" == "nftables" ]]; then
-        systemctl enable --now cs-server-input.service
+        enable_and_reload cs-server-input.service
         if [[ "${DOD}" == "1" ]]; then
             ok "nftables allows SSH ${SSH_PORT}/tcp and ${GAME_PORT}/udp and ${DOD_PORT}/udp"
         else
@@ -867,13 +919,28 @@ apply_firewall() {
     fi
 }
 
+# enable --now leaves an already-active oneshot (RemainAfterExit) untouched.
+enable_and_reload() {
+    local unit="$1"
+    systemctl enable --now "${unit}"
+    systemctl reload "${unit}" || systemctl restart "${unit}"
+}
+
 enable_linger_user() {
     loginctl enable-linger "${DEPLOY_USER}"
     ok "Lingering enabled for ${DEPLOY_USER}"
 }
 
+# add-wants is itself idempotent: an existing wants symlink is left in place.
+enable_network_online() {
+    [[ "${ENGINE}" == "podman" ]] || return 0
+    systemctl add-wants multi-user.target network-online.target
+    ok "multi-user.target wants network-online.target"
+}
+
 run_installer() {
-    local installer="" uid home waited=0 runuser_bin=""
+    local installer="" uid home waited=0 runuser_bin="" name
+    local -a unset_args=()
     home=$(deploy_home)
     uid=$(id -u "${DEPLOY_USER}")
     # Persistent path: a piped --no-install must still be runnable after exit.
@@ -903,11 +970,14 @@ run_installer() {
         runuser_bin=/usr/sbin/runuser
     fi
     [[ -n "${runuser_bin}" ]] || error "runuser is not installed (package util-linux)"
-    "${runuser_bin}" -u "${DEPLOY_USER}" -- env "${INSTALL_ENV[@]}" bash "${installer}"
+    for name in "${DOD_SCOPED_VARS[@]}"; do
+        unset_args+=(-u "${name}")
+    done
+    "${runuser_bin}" -u "${DEPLOY_USER}" -- env "${unset_args[@]}" "${INSTALL_ENV[@]}" bash "${installer}"
     if [[ "${DOD}" == "1" ]]; then
         build_dod_install_env "${uid}" "${home}"
         info "Installing Day of Defeat on ${DOD_PORT}/udp"
-        "${runuser_bin}" -u "${DEPLOY_USER}" -- env "${DOD_INSTALL_ENV[@]}" bash "${installer}"
+        "${runuser_bin}" -u "${DEPLOY_USER}" -- env "${unset_args[@]}" "${DOD_INSTALL_ENV[@]}" bash "${installer}"
     fi
 }
 
@@ -933,6 +1003,7 @@ if [[ "${DRY_RUN}" == "1" ]]; then
 fi
 
 require_root
+ensure_curl
 create_user
 install_ssh_keys
 info "SSH authentication was not changed."
@@ -948,4 +1019,5 @@ configure_upgrades
 configure_fail2ban
 apply_firewall
 enable_linger_user
+enable_network_online
 run_installer
