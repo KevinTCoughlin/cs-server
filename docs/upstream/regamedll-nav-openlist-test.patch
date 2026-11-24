@@ -1,0 +1,61 @@
+From 2a734e8120783ba2fa42752f5b58c978d9db423a Mon Sep 17 00:00:00 2001
+From: "Kevin T. Coughlin" <KevinTCoughlin@users.noreply.github.com>
+Date: Tue, 24 Nov 2026 03:56:07 +0000
+Subject: [PATCH] test(nav): a new CNavArea is not on the open list
+
+Fill the allocation with the live generation and construct. IsOpen()
+must be false. The object is not destroyed: ~CNavArea() calls TheCSBots().
+---
+ regamedll/CMakeLists.txt                   |  1 +
+ regamedll/unittests/nav_openlist_tests.cpp | 27 ++++++++++++++++++++++
+ 2 files changed, 28 insertions(+)
+ create mode 100644 regamedll/unittests/nav_openlist_tests.cpp
+
+diff --git a/regamedll/CMakeLists.txt b/regamedll/CMakeLists.txt
+index 7861842..deed7c1 100644
+--- a/regamedll/CMakeLists.txt
++++ b/regamedll/CMakeLists.txt
+@@ -345,6 +345,7 @@ set(UNITTESTS_SRCS
+ 	"unittests/animation_tests.cpp"
+ 	"unittests/shared_util_tests.cpp"
+ 	"unittests/struct_offsets_tests.cpp"
++	"unittests/nav_openlist_tests.cpp"
+ 	"unittests/TestRunner.cpp"
+ )
+ 
+diff --git a/regamedll/unittests/nav_openlist_tests.cpp b/regamedll/unittests/nav_openlist_tests.cpp
+new file mode 100644
+index 0000000..0ca948c
+--- /dev/null
++++ b/regamedll/unittests/nav_openlist_tests.cpp
+@@ -0,0 +1,27 @@
++#include "precompiled.h"
++#include "cppunitlite/TestHarness.h"
++
++#include <cstdint>
++#include <cstdlib>
++#include <cstring>
++#include <new>
++
++// A new CNavArea must not be on the open list, even when the allocation
++// still holds the live generation. m_masterMarker starts at 1, so filling
++// the allocation with that value makes IsOpen() true unless Initialize()
++// stores 0. The object is not destroyed: ~CNavArea() calls TheCSBots().
++TEST(ConstructedAreaIsNotOpen, NavOpenList, 1000)
++{
++	void *mem = std::malloc(sizeof(CNavArea));
++	CHECK("allocation", mem != nullptr);
++	if (!mem)
++		return;
++
++	unsigned int live = 1;
++	auto *bytes = static_cast<unsigned char *>(mem);
++	for (size_t i = 0; i + sizeof(live) <= sizeof(CNavArea); i += sizeof(live))
++		std::memcpy(bytes + i, &live, sizeof(live));
++
++	CNavArea *area = new (mem) CNavArea();
++	CHECK("a new area is not on the open list", !area->IsOpen());
++}
+-- 
+2.43.0
+

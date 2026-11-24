@@ -204,10 +204,27 @@ RUN . /usr/local/share/cs-server/game.env && \
     echo "${GAME_APPID}" > steam_appid.txt && \
     grep -qx '[0-9][0-9]' steam_appid.txt
 
+# ReGameDLL 5.30.0.814 (still the latest release) segfaults in
+# CNavArea::UpdateOnOpenList when a nav area's uninitialized open-list
+# generation matches the live one. Rebuild cs.so from that tag with the
+# value-initializers in scripts/regamedll-nav-openlist.patch (the crash
+# half of rehlds/ReGameDLL_CS#1202, which was closed unmerged). The release
+# zip above stays the base; Counter-Strike and Condition Zero ship this
+# library. Editing the patch re-runs this step (and the runtime copy of
+# /hlds), not the SteamCMD download.
+RUN --mount=type=bind,source=scripts/build-regamedll.sh,target=/usr/local/src/cs-server/build-regamedll.sh \
+    --mount=type=bind,source=scripts/regamedll-nav-openlist.patch,target=/usr/local/src/cs-server/regamedll-nav-openlist.patch \
+    . /usr/local/share/cs-server/game.env && \
+    [ "${GAME_REGAMEDLL}" != 1 ] || bash /usr/local/src/cs-server/build-regamedll.sh \
+        "${REGAMEDLL_VERSION}" \
+        "/hlds/${GAME}/dlls/cs.so" \
+        /usr/local/src/cs-server/regamedll-nav-openlist.patch
+
 # The builder stage ends here: /hlds is the ~1 GB engine + game payload and
-# only changes with the pinned versions above. Repo content (maps, sounds,
-# plugins, configs) is layered on top in the runtime stage, so editing it
-# rebuilds a few small layers instead of re-copying all of /hlds.
+# only changes with the pinned versions above, or with the ReGameDLL patch
+# applied in the previous step. Repo content (maps, sounds, plugins, configs)
+# is layered on top in the runtime stage, so editing it rebuilds a few small
+# layers instead of re-copying all of /hlds.
 
 # ---------------------------------------------------------------------------
 # Stage 1b: Plugins — compile custom AMX Mod X plugins with the pinned amxxpc
