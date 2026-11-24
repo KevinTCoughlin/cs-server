@@ -59,6 +59,7 @@ case "$1" in
         case "$*" in
             *"test -x /fastdl.sh"*) exit "${FAKE_NO_FASTDL:-0}" ;;
             *"--entrypoint sh"*"cd /hlds/cstrike "*) cd "${FAKE_IMAGE_CONFIG}" && tar -cf - server.cfg mapcycle*.txt modes ;;
+            *"--entrypoint sh"*"cd /hlds/dod "*) cd "${FAKE_IMAGE_CONFIG}/dod" && tar -cf - server.cfg mapcycle*.txt pub.cfg match.cfg match-ot.cfg ;;
             # Another game: its stock settings and one map cycle, no modes.
             *"--entrypoint sh"*) cd "${FAKE_IMAGE_CONFIG}" && tar -cf - server.cfg mapcycle.txt ;;
         esac
@@ -562,12 +563,19 @@ assert_contains "game: its title" "${unit}" "Description=Day of Defeat Server"
 assert_contains "game: own container name" "${unit}" "ContainerName=dod-server"
 assert_contains "game: server.cfg mounts into its directory" "${unit}" "Volume=${GAME_CONFIG}/server.cfg:/hlds/dod/server.cfg:ro,Z"
 assert_contains "game: mapcycle.txt mounts into its directory" "${unit}" "Volume=${GAME_CONFIG}/mapcycle.txt:/hlds/dod/mapcycle.txt:ro,Z"
+assert_contains "game: pub.cfg is mounted" "${unit}" "Volume=${GAME_CONFIG}/pub.cfg:/hlds/dod/pub.cfg:ro,Z"
+assert_contains "game: match.cfg is mounted" "${unit}" "Volume=${GAME_CONFIG}/match.cfg:/hlds/dod/match.cfg:ro,Z"
+assert_contains "game: starts in pub mode" "${unit}" "Environment=DOD_MODE=pub"
+assert_contains "game: pub slot count" "${unit}" "Environment=MAXPLAYERS=16"
+assert_not_contains "game: no token unless asked" "${unit}" "GSLT"
+assert_not_contains "game: insecure stays off" "${unit}" "INSECURE"
 assert_contains "game: own state volume" "${unit}" "Volume=dod-server-state:/hlds/state"
 assert_contains "game: read-only root" "${unit}" "ReadOnly=true"
 for absent in cstrike "Environment=MAP=" "Environment=MODE=" mapcycle-dust2 /modes; do
     assert_not_contains "game: nothing of Counter-Strike (${absent})" "${unit}" "${absent}"
 done
-[[ -f "${GAME_CONFIG}/server.cfg" && -f "${GAME_CONFIG}/mapcycle.txt" ]] || fail "game config was not seeded"
+[[ -f "${GAME_CONFIG}/server.cfg" && -f "${GAME_CONFIG}/mapcycle.txt" && -f "${GAME_CONFIG}/match.cfg" ]] || fail "game config was not seeded"
+assert_contains "seeded pub clock" "$(cat "${GAME_CONFIG}/pub.cfg")" "mp_timelimit 25"
 [[ ! -e "${GAME_CONFIG}/modes" ]] || fail "a game has no modes directory"
 assert_contains "game: its own service is started" "${calls}" "systemctl --user start dod-server"
 assert_eq "the default unit is untouched by a game" "${default_unit}" "$(cat "${UNIT}")"
@@ -629,6 +637,21 @@ install CS_MODE=surf
 expect_die "bad CS_MODE" "Invalid CS_MODE"
 install CS_MODE=match CS_GAME=dod
 expect_die "CS_MODE with another game" "CS_MODE is Counter-Strike only"
+install CS_DOD_MODE=match
+expect_die "CS_DOD_MODE on Counter-Strike" "CS_DOD_MODE is Day of Defeat only"
+install CS_GAME=dod CS_DOD_MODE=match CS_PORT=27016 CS_DOD_PASSWORD=scrim CS_GSLT=00112233445566778899AABBCCDDEEFF
+expect_ok "Day of Defeat match install"
+unit=$(cat "${HOME_DIR}/.config/containers/systemd/dod-server.container")
+for line in "Environment=DOD_MODE=match" "Environment=MAXPLAYERS=12" "Environment=PORT=27016" \
+    "Environment=MAPCYCLE=mapcycle-match.txt" "Environment=DOD_PASSWORD=scrim" \
+    "Environment=GSLT=00112233445566778899AABBCCDDEEFF" "PublishPort=27016:27016/udp"; do
+    assert_contains "dod match unit" "${unit}" "${line}"
+done
+assert_not_contains "dod match is not -insecure" "${unit}" "INSECURE"
+install CS_GAME=dod CS_DOD_MODE=warmup
+expect_die "bad CS_DOD_MODE" "Invalid CS_DOD_MODE"
+install CS_GSLT=zzzz
+expect_die "bad CS_GSLT" "Invalid CS_GSLT"
 install CS_BOTS=yes
 expect_die "bad CS_BOTS" "Invalid CS_BOTS"
 

@@ -90,4 +90,25 @@ assert_contains "ssh is allowed" "${listing}" "tcp dport 22"
 assert_contains "the game port is allowed" "${listing}" "udp dport 27015"
 nft delete table inet cs_server_input || fail "the input table cannot be removed"
 
+# Bootstrap rewrites `define game_port` into a set when Day of Defeat is
+# installed beside Counter-Strike. The same rule must still load.
+both=$(mktemp)
+awk -v game="{ 27015, 27016 }" '
+    /^define game_port/ { print "define game_port = " game; next }
+    { print }
+' "${RULES}" > "${both}"
+nft -f "${both}" || fail "a two-port query rule does not load"
+listing=$(nft list table inet cs_server)
+assert_contains "both game ports are limited" "${listing}" "27016"
+nft delete table inet cs_server
+awk -v game="{ 27015, 27016 }" '
+    /^define game_port/ { print "define game_port = " game; next }
+    { print }
+' "${INPUT}" > "${both}"
+nft -f "${both}" || fail "a two-port input rule does not load"
+listing=$(nft list table inet cs_server_input)
+assert_contains "27016 is allowed" "${listing}" "27016"
+nft delete table inet cs_server_input
+rm -f "${both}"
+
 printf 'firewall tests passed (%s of 200 queries allowed, 200 of 200 game packets)\n' "${queries}"

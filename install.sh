@@ -53,6 +53,12 @@
 #                      valve, gearbox, dmc or ricochet (default cstrike). Gets
 #                      its own image tag, service (<game>-server), config
 #                      directory and state volume
+#   CS_DOD_MODE        Day of Defeat only: pub (default) or match (6v6, 12 slots)
+#   CS_DOD_PASSWORD    Day of Defeat match password (sv_password). Optional
+#   CS_GSLT            32-character hex Steam game server login token
+#                      (sv_setsteamaccount). One token per server, for that
+#                      game's app id (10 for Counter-Strike, 30 for Day of Defeat)
+#   CS_INSECURE=1      pass -insecure without -nomaster (off by default)
 #
 # With no route to the registry, an image already in local storage (from
 # `podman load` / `docker load`) is used as it is.
@@ -188,6 +194,43 @@ case "${MODE}" in
         exit 1
         ;;
 esac
+# Day of Defeat's own mode. CS_MODE stays Counter-Strike only.
+DOD_MODE="${CS_DOD_MODE:-}"
+if [[ -n "${DOD_MODE}" && "${GAME}" != "dod" ]]; then
+    printf '[error] CS_DOD_MODE is Day of Defeat only\n' >&2
+    exit 1
+fi
+if [[ "${GAME}" == "dod" ]]; then
+    if [[ -z "${DOD_MODE}" ]]; then
+        DOD_MODE="pub"
+    fi
+    case "${DOD_MODE}" in
+        pub | match) ;;
+        *)
+            printf '[error] Invalid CS_DOD_MODE: %s (expected pub or match)\n' "${DOD_MODE}" >&2
+            exit 1
+            ;;
+    esac
+fi
+DOD_PASSWORD="${CS_DOD_PASSWORD:-}"
+if [[ -n "${DOD_PASSWORD}" && "${GAME}" != "dod" ]]; then
+    printf '[error] CS_DOD_PASSWORD is Day of Defeat only\n' >&2
+    exit 1
+fi
+if [[ -n "${DOD_PASSWORD}" && ! "${DOD_PASSWORD}" =~ ^[A-Za-z0-9!@#^*_=+.-]{1,32}$ ]]; then
+    printf '[error] Invalid CS_DOD_PASSWORD: use 1 to 32 characters from letters, digits, and !@#^*_=+.- (no spaces or %%)\n' >&2
+    exit 1
+fi
+GSLT="${CS_GSLT:-}"
+if [[ -n "${GSLT}" && ! "${GSLT}" =~ ^[A-Fa-f0-9]{32}$ ]]; then
+    printf '[error] Invalid CS_GSLT: expected a 32-character hex Steam game server token\n' >&2
+    exit 1
+fi
+INSECURE="${CS_INSECURE:-0}"
+if [[ "${INSECURE}" != "0" && "${INSECURE}" != "1" ]]; then
+    printf '[error] Invalid CS_INSECURE: %s (expected 0 or 1)\n' "${INSECURE}" >&2
+    exit 1
+fi
 BOTS="${CS_BOTS:-}"
 if [[ -z "${BOTS}" ]]; then
     BOTS=1
@@ -322,6 +365,10 @@ Environment:
   CS_INSTANCE=<name>       An additional server: own service, config, state
   CS_PORT=<port>           UDP port (default 27015); one per instance
   CS_GAME=<game>           Another game: czero, dod, tfc, valve, gearbox, dmc, ricochet
+  CS_DOD_MODE=<mode>       Day of Defeat: pub (default) or match (6v6, 12 slots)
+  CS_DOD_PASSWORD=<pass>   Day of Defeat sv_password (optional)
+  CS_GSLT=<token>          32-hex Steam token (app 10 for CS, app 30 for DoD)
+  CS_INSECURE=1            -insecure, without hiding the server (-nomaster)
   CS_MODE=<mode>           Start in scoutz (default), knife, vanilla or match
   CS_BOTS=0                No bots
   CS_FASTDL=1              Also serve the maps to clients over HTTP (port 27080/tcp)
@@ -587,7 +634,11 @@ do_install() {
 CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt mapcycle-nipper-xmas.txt)
 CONFIG_DIRS=(modes)
 # Another game has its stock settings and one map cycle, and no modes.
-if [[ "${GAME}" != "cstrike" ]]; then
+# Day of Defeat mounts the pub and match files so an admin can edit them.
+if [[ "${GAME}" == "dod" ]]; then
+    CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-match.txt pub.cfg match.cfg match-ot.cfg)
+    CONFIG_DIRS=()
+elif [[ "${GAME}" != "cstrike" ]]; then
     CONFIG_FILES=(server.cfg mapcycle.txt)
     CONFIG_DIRS=()
 fi
@@ -597,8 +648,12 @@ fi
 seed_config() {
     local tmp f rel rcon_password
     tmp=$(mktemp -d) || error "Unable to create a temporary directory"
+    local dod_cfgs=""
+    if [[ "${GAME}" == "dod" ]]; then
+        dod_cfgs="pub.cfg match.cfg match-ot.cfg"
+    fi
     if ! ${RUNTIME} run --rm --network none --entrypoint sh "${IMAGE}" -c \
-        "cd /hlds/${GAME} && tar -cf - server.cfg mapcycle*.txt ${CONFIG_DIRS[*]-}" |
+        "cd /hlds/${GAME} && tar -cf - server.cfg mapcycle*.txt ${dod_cfgs} ${CONFIG_DIRS[*]-}" |
         tar -C "${tmp}" --no-same-owner -xf -; then
         rm -rf "${tmp}"
         error "Unable to read the default config from ${IMAGE}"
@@ -643,9 +698,19 @@ seed_config() {
 start_map() {
     START_MAP="scoutzknivez"
     START_CYCLE="mapcycle.txt"
+    START_PLAYERS=20
     if [[ "${GAME}" == "cstrike" && ( "${MODE}" == "vanilla" || "${MODE}" == "match" ) ]]; then
         START_MAP="de_dust2"
         START_CYCLE="mapcycle-dust2.txt"
+    elif [[ "${GAME}" == "dod" ]]; then
+        START_MAP="dod_anzio"
+        if [[ "${DOD_MODE}" == "match" ]]; then
+            START_CYCLE="mapcycle-match.txt"
+            START_PLAYERS=12
+        else
+            START_CYCLE="mapcycle.txt"
+            START_PLAYERS=16
+        fi
     fi
 }
 
@@ -921,12 +986,23 @@ quadlet_unit() {
         volumes+="Volume=${CONFIG_DIR}/${f}:/hlds/${GAME}/${f}:ro,Z"$'\n'
     done
     # The image of another game starts on that game's own map; MODE is the
-    # ScoutzKnivez plugin's.
-    local map_env="" mode_env=""
+    # ScoutzKnivez plugin's. Day of Defeat has DOD_MODE instead.
+    local map_env="" mode_env="" dod_env="" insecure_env=""
     start_map
     if [[ "${GAME}" == "cstrike" ]]; then
         map_env="Environment=MAP=${START_MAP}"$'\n'
         mode_env="Environment=MODE=${MODE}"$'\n'
+    elif [[ "${GAME}" == "dod" ]]; then
+        dod_env="Environment=DOD_MODE=${DOD_MODE}"$'\n'
+        if [[ -n "${DOD_PASSWORD}" ]]; then
+            dod_env+="Environment=DOD_PASSWORD=${DOD_PASSWORD}"$'\n'
+        fi
+    fi
+    if [[ -n "${GSLT}" ]]; then
+        dod_env+="Environment=GSLT=${GSLT}"$'\n'
+    fi
+    if [[ "${INSECURE}" == "1" ]]; then
+        insecure_env="Environment=INSECURE=1"$'\n'
     fi
 
     cat << QUADLET
@@ -940,12 +1016,12 @@ Image=${IMAGE}${auto_update}
 ContainerName=${SERVICE_NAME}
 ${network}${metrics_publish}
 ${volumes}Volume=${STATE_VOLUME}:/hlds/state
-${map_env}Environment=MAXPLAYERS=20
+${map_env}Environment=MAXPLAYERS=${START_PLAYERS}
 Environment=PORT=${PORT}
 Environment=BOTS=${BOTS}
 Environment=MAPCYCLE=${START_CYCLE}
 Environment=LAN_MODE=${lan_mode}
-${mode_env}Environment=LOGS=1
+${mode_env}${dod_env}${insecure_env}Environment=LOGS=1
 Environment=LOG_RETENTION_DAYS=7${fastdl_env}${server_ip_env}${metrics_env}
 ReadOnly=true
 Tmpfs=/tmp
@@ -1085,6 +1161,17 @@ install_docker() {
     start_map
     if [[ "${GAME}" == "cstrike" ]]; then
         game_args=(-e "MAP=${START_MAP}" -e "MODE=${MODE}")
+    elif [[ "${GAME}" == "dod" ]]; then
+        game_args=(-e "DOD_MODE=${DOD_MODE}")
+        if [[ -n "${DOD_PASSWORD}" ]]; then
+            game_args+=(-e "DOD_PASSWORD=${DOD_PASSWORD}")
+        fi
+    fi
+    if [[ -n "${GSLT}" ]]; then
+        game_args+=(-e "GSLT=${GSLT}")
+    fi
+    if [[ "${INSECURE}" == "1" ]]; then
+        game_args+=(-e INSECURE=1)
     fi
 
     # Docker 29.4.2 blocked socketcall(2) in its built-in seccomp profile, so
@@ -1106,7 +1193,7 @@ install_docker() {
         "${mount_args[@]}" \
         -v "${STATE_VOLUME}:/hlds/state" \
         ${game_args[@]+"${game_args[@]}"} \
-        -e MAXPLAYERS=20 \
+        -e "MAXPLAYERS=${START_PLAYERS}" \
         -e "PORT=${PORT}" \
         -e "BOTS=${BOTS}" \
         -e "MAPCYCLE=${START_CYCLE}" \

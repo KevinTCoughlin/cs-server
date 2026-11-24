@@ -29,7 +29,8 @@ case "${cmd}" in
         shift
         case "${sub}" in
             ls)
-                printf '%s\n' "cs-server-state" "other-volume" "cs-server-state-lan1"
+                printf '%s\n' "cs-server-state" "other-volume" "cs-server-state-lan1" \
+                    "dod-server-state" "dod-server-two-state"
                 ;;
             export)
                 tar -C "${FAKE_VOLUME}" -cf - .
@@ -103,6 +104,10 @@ maps=$(find "${BACKUPS}" -maxdepth 1 -type f -name 'cs-server-state-[0-9]*T*Z.ta
 assert_eq "default volume was archived" "1" "${maps}"
 maps=$(find "${BACKUPS}" -maxdepth 1 -type f -name 'cs-server-state-lan1-*.tar.gz' | wc -l | tr -d ' ')
 assert_eq "instance volume was archived" "1" "${maps}"
+maps=$(find "${BACKUPS}" -maxdepth 1 -type f -name 'dod-server-state-[0-9]*T*Z.tar.gz' | wc -l | tr -d ' ')
+assert_eq "Day of Defeat volume was archived" "1" "${maps}"
+maps=$(find "${BACKUPS}" -maxdepth 1 -type f -name 'dod-server-two-state-*.tar.gz' | wc -l | tr -d ' ')
+assert_eq "Day of Defeat instance volume was archived" "1" "${maps}"
 if find "${BACKUPS}" -maxdepth 1 -type f -name 'other-volume-*' | grep -q .; then
     fail "an unrelated volume was archived"
 fi

@@ -51,7 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/ops/b
 
 `--ssh-key` (or `--ssh-key-file`, or `CS_SSH_PUBLIC_KEY`) installs a public key for the deploy user. `ssh-keygen -l` checks the key; a malformed key is rejected. The bootstrap does not change how SSH accepts logins. Root and password login stay as the VPS image left them.
 
-The deploy user is `cs` (`--user` or `CS_DEPLOY_USER`) and is added to the `sudo` group. The server listens on `27015/udp`. `CS_FASTDL=1` also opens `27080/tcp`. Daily backups of the state volume (bans, admins, stats, logs) go to `~cs/cs-server-backups` and keep 14 (`CS_BACKUP=0` or `--no-backup` turns them off). The timer records the engine this install selected (`podman` or `docker`) and the keep count in `~cs/.config/cs-server/backup.env`, so a later backup does not switch engines.
+The deploy user is `cs` (`--user` or `CS_DEPLOY_USER`) and is added to the `sudo` group. The server listens on `27015/udp`. `CS_DOD=1` (or `--dod`) also installs Day of Defeat on `27016/udp`; see [Day of Defeat 1.3](#day-of-defeat-13). `CS_FASTDL=1` also opens `27080/tcp`. Daily backups of the state volume (bans, admins, stats, logs) go to `~cs/cs-server-backups` and keep 14 (`CS_BACKUP=0` or `--no-backup` turns them off). The timer records the engine this install selected (`podman` or `docker`) and the keep count in `~cs/.config/cs-server/backup.env`, so a later backup does not switch engines.
 
 `--dry-run` prints the plan and changes nothing. `--no-install` does the host setup and prints an `install.sh` command. From a git checkout that path is the file in the checkout. From `curl | bash` the script saves a copy at `/usr/local/lib/cs-server/install.sh` and prints that path, which is still there after the bootstrap exits.
 
@@ -74,17 +74,17 @@ sudo bash ops/bootstrap-vps.sh --harden-ssh
 
 ### Provider firewall
 
-In the provider panel (SolusVM, Virtualizor, RackNerd), allow SSH (`22/tcp`, or the port sshd uses) and `27015/udp`. That filter sits in front of the VM. With FastDL, also allow its TCP port. GoldSrc uses UDP for the game, queries and rcon.
+In the provider panel (SolusVM, Virtualizor, RackNerd), allow SSH (`22/tcp`, or the port sshd uses) and `27015/udp`. With Day of Defeat, also allow `27016/udp`. That filter sits in front of the VM. With FastDL, also allow its TCP port. GoldSrc uses UDP for the game, queries and rcon.
 
 ### Steam game server token
 
-A public server needs a Game Server Login Token or Steam will not list it. Create one at <https://steamcommunity.com/dev/managegameservers> for App ID **10** (Counter-Strike), one token per server, and add it to `~cs/.config/cs-server/server.cfg`:
+A public server needs a Game Server Login Token or Steam will not list it. Create one at <https://steamcommunity.com/dev/managegameservers> for App ID **10** (Counter-Strike), one token per server. Pass it to the installer as `CS_GSLT` (a 32-character hex token), which the unit sets as `sv_setsteamaccount`. Or add it to `~cs/.config/cs-server/server.cfg`:
 
 ```
 sv_setsteamaccount "YOUR_TOKEN"
 ```
 
-Restart the service. `CS_PROFILE=lan` does not log in to Steam and needs no token.
+Restart the service. `CS_PROFILE=lan` does not log in to Steam and needs no token. Day of Defeat uses a different token, for App ID **30**.
 
 ### DDoS
 
@@ -499,7 +499,11 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `MAXPLAYERS` | `20` | Max player slots |
 | `PORT` | `27015` | Server port |
 | `BOTS` | `1` | Enable bots (1=on, 0=off) |
-| `NOMASTER` | `0` | Disable master server (1=on, 0=off). Enable for Docker Desktop on Windows |
+| `NOMASTER` | `0` | Disable master server (1=on, 0=off). Enable for Docker Desktop on Windows. Also passes `-insecure` |
+| `INSECURE` | `0` | Pass `-insecure` without `-nomaster`. Off by default. Installer: `CS_INSECURE=1` |
+| `GSLT` | empty | 32-character hex Steam game server token (`sv_setsteamaccount`). Installer: `CS_GSLT` |
+| `DOD_MODE` | `pub` on a Day of Defeat image | `pub` or `match`. Ignored by every other game. An explicit `MODE=pub` or `MODE=match` selects it too. Installer: `CS_DOD_MODE` |
+| `DOD_PASSWORD` | empty | Day of Defeat `sv_password`. Ignored by every other game. Installer: `CS_DOD_PASSWORD` |
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
 | `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike) or `match` (5v5: warmup, knife round, pause) |
@@ -638,7 +642,7 @@ library, with its stock maps, map cycle and settings.
 | `GAME` | Game | Starts on | Notes |
 |--------|------|-----------|-------|
 | `czero` | Condition Zero | `de_dust2_cz` | ReGameDLL, ReAPI and bots (`BOTS`), stats |
-| `dod` | Day of Defeat | `dod_anzio` | AMX Mod X DoD modules and stats |
+| `dod` | Day of Defeat | `dod_anzio` | Pub and 6v6 configs, AMX Mod X DoDX stats. See below |
 | `tfc` | Team Fortress Classic | `2fort` | AMX Mod X TFC modules and stats |
 | `valve` | Half-Life deathmatch | `crossfire` | |
 | `gearbox` | Opposing Force | `op4_bootcamp` | |
@@ -685,16 +689,135 @@ Counter-Strike.
 
 `MAP`, `MAXPLAYERS`, `PORT`, `LAN_MODE`, `NOMASTER`, `SERVER_IP`, `FASTDL_URL`
 and the log settings work as they do for Counter-Strike; the state volume,
-read-only root and console pipe are the same. Each image keeps the game's
-stock `server.cfg` with a hostname and this repo's rate and security settings
-appended (`config/games/common.cfg`). To change settings without the
-installer, mount your own files over `/hlds/<game>/server.cfg` and
-`/hlds/<game>/mapcycle.txt`.
+read-only root and console pipe are the same. Each image except Day of Defeat
+keeps the game's stock `server.cfg` with a hostname and this repo's rate and
+security settings appended (`config/games/common.cfg`). Day of Defeat ships
+`config/dod/` instead. To change settings without the installer, mount your
+own files over `/hlds/<game>/server.cfg` and `/hlds/<game>/mapcycle.txt`.
 
 Only Counter-Strike and Condition Zero have bots (they are part of
 ReGameDLL). `MODE` and the ScoutzKnivez plugins are Counter-Strike only.
-Each game is about 1.1 to 1.5 GB. CI builds and tests each one on x86-64 and arm64
-(`tests/e2e_game_test.sh`).
+Day of Defeat uses `DOD_MODE` instead. Each game is about 1.1 to 1.5 GB.
+CI builds and tests each one on x86-64 and arm64 (`tests/e2e_game_test.sh`).
+
+## Day of Defeat 1.3
+
+A second server, on UDP **27016**, next to Counter-Strike on 27015. It is the
+same Containerfile with `--build-arg GAME=dod`: ReHLDS, Metamod-R and AMX Mod X
+around Valve's Day of Defeat library (`+game dod`). The dedicated-server files
+come from Steam app **90**. Clients are app **30**, which is the id in
+`steam_appid.txt`. It has its own image tag (`:<version>-dod`), Quadlet unit
+(`dod-server`), config directory (`~/.config/dod-server`) and state volume
+(`dod-server-state`). Counter-Strike's unit, config and volume are not changed.
+
+On a VPS the bootstrap installs both, opens `27016/udp`, rate-limits queries
+to both ports, and the daily backup archives `dod-server-state` along with
+`cs-server-state`. Lingering is the same linger the Counter-Strike install
+already turns on, so both units start at boot.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/ops/bootstrap-vps.sh \
+  | sudo bash -s -- --dod --ssh-key "ssh-ed25519 AAAA... you@host"
+```
+
+Or, on a host that already runs Counter-Strike:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/install.sh \
+  | CS_GAME=dod CS_PORT=27016 bash
+```
+
+`CS_DOD_PORT` changes 27016 when that port is taken (a Counter-Strike instance
+on 27016, for example). In the RackNerd (or other provider) panel, allow
+`27016/udp` as well as `27015/udp`. Each unit is capped at 512 MB and 2 CPUs.
+`config/dod/server.cfg` sets `sys_ticrate 300` so this process does not ask for
+the 1000 the Counter-Strike server keeps.
+
+### Public server and 6v6
+
+`CS_DOD_MODE=pub` (the default) or `match`. The container reads `DOD_MODE`.
+On a running server the console takes the same files:
+
+```bash
+# pub, 6v6, or a 10-minute overtime half
+podman exec dod-server sh -c 'printf "%s\n" "exec match.cfg" > /hlds/.runtime/hlds-input'
+podman exec dod-server sh -c 'printf "%s\n" "exec match-ot.cfg" > /hlds/.runtime/hlds-input'
+podman exec dod-server sh -c 'printf "%s\n" "changelevel dod_anzio" > /hlds/.runtime/hlds-input'
+```
+
+Slot count is fixed until a restart. Pub launches with 16. Match launches
+with 12. `MAXPLAYERS` overrides either.
+
+These files are not an official KTP config. [KTP](https://ktpleague.gg/)
+(Keep the Practice, Season 10, Fall 2026) is the active NA six-a-side league.
+Rule §1.4 says an official game uses the league's config for that map, on an
+approved server, and that config is not published. Rule §1.5 also requires a
+separate HLTV proxy with at least a 120-second delay. This image does not
+start HLTV, and `-insecure` is off unless you set `INSECURE=1` or `NOMASTER=1`.
+
+What the files do use, and where it comes from:
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| Pub map clock | 25 min | dodbits, DoD 1.3 commands, 26 September 2023: `mp_timelimit` default is 25. <https://www.dodbits.com/dods/?Itemid=100035&id=41%3Adods-cvars-commands&layout=default&option=com_content&view=category> |
+| Pub rates | max 25000, min 7500, updaterate 20–66 | The same page: public recommendations. 25000 is their low-slot figure, used here because the host also runs Counter-Strike |
+| Match slots | 12 | KTP is six-a-side (rules §2.10). The server list shows 12 slots. <https://ktpleague.gg/servers> |
+| Match half | 20 min | Not published. One Season 10 `dod_anzio` game is listed as "2 halves · 40:08". <https://ktpleague.gg/stats/matches/1791162528-CHI1> |
+| Overtime half | 10 min | Rules §1.10: 10-minute halves, switch sides, continue until there is a winner. `exec match-ot.cfg` then `changelevel` |
+| Match rates | max 100000, updaterate up to 100, floor 7500 / 20 | dodbits popular "good server" max rate and updaterate; the public floor from the same page. KTP does not publish rates |
+| Friendly fire | on | The HLDS.pl DoD 1.3 example sets `mp_friendlyfire 1`. <http://hlds.pl/Serwer_Day_of_Defeat_1.3>. KTP does not publish it |
+| Class limits | unlimited (`-1`) | Engine default. KTP does not publish class limits, so none are invented here |
+| Logging | on | Rules §1.5, for a server that would host a league game |
+
+There is no ready-up plugin. KTP's `.ready`, `.ktp` and `.tech` commands belong
+to the league's match plugin (<https://ktpleague.gg/servers>), which is not
+included. To hold the clock, set `mp_timelimit 0`. When both teams are in,
+`exec match.cfg` and `changelevel` the map. That starts a fresh half. KTP
+plays each half as its own map load; the home team picks the first side
+(rules §2.3.a). A match password is `CS_DOD_PASSWORD` at install, or
+`sv_password` from the console. `exec match.cfg` does not clear it.
+
+The pub rotation is classic maps that ship with app 90: `dod_anzio`,
+`dod_avalanche`, `dod_caen`, `dod_charlie`, `dod_donner`, `dod_flash`,
+`dod_forest`, `dod_jagd`, `dod_kalt`, `dod_saints`. `dod_palermo` is not in
+the dedicated-server download, so it is not in the rotation.
+
+The Season 10 pool, from the schedule's command-map list and the weekly
+maps (<https://ktpleague.gg/schedule>) and the Gold playoff note
+(<https://ktpleague.gg/news/6>), is `dod_anzio`, `dod_armory_b7`,
+`dod_harrington`, `dod_lennon5_b1`, `dod_railroad2_s10b`, `dod_saints2_b5e`,
+`dod_thunder2`, plus regular-season `dod_anjou_a5` and `dod_solitude2`.
+Only `dod_anzio` is in the dedicated server, so `mapcycle-match.txt` is that
+map alone. The others are custom. KTP serves them from `fastdl.ktpdod.com`
+(<https://ktpleague.gg/files>). They are not bundled. Add the `.bsp` files
+with a new image build, and confirm the FastDL path in a browser before
+setting `FASTDL_URL`. Do not point it at a host you have not checked: a wrong
+URL makes every custom download fail.
+
+### GSLT and GameTracker
+
+Create a token for App ID **30** (one per server; the Counter-Strike token
+cannot be reused) and install with `CS_DOD_GSLT`. The unit passes it as
+`sv_setsteamaccount`. Leave `NOMASTER` and `INSECURE` unset so the server is
+neither hidden nor marked insecure.
+
+GameTracker lists it once the port answers a query from the internet.
+Log in at <https://www.gametracker.com/servers/>, choose **Add a Server**,
+and pick **Day of Defeat** (not Day of Defeat: Source). Enter the public IP
+with no port, and join port `27016`. The server has to be up and reachable.
+
+### Plugins
+
+AMX Mod X and the Day of Defeat addon (DoDX) are already in the `GAME=dod`
+image. [Sturmbot's April 2026 guide](https://www.sturmbot.org/index.php/dod-articles/day-of-defeat-server-guides/134-amx-mod-x-for-dod-1-3-installation-fixes-and-plugin-review-2026)
+describes that stack on Steam DoD 1.3. The glibc 2.41 executable-stack failure
+in their LAN guide is for Fedora, Nobara and Arch, not Debian. This image is
+Debian 13. DoDX is left in AMX Mod X's auto-load list: naming it again makes
+Metamod refuse the second copy. The image enables `stats.amxx` and
+`stats_logging.amxx` only, plus `dodmode.amxx`, which re-applies the mode
+file after each map starts (Day of Defeat resets the hostname and the clock
+if the file runs any earlier). Stats are written to `dodstats.dat` in the
+state volume. `tests/e2e_game_test.sh` requires the DoDX module to load.
 
 ## Saved state and logs
 

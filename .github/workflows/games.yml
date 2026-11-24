@@ -22,6 +22,7 @@ on:
       - 'entrypoint.sh'
       - 'scripts/game-env.sh'
       - 'config/games/**'
+      - 'config/dod/**'
       - 'tests/e2e_game_test.sh'
       - '.github/workflows/games.yml'
   workflow_dispatch:

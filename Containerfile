@@ -224,6 +224,8 @@ RUN chmod +x amxxpc && mkdir -p /out && \
     plugins="metrics.sma" && \
     if [ "${GAME}" = cstrike ]; then \
         plugins="scoutzknivez.sma match.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma metrics.sma"; \
+    elif [ "${GAME}" = dod ]; then \
+        plugins="metrics.sma dodmode.sma"; \
     fi && \
     for sma in ${plugins}; do \
         cp "/usr/local/src/cs-server/scripting/${sma}" . || exit 1; \
@@ -296,10 +298,54 @@ RUN sed -i '/^amxx_plugins[[:space:]]/d' /hlds/cstrike/addons/amxmodx/configs/co
     ! grep -q '^amxx_plugins[[:space:]]' /hlds/cstrike/addons/amxmodx/configs/core.ini
 
 # ---------------------------------------------------------------------------
-# Stage 2b: the other games run their stock content, prepared in the builder
+# Stage 2b: the other games run their stock content, prepared in the builder.
+# Day of Defeat replaces server.cfg and the map cycles with config/dod and
+# turns on the DoD stats plugins (DoDX). The other games stay stock.
 # ---------------------------------------------------------------------------
 FROM runtime-base AS game-czero
 FROM runtime-base AS game-dod
+COPY --chown=hlds:hlds config/dod/server.cfg config/dod/pub.cfg config/dod/match.cfg config/dod/match-ot.cfg /hlds/dod/
+COPY --chown=hlds:hlds config/dod/mapcycle.txt config/dod/mapcycle-match.txt /hlds/dod/
+# Compiled for every game so this stage can copy it; only Day of Defeat loads it.
+COPY --from=plugins --chown=hlds:hlds /out/dodmode.amxx /hlds/dod/addons/amxmodx/plugins/dodmode.amxx
+# stats.amxx and stats_logging.amxx need DoDX. The addon ships them commented
+# out; DoDX itself is in the auto-load section of modules.ini and loads when
+# those plugins are enabled. Listing dodx a second time makes Metamod refuse
+# it ("already loaded"), so it stays commented. Fail the build if a listed
+# map is not in app 90, and say which check failed.
+RUN set -eu; \
+    ini=/hlds/dod/addons/amxmodx/configs/plugins.ini; \
+    modules=/hlds/dod/addons/amxmodx/configs/modules.ini; \
+    plug=/hlds/dod/addons/amxmodx/plugins; \
+    for name in stats.amxx stats_logging.amxx; do \
+        if [ ! -f "${plug}/${name}" ]; then \
+            echo "Day of Defeat addon has no ${name}" >&2; \
+            exit 1; \
+        fi; \
+        if grep -q "^${name}" "${ini}"; then \
+            :; \
+        elif grep -q "^;[[:space:]]*${name}" "${ini}"; then \
+            sed -i "s/^;[[:space:]]*${name}/${name}/" "${ini}"; \
+        else \
+            printf '%s\n' "${name}" >> "${ini}"; \
+        fi; \
+    done; \
+    grep -q "^stats.amxx" "${ini}"; \
+    grep -q "^;dodx$" "${modules}"; \
+    test -f /hlds/dod/addons/amxmodx/modules/dodx_amxx_i386.so; \
+    grep -q '^dodmode.amxx' "${ini}" || printf '%s\n' dodmode.amxx >> "${ini}"; \
+    for cycle in mapcycle.txt mapcycle-match.txt; do \
+        while IFS= read -r map || [ -n "${map}" ]; do \
+            case "${map}" in \
+                "" | //*) continue ;; \
+            esac; \
+            map=${map%%[[:space:]]*}; \
+            if [ ! -f "/hlds/dod/maps/${map}.bsp" ]; then \
+                echo "mapcycle ${cycle} lists ${map}, which app 90 did not install" >&2; \
+                exit 1; \
+            fi; \
+        done < "/hlds/dod/${cycle}"; \
+    done
 FROM runtime-base AS game-tfc
 FROM runtime-base AS game-valve
 FROM runtime-base AS game-gearbox

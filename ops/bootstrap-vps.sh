@@ -26,8 +26,9 @@
 #      version when Podman is already installed
 #   5. Enable unattended-upgrades and fail2ban's sshd jail
 #   6. Install the query-flood nftables unit. Allow SSH and 27015/udp
-#      (and the FastDL port when CS_FASTDL=1) with nftables, or with ufw when
-#      ufw is installed, or with firewalld when firewalld is already running
+#      (and 27016/udp when CS_DOD=1, and the FastDL port when CS_FASTDL=1)
+#      with nftables, or with ufw when ufw is installed, or with firewalld
+#      when firewalld is already running
 #   7. loginctl enable-linger for the deploy user
 #   8. Run install.sh as that user (CS_BACKUP=1 unless CS_BACKUP=0)
 #
@@ -54,6 +55,9 @@ if [[ -z "${CS_BACKUP+x}" ]]; then
 fi
 FASTDL="${CS_FASTDL:-0}"
 GAME_PORT="${CS_PORT:-27015}"
+# Day of Defeat beside Counter-Strike: its own install on 27016/udp.
+DOD="${CS_DOD:-0}"
+DOD_PORT="${CS_DOD_PORT:-27016}"
 FASTDL_PORT="${CS_FASTDL_PORT:-27080}"
 SSH_KEYS=()
 ENGINE=""
@@ -94,6 +98,7 @@ Options:
   --ssh-key-file PATH File of public keys (one per line)
   --no-install        Set the host up and print a lasting install.sh command
   --no-backup         Do not install daily state-volume backups (CS_BACKUP=0)
+  --dod               Also install Day of Defeat on 27016/udp (CS_DOD=1)
   --harden-ssh        Disable root and password SSH, and nothing else
   --dry-run           Print what would be done; change nothing
   --help              Show this help
@@ -105,7 +110,8 @@ after both succeed.
 Environment (passed through to install.sh when set):
   CS_SERVER_VERSION, CS_SERVER_IMAGE, CS_PORT, CS_FASTDL, CS_FASTDL_PORT,
   CS_MODE, CS_BOTS, CS_PROFILE, SERVER_IP, CS_RCON, CS_GAME, CS_INSTANCE,
-  CS_BACKUP (default 1), CS_SSH_PORT
+  CS_BACKUP (default 1), CS_SSH_PORT, CS_DOD, CS_DOD_PORT, CS_DOD_MODE,
+  CS_DOD_GSLT, CS_DOD_PASSWORD, CS_GSLT
 EOF
     return 0
 }
@@ -212,6 +218,7 @@ parse_args() {
             --dry-run) DRY_RUN=1; shift ;;
             --no-install) RUN_INSTALL=0; shift ;;
             --no-backup) CS_BACKUP=0; shift ;;
+            --dod) DOD=1; shift ;;
             --harden-ssh) HARDEN_SSH=1; shift ;;
             --user)
                 [[ $# -ge 2 ]] || error "--user needs a name"
@@ -265,7 +272,26 @@ validate() {
     if [[ "${FASTDL}" != "0" && "${FASTDL}" != "1" ]]; then
         error "Invalid CS_FASTDL: ${FASTDL} (expected 0 or 1)"
     fi
+    if [[ "${DOD}" != "0" && "${DOD}" != "1" ]]; then
+        error "Invalid CS_DOD: ${DOD} (expected 0 or 1)"
+    fi
     valid_port CS_PORT "${GAME_PORT}" 1024
+    valid_port CS_DOD_PORT "${DOD_PORT}" 1024
+    if [[ "${DOD}" == "1" && "${DOD_PORT}" == "${GAME_PORT}" ]]; then
+        error "Day of Defeat port ${DOD_PORT} is the same as CS_PORT. Counter-Strike keeps ${GAME_PORT}; set CS_DOD_PORT to another port."
+    fi
+    if [[ -n "${CS_DOD_MODE:-}" && "${CS_DOD_MODE}" != "pub" && "${CS_DOD_MODE}" != "match" ]]; then
+        error "Invalid CS_DOD_MODE: ${CS_DOD_MODE} (expected pub or match)"
+    fi
+    if [[ -n "${CS_DOD_GSLT:-}" && ! "${CS_DOD_GSLT}" =~ ^[A-Fa-f0-9]{32}$ ]]; then
+        error "Invalid CS_DOD_GSLT: expected a 32-character hex Steam game server token for app 30"
+    fi
+    if [[ -n "${CS_GSLT:-}" && ! "${CS_GSLT}" =~ ^[A-Fa-f0-9]{32}$ ]]; then
+        error "Invalid CS_GSLT: expected a 32-character hex Steam game server token"
+    fi
+    if [[ -n "${CS_DOD_PASSWORD:-}" && ! "${CS_DOD_PASSWORD}" =~ ^[A-Za-z0-9!@#^*_=+.-]{1,32}$ ]]; then
+        error "Invalid CS_DOD_PASSWORD: use 1 to 32 characters from letters, digits, and !@#^*_=+.-"
+    fi
     valid_port CS_FASTDL_PORT "${FASTDL_PORT}" 1024
     if [[ -n "${CS_SSH_PORT:-}" ]]; then
         valid_port CS_SSH_PORT "${CS_SSH_PORT}" 1
@@ -378,12 +404,15 @@ fill_packages() {
 }
 
 firewall_words() {
-    local extra=""
+    local extra="" ports="${GAME_PORT}/udp"
+    if [[ "${DOD}" == "1" ]]; then
+        ports="${GAME_PORT}/udp, dod ${DOD_PORT}/udp"
+    fi
     if [[ "${FASTDL}" == "1" ]]; then
         extra=", fastdl ${FASTDL_PORT}/tcp"
     fi
-    printf '%s, SSH %s/tcp, game %s/udp%s, query-flood unit\n' \
-        "${FIREWALL}" "${SSH_PORT}" "${GAME_PORT}" "${extra}"
+    printf '%s, SSH %s/tcp, game %s%s, query-flood unit\n' \
+        "${FIREWALL}" "${SSH_PORT}" "${ports}" "${extra}"
 }
 
 installer_path() {
@@ -437,11 +466,41 @@ build_install_env() {
     for name in CS_SERVER_VERSION CS_SERVER_IMAGE CS_FASTDL CS_FASTDL_PORT CS_FASTDL_HOST \
         CS_PORT CS_MODE CS_BOTS CS_PROFILE SERVER_IP CS_RCON CS_AUTO_UPDATE \
         CS_METRICS_PORT CS_METRICS_BIND CS_GAME CS_INSTANCE CS_LAN_KIT FASTDL_URL \
-        CS_BACKUP_KEEP; do
+        CS_BACKUP_KEEP CS_GSLT CS_INSECURE; do
         if [[ -n "${!name:-}" ]]; then
             INSTALL_ENV+=("${name}=${!name}")
         fi
     done
+}
+
+# The Day of Defeat install is a second run of install.sh: its own image,
+# Quadlet unit (dod-server), config directory and state volume. It does not
+# inherit Counter-Strike's mode, instance, LAN kit or FastDL sidecar.
+build_dod_install_env() {
+    local uid="$1" home="$2" name
+    DOD_INSTALL_ENV=(
+        "HOME=${home}"
+        "USER=${DEPLOY_USER}"
+        "LOGNAME=${DEPLOY_USER}"
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        "XDG_RUNTIME_DIR=/run/user/${uid}"
+        "CS_BACKUP=${CS_BACKUP}"
+        "CS_RUNTIME=${ENGINE}"
+        "CS_GAME=dod"
+        "CS_PORT=${DOD_PORT}"
+        "CS_DOD_MODE=${CS_DOD_MODE:-pub}"
+    )
+    for name in CS_SERVER_VERSION CS_SERVER_IMAGE CS_RCON CS_AUTO_UPDATE CS_BACKUP_KEEP SERVER_IP; do
+        if [[ -n "${!name:-}" ]]; then
+            DOD_INSTALL_ENV+=("${name}=${!name}")
+        fi
+    done
+    if [[ -n "${CS_DOD_GSLT:-}" ]]; then
+        DOD_INSTALL_ENV+=("CS_GSLT=${CS_DOD_GSLT}")
+    fi
+    if [[ -n "${CS_DOD_PASSWORD:-}" ]]; then
+        DOD_INSTALL_ENV+=("CS_DOD_PASSWORD=${CS_DOD_PASSWORD}")
+    fi
 }
 
 print_install_command() {
@@ -481,6 +540,13 @@ print_plan() {
     build_install_env "${uid}" "${home}"
     info "Install command:"
     print_install_command "${installer}"
+    if [[ "${DOD}" == "1" ]]; then
+        build_dod_install_env "${uid}" "${home}"
+        info "Day of Defeat (${CS_DOD_MODE:-pub}) on ${DOD_PORT}/udp, unit dod-server, volume dod-server-state:"
+        # print_install_command reads INSTALL_ENV.
+        INSTALL_ENV=("${DOD_INSTALL_ENV[@]}")
+        print_install_command "${installer}"
+    fi
 }
 
 mem_is_small() {
@@ -718,12 +784,22 @@ ops_file() {
     printf '%s\n' "${dest}"
 }
 
+# One port, or an nftables set when Day of Defeat is installed beside CS.
+game_port_define() {
+    if [[ "${DOD}" == "1" ]]; then
+        printf '{ %s, %s }\n' "${GAME_PORT}" "${DOD_PORT}"
+    else
+        printf '%s\n' "${GAME_PORT}"
+    fi
+}
+
 apply_firewall() {
-    local src_fw src_unit src_in src_in_unit fastdl_line=""
+    local src_fw src_unit src_in src_in_unit fastdl_line="" game_define
+    game_define=$(game_port_define)
     src_fw=$(ops_file firewall/cs-server.nft)
     src_unit=$(ops_file firewall/cs-server-firewall.service)
     install -d -m 755 /etc/cs-server
-    awk -v game="${GAME_PORT}" '
+    awk -v game="${game_define}" '
         /^define game_port/ { print "define game_port = " game; next }
         { print }
     ' "${src_fw}" > /etc/cs-server/firewall.nft
@@ -736,7 +812,7 @@ apply_firewall() {
         if [[ "${FASTDL}" == "1" ]]; then
             fastdl_line="        tcp dport ${FASTDL_PORT} accept"
         fi
-        awk -v ssh="${SSH_PORT}" -v game="${GAME_PORT}" -v fastdl="${fastdl_line}" '
+        awk -v ssh="${SSH_PORT}" -v game="${game_define}" -v fastdl="${fastdl_line}" '
             /^define ssh_port/ { print "define ssh_port = " ssh; next }
             /^define game_port/ { print "define game_port = " game; next }
             /^[[:space:]]*# FASTDL_RULE$/ { if (fastdl != "") print fastdl; next }
@@ -754,11 +830,18 @@ apply_firewall() {
 
     if [[ "${FIREWALL}" == "nftables" ]]; then
         systemctl enable --now cs-server-input.service
-        ok "nftables allows SSH ${SSH_PORT}/tcp and ${GAME_PORT}/udp"
+        if [[ "${DOD}" == "1" ]]; then
+            ok "nftables allows SSH ${SSH_PORT}/tcp and ${GAME_PORT}/udp and ${DOD_PORT}/udp"
+        else
+            ok "nftables allows SSH ${SSH_PORT}/tcp and ${GAME_PORT}/udp"
+        fi
         warn "Confirm a new SSH session before closing this one."
     elif [[ "${FIREWALL}" == "ufw" ]]; then
         ufw allow "${SSH_PORT}/tcp"
         ufw allow "${GAME_PORT}/udp"
+        if [[ "${DOD}" == "1" ]]; then
+            ufw allow "${DOD_PORT}/udp"
+        fi
         if [[ "${FASTDL}" == "1" ]]; then
             ufw allow "${FASTDL_PORT}/tcp"
         fi
@@ -773,6 +856,9 @@ apply_firewall() {
     else
         firewall-cmd --permanent --add-port="${SSH_PORT}/tcp"
         firewall-cmd --permanent --add-port="${GAME_PORT}/udp"
+        if [[ "${DOD}" == "1" ]]; then
+            firewall-cmd --permanent --add-port="${DOD_PORT}/udp"
+        fi
         if [[ "${FASTDL}" == "1" ]]; then
             firewall-cmd --permanent --add-port="${FASTDL_PORT}/tcp"
         fi
@@ -803,6 +889,12 @@ run_installer() {
     if [[ "${RUN_INSTALL}" == "0" ]]; then
         info "Host setup is done. Install command:"
         print_install_command "${installer}"
+        if [[ "${DOD}" == "1" ]]; then
+            build_dod_install_env "${uid}" "${home}"
+            info "Day of Defeat install command:"
+            INSTALL_ENV=("${DOD_INSTALL_ENV[@]}")
+            print_install_command "${installer}"
+        fi
         return 0
     fi
     info "Running install.sh as ${DEPLOY_USER}"
@@ -812,6 +904,11 @@ run_installer() {
     fi
     [[ -n "${runuser_bin}" ]] || error "runuser is not installed (package util-linux)"
     "${runuser_bin}" -u "${DEPLOY_USER}" -- env "${INSTALL_ENV[@]}" bash "${installer}"
+    if [[ "${DOD}" == "1" ]]; then
+        build_dod_install_env "${uid}" "${home}"
+        info "Installing Day of Defeat on ${DOD_PORT}/udp"
+        "${runuser_bin}" -u "${DEPLOY_USER}" -- env "${DOD_INSTALL_ENV[@]}" bash "${installer}"
+    fi
 }
 
 parse_args "$@"

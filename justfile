@@ -109,6 +109,7 @@ check: lint shellcheck test
 test:
     {{ if ENGINE == "container" { "container run --rm -m 512M -v " + justfile_directory() + ":/repo -w /repo debian:trixie-slim bash -c 'bash tests/entrypoint_test.sh && bash tests/shutdown_test.sh'" } else { "bash tests/entrypoint_test.sh && bash tests/shutdown_test.sh" } }}
     bash tests/mapcycle_test.sh
+    bash tests/dod_config_test.sh
     bash tests/mounts_test.sh
     bash tests/mode_test.sh
     bash tests/fetch_maps_test.sh
