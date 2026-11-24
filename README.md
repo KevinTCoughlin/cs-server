@@ -34,7 +34,7 @@ To uninstall: `curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-se
 
 ## Deploy on a fresh VPS
 
-One script on a new KVM VPS. A minimal image needs `ca-certificates` and `curl` installed first, so the script can be fetched. It creates an unprivileged user, installs the container engine, turns on unattended upgrades and fail2ban, opens the firewall, and runs `install.sh`.
+One script on a new KVM VPS. A minimal image needs `ca-certificates` and `curl` installed first, so the script can be fetched. It creates an unprivileged user, installs the container engine, turns on unattended upgrades and fail2ban, opens the firewall, installs a daily idle-restart timer, and runs `install.sh`.
 
 | Host | Engine | Notes |
 |------|--------|-------|
@@ -55,7 +55,7 @@ A minimal image such as RackNerd's Debian 13 has apt and no `curl`, so the two `
 
 `--ssh-key` (or `--ssh-key-file`, or `CS_SSH_PUBLIC_KEY`) installs a public key for the deploy user. `ssh-keygen -l` checks the key; a malformed key is rejected. The bootstrap does not change how SSH accepts logins. Root and password login stay as the VPS image left them.
 
-The deploy user is `cs` (`--user` or `CS_DEPLOY_USER`) and is added to the `sudo` group. The server listens on `27015/udp`. `CS_DOD=1` (or `--dod`) also installs Day of Defeat on `27016/udp`; see [Day of Defeat 1.3](#day-of-defeat-13). `CS_DOD_MODE` and `CS_DOD_PASSWORD` are passed only to that install. An inherited value is removed from the Counter-Strike install, which exits if it sees one. `CS_FASTDL=1` also opens `27080/tcp`. Daily backups of the state volume (bans, admins, stats, logs) go to `~cs/cs-server-backups` and keep 14 (`CS_BACKUP=0` or `--no-backup` turns them off). The timer records the engine this install selected (`podman` or `docker`) and the keep count in `~cs/.config/cs-server/backup.env`, so a later backup does not switch engines.
+The deploy user is `cs` (`--user` or `CS_DEPLOY_USER`) and is added to the `sudo` group. The server listens on `27015/udp`. `CS_DOD=1` (or `--dod`) also installs Day of Defeat on `27016/udp`; see [Day of Defeat 1.3](#day-of-defeat-13). `CS_DOD_MODE` and `CS_DOD_PASSWORD` are passed only to that install. An inherited value is removed from the Counter-Strike install, which exits if it sees one. `CS_FASTDL=1` also opens `27080/tcp`. Daily backups of the state volume (bans, admins, stats, logs) go to `~cs/cs-server-backups` and keep 14 (`CS_BACKUP=0` or `--no-backup` turns them off). The timer records the engine this install selected (`podman` or `docker`) and the keep count in `~cs/.config/cs-server/backup.env`, so a later backup does not switch engines. A second timer restarts each game server at 05:00 America/Los_Angeles when nobody is playing, and retries every 20 minutes until 08:00 (`CS_RESTART=0` or `--no-restart` turns that off). See [Daily restart](#daily-restart).
 
 On Podman the bootstrap also runs `systemctl add-wants multi-user.target network-online.target`. Rootless Quadlet units wait for `network-online.target`, and with linger that wait sat at the network-online timeout (about two and a half minutes on a RackNerd Debian 13 image) when nothing else pulled the target into boot. Repeating the command leaves the existing dependency in place. After the nftables rules are written, the bootstrap reloads `cs-server-firewall` and, when it owns the input policy, `cs-server-input`. A second run that adds a port (Day of Defeat's `27016/udp`) applies it without a reboot. `enable --now` on those oneshot units does not reload a unit that is already active, which is why the reload is separate.
 
@@ -107,6 +107,49 @@ sudo -u cs systemctl --user start scoutzknivez
 ```
 
 Stop the server first. The archive is mode 0600 and owned by `cs`. Restore streams it into a staging volume on stdin (the game image runs as UID 10001 and cannot read that file from a bind mount), checks that it extracted, then swaps it into `cs-server-state`. A malformed or truncated archive leaves the volume as it was. Config in `~cs/.config/cs-server/` is not inside the volume; copy that directory separately when you want it kept.
+
+### Daily restart
+
+HLDS memory grows over a long uptime. The bootstrap installs a systemd user timer, `cs-server-restart.timer`, that recycles each game server once per Los Angeles day when the server is empty of human players.
+
+The timer fires at 05:00 America/Los_Angeles and then every 20 minutes through 08:00. `RandomizedDelaySec=90s` keeps it off the exact minute. `Persistent=false`, so a VPS that was powered off at 05:00 does not restart when it comes back later. Each pass runs `cs-server-restart`, which sends an A2S_INFO query to `127.0.0.1` on that server's port (or to `SERVER_IP`, when the unit binds one address). Human players are the reply's player count minus its bot count. A server with zero human players is restarted. A server with a person on it is left running and checked again on the next pass. At 08:00 a server that still has human players stays up until the next morning. Each server is restarted at most once that day.
+
+The restart is the Quadlet unit's `systemctl --user restart`. The entrypoint announces a shutdown countdown of about 30 seconds, then quits, and the unit starts the server again. FastDL is left alone. A query that gets no reply leaves the server running too: `NOMASTER=1` silences A2S_INFO, so a server started that way is never recycled by this timer.
+
+Decisions are in the user journal:
+
+```bash
+sudo -u cs journalctl --user -u cs-server-restart --since today
+```
+
+`CS_RESTART=0` or `--no-restart` on a later bootstrap removes the timer. Running the bootstrap again with the default puts it back. The script and the unit files are replaced in place, so a second run is safe.
+
+On a machine that already has the servers, install only the timer:
+
+```bash
+sudo bash ops/bootstrap-vps.sh --restart-only
+```
+
+From a copy of the script, the same step is:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/ops/bootstrap-vps.sh \
+  | sudo bash -s -- --restart-only
+```
+
+`--user` selects a deploy user other than `cs`. The user must already exist, and lingering must be available; the command enables lingering if it is off. Quadlet units under `~cs/.config/containers/systemd` are discovered on their own (`HealthCmd=/healthcheck.sh`). A full bootstrap also writes `~cs/.config/cs-server/restart.targets` so a Docker install, which has no Quadlet file, is included. Check the next fire with:
+
+```bash
+sudo -u cs env XDG_RUNTIME_DIR=/run/user/$(id -u cs) \
+  systemctl --user list-timers cs-server-restart.timer
+```
+
+A manual check, including outside the morning window, still skips a server that has human players:
+
+```bash
+sudo -u cs env XDG_RUNTIME_DIR=/run/user/$(id -u cs) \
+  /home/cs/.local/bin/cs-server-restart --now
+```
 
 ## Zed
 
@@ -718,8 +761,10 @@ come from Steam app **90**. Clients are app **30**, which is the id in
 
 On a VPS the bootstrap installs both, opens `27016/udp`, rate-limits queries
 to both ports, and the daily backup archives `dod-server-state` along with
-`cs-server-state`. Lingering is the same linger the Counter-Strike install
-already turns on, so both units start at boot.
+`cs-server-state`. The daily idle restart queries each port on its own, so a
+quiet Counter-Strike server can recycle while people are still on Day of Defeat.
+Lingering is the same linger the Counter-Strike install already turns on, so
+both units start at boot.
 
 ```bash
 sudo apt-get update
