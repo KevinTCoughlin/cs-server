@@ -1,0 +1,35 @@
+From b7733078c00c05df3d2b05e32480a27343ea8678 Mon Sep 17 00:00:00 2001
+From: "Kevin T. Coughlin" <KevinTCoughlin@users.noreply.github.com>
+Date: Tue, 24 Nov 2026 03:56:06 +0000
+Subject: [PATCH] fix(nav): initialize CNavArea open-list links
+
+Initialize() sets the hash links and leaves m_nextOpen, m_prevOpen and
+m_openMarker uninitialized. m_masterMarker starts at 1 and
+MakeNewMarker() skips 0, so a leftover m_openMarker equal to the live
+generation makes IsOpen() true and UpdateOnOpenList() follows m_prevOpen.
+
+Zero is not a live generation. Storing 0 and null in Initialize(), which
+every constructor calls, makes a new area not open until AddToOpenList().
+---
+ regamedll/game_shared/bot/nav_area.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/regamedll/game_shared/bot/nav_area.cpp b/regamedll/game_shared/bot/nav_area.cpp
+index 368e2c9..75a0a59 100644
+--- a/regamedll/game_shared/bot/nav_area.cpp
++++ b/regamedll/game_shared/bot/nav_area.cpp
+@@ -176,6 +176,11 @@ void CNavArea::Initialize()
+ 
+ 	m_prevHash = nullptr;
+ 	m_nextHash = nullptr;
++
++	// 0 is not a live generation: m_masterMarker starts at 1 and MakeNewMarker() skips 0.
++	m_nextOpen = nullptr;
++	m_prevOpen = nullptr;
++	m_openMarker = 0;
+ }
+ 
+ // Constructor used during normal runtime
+-- 
+2.43.0
+
