@@ -34,7 +34,7 @@ To uninstall: `curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-se
 
 ## Deploy on a fresh VPS
 
-One command on a new KVM VPS. It creates an unprivileged user, installs the container engine, turns on unattended upgrades and fail2ban, opens the firewall, and runs `install.sh`.
+One script on a new KVM VPS. A minimal image needs `ca-certificates` and `curl` installed first, so the script can be fetched. It creates an unprivileged user, installs the container engine, turns on unattended upgrades and fail2ban, opens the firewall, and runs `install.sh`.
 
 | Host | Engine | Notes |
 |------|--------|-------|
@@ -45,13 +45,19 @@ One command on a new KVM VPS. It creates an unprivileged user, installs the cont
 A 1 GB VPS is enough for the server's 512 MB limit. When RAM is under about 1.8 GB and there is no swap, the bootstrap adds a 1 GiB swap file so pulling the image can finish. Ubuntu 24.04 restricts unprivileged user namespaces; the bootstrap relaxes that so rootless Podman can start.
 
 ```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl
 curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/ops/bootstrap-vps.sh \
   | sudo bash -s -- --ssh-key "ssh-ed25519 AAAA... you@host"
 ```
 
+A minimal image such as RackNerd's Debian 13 has apt and no `curl`, so the two `apt-get` lines are what make the fetch work. When either package is still missing, the bootstrap installs it before downloading anything else, which covers a checkout or a copied script on that image.
+
 `--ssh-key` (or `--ssh-key-file`, or `CS_SSH_PUBLIC_KEY`) installs a public key for the deploy user. `ssh-keygen -l` checks the key; a malformed key is rejected. The bootstrap does not change how SSH accepts logins. Root and password login stay as the VPS image left them.
 
-The deploy user is `cs` (`--user` or `CS_DEPLOY_USER`) and is added to the `sudo` group. The server listens on `27015/udp`. `CS_DOD=1` (or `--dod`) also installs Day of Defeat on `27016/udp`; see [Day of Defeat 1.3](#day-of-defeat-13). `CS_FASTDL=1` also opens `27080/tcp`. Daily backups of the state volume (bans, admins, stats, logs) go to `~cs/cs-server-backups` and keep 14 (`CS_BACKUP=0` or `--no-backup` turns them off). The timer records the engine this install selected (`podman` or `docker`) and the keep count in `~cs/.config/cs-server/backup.env`, so a later backup does not switch engines.
+The deploy user is `cs` (`--user` or `CS_DEPLOY_USER`) and is added to the `sudo` group. The server listens on `27015/udp`. `CS_DOD=1` (or `--dod`) also installs Day of Defeat on `27016/udp`; see [Day of Defeat 1.3](#day-of-defeat-13). `CS_DOD_MODE` and `CS_DOD_PASSWORD` are passed only to that install. An inherited value is removed from the Counter-Strike install, which exits if it sees one. `CS_FASTDL=1` also opens `27080/tcp`. Daily backups of the state volume (bans, admins, stats, logs) go to `~cs/cs-server-backups` and keep 14 (`CS_BACKUP=0` or `--no-backup` turns them off). The timer records the engine this install selected (`podman` or `docker`) and the keep count in `~cs/.config/cs-server/backup.env`, so a later backup does not switch engines.
+
+On Podman the bootstrap also runs `systemctl add-wants multi-user.target network-online.target`. Rootless Quadlet units wait for `network-online.target`, and with linger that wait sat at the network-online timeout (about two and a half minutes on a RackNerd Debian 13 image) when nothing else pulled the target into boot. Repeating the command leaves the existing dependency in place. After the nftables rules are written, the bootstrap reloads `cs-server-firewall` and, when it owns the input policy, `cs-server-input`. A second run that adds a port (Day of Defeat's `27016/udp`) applies it without a reboot. `enable --now` on those oneshot units does not reload a unit that is already active, which is why the reload is separate.
 
 `--dry-run` prints the plan and changes nothing. `--no-install` does the host setup and prints an `install.sh` command. From a git checkout that path is the file in the checkout. From `curl | bash` the script saves a copy at `/usr/local/lib/cs-server/install.sh` and prints that path, which is still there after the bootstrap exits.
 
@@ -716,6 +722,8 @@ to both ports, and the daily backup archives `dod-server-state` along with
 already turns on, so both units start at boot.
 
 ```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl
 curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/ops/bootstrap-vps.sh \
   | sudo bash -s -- --dod --ssh-key "ssh-ed25519 AAAA... you@host"
 ```
@@ -735,7 +743,7 @@ the 1000 the Counter-Strike server keeps.
 
 ### Public server and 6v6
 
-`CS_DOD_MODE=pub` (the default) or `match`. The container reads `DOD_MODE`.
+`CS_DOD_MODE=pub` (the default) or `match` is passed only to the Day of Defeat install. The Counter-Strike install does not receive it. The container reads `DOD_MODE`.
 On a running server the console takes the same files:
 
 ```bash
@@ -1159,7 +1167,7 @@ flooder lock everyone else out.
 
 The file limits port 27015; edit `define game_port` for another port. It
 works for rootless Podman and for Docker alike (it hooks in before NAT).
-`install.sh` only points at it. [`ops/bootstrap-vps.sh`](ops/bootstrap-vps.sh) installs and enables the unit on a new VPS, and adds an input policy for SSH and `27015/udp` when the host has neither firewalld nor ufw.
+`install.sh` only points at it. [`ops/bootstrap-vps.sh`](ops/bootstrap-vps.sh) installs and enables the unit on a new VPS, reloads it after writing the rules (and reloads `cs-server-input` when that policy is the one in use), and adds an input policy for SSH and `27015/udp` when the host has neither firewalld nor ufw. A later run that opens another game port reloads those units so the new rule is applied.
 
 ## Performance Tuning
 
