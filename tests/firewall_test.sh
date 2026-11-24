@@ -78,4 +78,16 @@ dropped=$(nft list table inet cs_server | sed -n 's/.*counter packets \([0-9]*\)
 assert_eq "the counter shows what was dropped" "$((200 - queries))" "${dropped}"
 
 nft delete table inet cs_server || fail "the table cannot be removed"
+
+# The VPS input policy: its own table, default drop, SSH and the game port.
+INPUT="${ROOT}/ops/firewall/cs-server-input.nft"
+nft -f "${INPUT}" || fail "the input rules do not load"
+nft -f "${INPUT}" || fail "the input rules do not load a second time"
+listing=$(nft list table inet cs_server_input)
+assert_contains "input policy drops" "${listing}" "policy drop"
+assert_contains "loopback is accepted" "${listing}" "iif \"lo\" accept"
+assert_contains "ssh is allowed" "${listing}" "tcp dport 22"
+assert_contains "the game port is allowed" "${listing}" "udp dport 27015"
+nft delete table inet cs_server_input || fail "the input table cannot be removed"
+
 printf 'firewall tests passed (%s of 200 queries allowed, 200 of 200 game packets)\n' "${queries}"

@@ -1,0 +1,32 @@
+#!/usr/sbin/nft -f
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Default-drop input policy for a VPS that has no firewall manager.
+# ops/bootstrap-vps.sh installs this only when firewalld is not running and
+# ufw is not installed. It does not flush other tables. The query-flood
+# limit stays in cs-server.nft, which is safe beside firewalld and ufw.
+#
+# bootstrap rewrites the defines (and the FASTDL_RULE line) for the host's
+# SSH port, game port and optional FastDL port. Loading this file as it is
+# allows 22/tcp and 27015/udp.
+
+define ssh_port = 22
+define game_port = 27015
+
+table inet cs_server_input
+delete table inet cs_server_input
+
+table inet cs_server_input {
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        ct state established,related accept
+        iif "lo" accept
+        meta l4proto icmp accept
+        meta l4proto icmpv6 accept
+        tcp dport $ssh_port accept
+        udp dport $game_port accept
+        # FASTDL_RULE
+    }
+}

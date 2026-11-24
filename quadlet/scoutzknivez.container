@@ -32,6 +32,8 @@ HealthInterval=30s
 HealthTimeout=5s
 HealthStartPeriod=60s
 HealthRetries=3
+# Notify=healthy needs Podman 5 or newer. install.sh omits this line on Podman 4.4 to 4.9:
+# the server still runs, and an automatic update cannot roll a bad image back.
 Notify=healthy
 
 [Service]

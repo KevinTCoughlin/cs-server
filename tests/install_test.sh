@@ -13,6 +13,12 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck disable=SC1091 # lib.sh is linted on its own
 source "${ROOT}/tests/lib.sh"
 
+# install.sh pins this. It has to be the newest released heading in the changelog.
+DEFAULT_VERSION=$(sed -n 's/^DEFAULT_VERSION="\([0-9][0-9.]*\)"/\1/p' "${ROOT}/install.sh")
+[[ -n "${DEFAULT_VERSION}" ]] || fail "install.sh has no DEFAULT_VERSION"
+released=$(sed -n 's/^## \[\([0-9][0-9.]*\)\].*/\1/p' "${ROOT}/CHANGELOG.md" | head -n 1)
+assert_eq "DEFAULT_VERSION is the newest CHANGELOG release" "${released}" "${DEFAULT_VERSION}"
+
 WORK=$(mktemp -d)
 trap 'rm -rf "${WORK}"' EXIT
 TOOLS="${WORK}/tools"
@@ -36,7 +42,18 @@ cat > "${STUBS}/engine" <<'EOF'
 printf '%s %s\n' "${0##*/}" "$*" >> "${CALLS}"
 case "$1" in
     info) echo true ;;
-    version) echo "${FAKE_DOCKER_VERSION:-29.10.0}" ;;
+    version)
+        case "${0##*/}" in
+            podman)
+                if [ "${FAKE_PODMAN_VERSION_FAIL:-0}" = 1 ]; then
+                    echo "podman version unknown"
+                    exit 0
+                fi
+                printf '%s\n' "${FAKE_PODMAN_VERSION:-5.4.2}"
+                ;;
+            *) printf '%s\n' "${FAKE_DOCKER_VERSION:-29.10.0}" ;;
+        esac
+        ;;
     pull) [ "${FAKE_PULL_FAIL:-0}" = 0 ] || exit 1 ;;
     run)
         case "$*" in
@@ -88,6 +105,22 @@ fi
 EOF
 printf '#!/bin/sh\necho 192.0.2.10\n' > "${STUBS}/hostname"
 printf '#!/bin/sh\n' > "${STUBS}/sleep"
+cat > "${STUBS}/loginctl" <<'EOF'
+#!/bin/sh
+printf 'loginctl %s\n' "$*" >> "${CALLS}"
+case "$1" in
+    show-user)
+        if [ "${FAKE_LINGER:-no}" = yes ]; then
+            echo Linger=yes
+        else
+            echo Linger=no
+        fi
+        ;;
+    enable-linger)
+        [ "${FAKE_LINGER_FAIL:-0}" = 0 ]
+        ;;
+esac
+EOF
 chmod +x "${STUBS}"/*
 
 # use_runtimes [podman] [docker]: which engines the installer can find.
@@ -109,7 +142,7 @@ install() {
     [[ "$#" -eq 0 ]] || shift
     : > "${LOG}"
     set +e
-    output=$(env -i PATH="${STUBS}:${TOOLS}" HOME="${HOME_DIR}" CALLS="${LOG}" \
+    output=$(env -i PATH="${STUBS}:${TOOLS}" HOME="${HOME_DIR}" USER=tester CALLS="${LOG}" \
         FAKE_IMAGE_CONFIG="${ROOT}/config" ${env_args[@]+"${env_args[@]}"} \
         "${BASH_BIN}" "${ROOT}/install.sh" "$@" 2>&1 <<< "${ANSWERS:-}")
     status=$?
@@ -188,6 +221,7 @@ assert_contains "seeds config without network" "${calls}" "podman run --rm --net
 assert_contains "reloads systemd" "${calls}" "systemctl --user daemon-reload"
 assert_contains "starts the service" "${calls}" "systemctl --user start scoutzknivez"
 assert_not_contains "does not try to enable a generated unit" "${calls}" "enable --now scoutzknivez"
+assert_contains "enables lingering for boot" "${calls}" "loginctl enable-linger tester"
 assert_contains "prints the server address" "${output}" "192.0.2.10:27015"
 
 # The installer's unit is the repo's Quadlet unit with this user's paths.
@@ -308,9 +342,10 @@ assert_contains "instance uninstall removes only its volume" "${calls}" "podman 
 fresh_home
 install FAKE_ACTIVE=0
 expect_ok "default install"
-assert_contains "pulls the default image" "${calls}" "podman pull ghcr.io/kevintcoughlin/cs-server:latest"
+assert_contains "pulls the default image" "${calls}" "podman pull ghcr.io/kevintcoughlin/cs-server:${DEFAULT_VERSION}"
 unit=$(cat "${UNIT}")
-assert_contains "unit runs the default image" "${unit}" "Image=ghcr.io/kevintcoughlin/cs-server:latest"
+assert_contains "unit runs the default image" "${unit}" "Image=ghcr.io/kevintcoughlin/cs-server:${DEFAULT_VERSION}"
+assert_contains "default unit keeps Notify=healthy on Podman 5" "${unit}" "Notify=healthy"
 assert_not_contains "no auto-update unless asked for" "${unit}" "AutoUpdate"
 assert_not_contains "no auto-update timer unless asked for" "${calls}" "podman-auto-update.timer"
 assert_not_contains "a stopped server is started, not restarted" "${calls}" "systemctl --user restart"
@@ -348,6 +383,65 @@ assert_contains "auto-update timer is enabled" "${calls}" "systemctl --user enab
 install CS_AUTO_UPDATE=1 CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:abc123
 expect_die "auto-update with a digest" "needs a tag, not a digest"
 
+# Podman 4.4–4.9 can run Quadlet, without the health notification Podman 5 uses
+# to roll a bad auto-update back. Older than 4.4 is refused.
+fresh_home
+install FAKE_PODMAN_VERSION=4.9.3 CS_AUTO_UPDATE=1
+expect_ok "Podman 4.9 install"
+unit=$(cat "${UNIT}")
+assert_not_contains "Podman 4.9 omits Notify=healthy" "${unit}" "Notify=healthy"
+assert_contains "Podman 4.9 warns that rollback is unavailable" "${output}" "Automatic-update rollback is unavailable"
+assert_contains "Podman 4.9 still opts in to auto-update" "${unit}" "AutoUpdate=registry"
+install FAKE_PODMAN_VERSION=4.4.0
+expect_ok "Podman 4.4 install"
+assert_not_contains "Podman 4.4 omits Notify=healthy" "$(cat "${UNIT}")" "Notify=healthy"
+install FAKE_PODMAN_VERSION=5.0.0
+expect_ok "Podman 5.0 install"
+assert_contains "Podman 5 keeps Notify=healthy" "$(cat "${UNIT}")" "Notify=healthy"
+install FAKE_PODMAN_VERSION=4.3.1
+expect_die "Podman 4.3 has no Quadlet" "older than 4.4"
+assert_not_contains "Podman 4.3 pulls nothing" "${calls}" "podman pull"
+install FAKE_PODMAN_VERSION_FAIL=1
+expect_die "unreadable Podman version" "Could not read the Podman version"
+
+install FAKE_LINGER=yes
+expect_ok "linger already enabled"
+assert_contains "notices lingering" "${output}" "already enabled"
+assert_not_contains "does not enable linger again" "${calls}" "loginctl enable-linger"
+install FAKE_LINGER_FAIL=1
+expect_ok "linger cannot be set"
+assert_contains "prints the linger command" "${output}" "sudo loginctl enable-linger tester"
+
+use_runtimes podman docker
+fresh_home
+install CS_RUNTIME=docker
+expect_ok "CS_RUNTIME=docker skips podman"
+assert_contains "announces the forced engine" "${output}" "Docker selected (CS_RUNTIME=docker)"
+assert_not_contains "podman is not used" "${calls}" "podman "
+use_runtimes podman
+install CS_RUNTIME=docker
+expect_die "CS_RUNTIME=docker with no docker" "docker is not installed"
+install CS_RUNTIME=container
+expect_die "bad CS_RUNTIME" "Invalid CS_RUNTIME"
+
+fresh_home
+install
+expect_ok "default install does not install backups"
+[[ ! -e "${HOME_DIR}/.local/bin/cs-server-backup" ]] || fail "backup script installed without CS_BACKUP=1"
+assert_not_contains "no backup timer unless asked" "${calls}" "cs-server-backup.timer"
+install CS_BACKUP=1
+expect_ok "install with backups"
+[[ -x "${HOME_DIR}/.local/bin/cs-server-backup" ]] || fail "backup script missing"
+assert_eq "backup script is the repo's" "$(cat "${ROOT}/ops/backup-state.sh")" "$(cat "${HOME_DIR}/.local/bin/cs-server-backup")"
+assert_eq "backup service is the repo's" "$(cat "${ROOT}/ops/systemd/cs-server-backup.service")" "$(cat "${HOME_DIR}/.config/systemd/user/cs-server-backup.service")"
+assert_eq "backup timer is the repo's" "$(cat "${ROOT}/ops/systemd/cs-server-backup.timer")" "$(cat "${HOME_DIR}/.config/systemd/user/cs-server-backup.timer")"
+assert_contains "backup timer enabled" "${calls}" "systemctl --user enable --now cs-server-backup.timer"
+assert_contains "backup unit pins the runtime" "$(cat "${HOME_DIR}/.config/systemd/user/cs-server-backup.service")" "EnvironmentFile=%h/.config/cs-server/backup.env"
+assert_eq "backup env remembers podman" "CS_RUNTIME=podman
+CS_BACKUP_KEEP=14" "$(cat "${HOME_DIR}/.config/cs-server/backup.env")"
+install CS_BACKUP=yes
+expect_die "bad CS_BACKUP" "Invalid CS_BACKUP"
+
 # An image too old to carry a mounted file is refused, not half-installed.
 fresh_home
 mkdir -p "${WORK}/old-image"
@@ -377,10 +471,27 @@ for flag in "--name scoutzknivez" "--restart on-failure:10" \
     "-v ${CONFIG}/modes:/hlds/cstrike/modes:ro" "--memory 512m" "--cpus 2" "-e MODE=scoutz"; do
     assert_contains "docker run flag" "${run_line}" "${flag}"
 done
-if [[ "${run_line}" != *" ghcr.io/kevintcoughlin/cs-server:latest" ]]; then
+if [[ "${run_line}" != *" ghcr.io/kevintcoughlin/cs-server:${DEFAULT_VERSION}" ]]; then
     fail "docker run: the default image must be the last argument: ${run_line}"
 fi
 assert_not_contains "docker path uses no systemd" "${calls}" "systemctl"
+assert_not_contains "docker path does not enable lingering" "${calls}" "loginctl"
+fresh_home
+install FAKE_CONTAINER=1 CS_BACKUP=1
+expect_ok "docker install with backups"
+assert_contains "docker backups enable the timer" "${calls}" "systemctl --user enable --now cs-server-backup.timer"
+assert_contains "docker backups enable lingering" "${calls}" "loginctl enable-linger tester"
+assert_eq "docker-only backup env" "CS_RUNTIME=docker
+CS_BACKUP_KEEP=14" "$(cat "${HOME_DIR}/.config/cs-server/backup.env")"
+# Podman is installed too. The backup must stay on the engine that hosts the game.
+use_runtimes podman docker
+fresh_home
+install FAKE_CONTAINER=1 CS_RUNTIME=docker CS_BACKUP=1
+expect_ok "docker backup while podman is also installed"
+assert_not_contains "backup install does not switch to podman" "${calls}" "podman "
+assert_eq "backup env stays on docker" "CS_RUNTIME=docker
+CS_BACKUP_KEEP=14" "$(cat "${HOME_DIR}/.config/cs-server/backup.env")"
+use_runtimes docker
 # Docker's built-in seccomp profile: no profile is named, none is read out of
 # the image, and one saved by an earlier installer is removed.
 assert_not_contains "docker run names no seccomp profile" "${run_line}" "seccomp"
@@ -462,7 +573,7 @@ assert_contains "game: its own service is started" "${calls}" "systemctl --user 
 assert_eq "the default unit is untouched by a game" "${default_unit}" "$(cat "${UNIT}")"
 install CS_GAME=tfc
 expect_ok "install of a game without a version"
-assert_contains "game: newest release is the bare game tag" "${calls}" "podman pull ghcr.io/kevintcoughlin/cs-server:tfc"
+assert_contains "game: pinned release under the game's tag suffix" "${calls}" "podman pull ghcr.io/kevintcoughlin/cs-server:${DEFAULT_VERSION}-tfc"
 install CS_GAME=dod CS_INSTANCE=two CS_PORT=27017
 expect_ok "install of a game instance"
 unit=$(cat "${HOME_DIR}/.config/containers/systemd/dod-server-two.container")
@@ -497,7 +608,7 @@ expect_ok "docker install of another game"
 run_line=$(grep '^docker run -d ' "${LOG}")
 for flag in "--name czero-server" "-v ${HOME_DIR}/.config/czero-server/server.cfg:/hlds/czero/server.cfg:ro" \
     "-v ${HOME_DIR}/.config/czero-server/mapcycle.txt:/hlds/czero/mapcycle.txt:ro" \
-    "-v czero-server-state:/hlds/state" "--read-only" "-e BOTS=1" "ghcr.io/kevintcoughlin/cs-server:czero"; do
+    "-v czero-server-state:/hlds/state" "--read-only" "-e BOTS=1" "ghcr.io/kevintcoughlin/cs-server:${DEFAULT_VERSION}-czero"; do
     assert_contains "docker game flag" "${run_line}" "${flag}"
 done
 for absent in cstrike "-e MAP=" "-e MODE=" /modes; do
@@ -677,7 +788,7 @@ expect_ok "podman uninstall, remove everything"
 assert_contains "state removed after the answer was yes" "${calls}" "podman volume rm cs-server-state"
 assert_not_contains "a stopped service is not stopped again" "${calls}" "systemctl --user stop"
 [[ ! -e "${CONFIG}" ]] || fail "uninstall kept config after the answer was yes"
-assert_contains "image removed after the answer was yes" "${calls}" "podman rmi ghcr.io/kevintcoughlin/cs-server:latest"
+assert_contains "image removed after the answer was yes" "${calls}" "podman rmi ghcr.io/kevintcoughlin/cs-server:${DEFAULT_VERSION}"
 
 use_runtimes docker
 ANSWERS="" install FAKE_CONTAINER=1 -- --uninstall

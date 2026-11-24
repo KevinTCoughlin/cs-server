@@ -1,0 +1,854 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# One-time setup for a fresh KVM VPS, then the existing installer.
+#
+#   curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/ops/bootstrap-vps.sh \
+#     | sudo bash -s -- --ssh-key "ssh-ed25519 AAAA... you@host"
+#
+# Idempotent: a second run creates nothing that is already there. --dry-run
+# prints the plan and changes nothing (this is what CI runs in a container).
+#
+# Hosts:
+#   Debian 13     distro Podman 5 (recommended)
+#   Ubuntu 24.04  distro Podman 4.9 (Quadlet works; no health-gated rollback)
+#   Debian 12     distro Docker (distro Podman is 4.3, older than Quadlet)
+#
+# What it does, as root:
+#   1. Create a deploy user (default cs; --user / CS_DEPLOY_USER)
+#   2. Install an SSH public key (--ssh-key, --ssh-key-file, CS_SSH_PUBLIC_KEY)
+#   3. Leave SSH authentication as the VPS image set it. --harden-ssh is a
+#      later, separate step: it refuses to run until the deploy user has a
+#      valid authorized key and sudo access, and it checks sshd with sshd -t
+#      before reloading
+#   4. Install Podman or Docker, from the distro, after reading the Podman
+#      version when Podman is already installed
+#   5. Enable unattended-upgrades and fail2ban's sshd jail
+#   6. Install the query-flood nftables unit. Allow SSH and 27015/udp
+#      (and the FastDL port when CS_FASTDL=1) with nftables, or with ufw when
+#      ufw is installed, or with firewalld when firewalld is already running
+#   7. loginctl enable-linger for the deploy user
+#   8. Run install.sh as that user (CS_BACKUP=1 unless CS_BACKUP=0)
+#
+# --no-install does the host setup and prints an install.sh command whose
+# path still exists after this process exits (/usr/local/lib/cs-server/install.sh
+# when the script was piped in). --harden-ssh only changes sshd.
+# A machine with under about 1.8 GB of RAM and no swap gets a 1 GiB swap file.
+# Ubuntu's unprivileged-user-namespace restriction is relaxed when it is on,
+# which rootless Podman needs.
+#
+# Tests point CS_OS_RELEASE at a fake os-release file.
+set -euo pipefail
+
+RAW_BASE="https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main"
+DEPLOY_USER="${CS_DEPLOY_USER:-cs}"
+SSH_KEY="${CS_SSH_PUBLIC_KEY:-}"
+SSH_KEY_FILE=""
+DRY_RUN=0
+RUN_INSTALL=1
+HARDEN_SSH=0
+INSTALLER_STORE="/usr/local/lib/cs-server/install.sh"
+if [[ -z "${CS_BACKUP+x}" ]]; then
+    CS_BACKUP=1
+fi
+FASTDL="${CS_FASTDL:-0}"
+GAME_PORT="${CS_PORT:-27015}"
+FASTDL_PORT="${CS_FASTDL_PORT:-27080}"
+SSH_KEYS=()
+ENGINE=""
+ENGINE_WHY=""
+FIREWALL=""
+SSH_PORT=22
+OPS_CACHE=""
+TMP_INSTALLER=""
+
+info() { printf '\033[1;34m[info]\033[0m  %s\n' "$1"; }
+ok() { printf '\033[1;32m[ok]\033[0m    %s\n' "$1"; }
+warn() { printf '\033[1;33m[warn]\033[0m  %s\n' "$1"; }
+error() { printf '\033[1;31m[error]\033[0m %s\n' "$1" >&2; exit 1; }
+
+cleanup() {
+    if [[ -n "${TMP_INSTALLER}" ]]; then
+        rm -f "${TMP_INSTALLER}"
+    fi
+    if [[ -n "${OPS_CACHE}" ]]; then
+        rm -rf "${OPS_CACHE}"
+    fi
+}
+trap cleanup EXIT
+
+usage() {
+    local line
+    while IFS= read -r line; do
+        printf '%s\n' "${line}"
+    done <<EOF
+Usage: bootstrap-vps.sh [options]
+
+Prepare a fresh Debian 13, Debian 12 or Ubuntu 24.04 VPS and run install.sh
+as an unprivileged user. Run it as root. --dry-run prints the plan.
+
+Options:
+  --user NAME         Deploy user (default: cs, or CS_DEPLOY_USER)
+  --ssh-key KEY       OpenSSH public key for that user (or CS_SSH_PUBLIC_KEY)
+  --ssh-key-file PATH File of public keys (one per line)
+  --no-install        Set the host up and print a lasting install.sh command
+  --no-backup         Do not install daily state-volume backups (CS_BACKUP=0)
+  --harden-ssh        Disable root and password SSH, and nothing else
+  --dry-run           Print what would be done; change nothing
+  --help              Show this help
+
+SSH logins are not changed unless you pass --harden-ssh. Before that, from a
+second terminal: ssh <user>@<host> and then sudo -v. Run --harden-ssh only
+after both succeed.
+
+Environment (passed through to install.sh when set):
+  CS_SERVER_VERSION, CS_SERVER_IMAGE, CS_PORT, CS_FASTDL, CS_FASTDL_PORT,
+  CS_MODE, CS_BOTS, CS_PROFILE, SERVER_IP, CS_RCON, CS_GAME, CS_INSTANCE,
+  CS_BACKUP (default 1), CS_SSH_PORT
+EOF
+    return 0
+}
+
+# Directory of this file when it was executed from the checkout. Empty when
+# the script was piped into bash (curl | bash), which downloads siblings.
+script_dir() {
+    local src="${BASH_SOURCE[0]}"
+    case "${src}" in
+        */bootstrap-vps.sh | bootstrap-vps.sh) ;;
+        *)
+            printf '\n'
+            return 0
+            ;;
+    esac
+    if [[ "${src}" == */* ]]; then
+        printf '%s\n' "${src%/*}"
+    else
+        printf '%s\n' "."
+    fi
+}
+
+version_ge() {
+    local left="$1" right="$2" li ri
+    while [[ -n "${left}" || -n "${right}" ]]; do
+        li="${left%%.*}"
+        ri="${right%%.*}"
+        if [[ "${left}" == *.* ]]; then left="${left#*.}"; else left=""; fi
+        if [[ "${right}" == *.* ]]; then right="${right#*.}"; else right=""; fi
+        li="${li%%[^0-9]*}"
+        ri="${ri%%[^0-9]*}"
+        li="${li:-0}"
+        ri="${ri:-0}"
+        if ((10#${li} > 10#${ri})); then return 0; fi
+        if ((10#${li} < 10#${ri})); then return 1; fi
+    done
+    return 0
+}
+
+podman_cli_version() {
+    local raw=""
+    raw=$(podman version --format '{{.Version}}' 2>/dev/null || true)
+    if [[ ! "${raw}" =~ ^[0-9]+\.[0-9]+ ]]; then
+        raw=$(podman --version 2>/dev/null || true)
+    fi
+    if [[ "${raw}" =~ ([0-9]+\.[0-9]+(\.[0-9]+)?) ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    return 1
+}
+
+load_os() {
+    local file="${CS_OS_RELEASE:-/etc/os-release}" line key value
+    [[ -r "${file}" ]] || error "Cannot read ${file}"
+    ID=""
+    VERSION_ID=""
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+        line="${line%$'\r'}"
+        case "${line}" in
+            ID=* | VERSION_ID=*) ;;
+            *) continue ;;
+        esac
+        key="${line%%=*}"
+        value="${line#*=}"
+        value="${value%\"}"
+        value="${value#\"}"
+        value="${value%\'}"
+        value="${value#\'}"
+        case "${key}" in
+            ID) ID="${value}" ;;
+            VERSION_ID) VERSION_ID="${value}" ;;
+        esac
+    done < "${file}"
+    [[ -n "${ID}" && -n "${VERSION_ID}" ]] || error "${file} has no ID or VERSION_ID"
+}
+
+valid_port() {
+    local name="$1" value="$2" min="$3"
+    if [[ ! "${value}" =~ ^[0-9]+$ ]] || ((10#${value} < min || 10#${value} > 65535)); then
+        error "Invalid ${name}: ${value}"
+    fi
+}
+
+validate_ssh_key() {
+    local key="$1" tmp=""
+    if [[ "${key}" == *$'\n'* || "${key}" == *$'\r'* ]]; then
+        error "An SSH public key must be a single line"
+    fi
+    command -v ssh-keygen >/dev/null 2>&1 || error "ssh-keygen is required to check an SSH public key"
+    tmp=$(mktemp)
+    chmod 600 "${tmp}"
+    printf '%s\n' "${key}" > "${tmp}"
+    if ! ssh-keygen -l -f "${tmp}" >/dev/null 2>&1; then
+        rm -f "${tmp}"
+        error "Not an OpenSSH public key (ssh-keygen rejected it): ${key:0:40}"
+    fi
+    rm -f "${tmp}"
+}
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run) DRY_RUN=1; shift ;;
+            --no-install) RUN_INSTALL=0; shift ;;
+            --no-backup) CS_BACKUP=0; shift ;;
+            --harden-ssh) HARDEN_SSH=1; shift ;;
+            --user)
+                [[ $# -ge 2 ]] || error "--user needs a name"
+                DEPLOY_USER="$2"
+                shift 2
+                ;;
+            --ssh-key)
+                [[ $# -ge 2 ]] || error "--ssh-key needs a key"
+                SSH_KEY="$2"
+                shift 2
+                ;;
+            --ssh-key-file)
+                [[ $# -ge 2 ]] || error "--ssh-key-file needs a path"
+                SSH_KEY_FILE="$2"
+                shift 2
+                ;;
+            --help | -h) usage; exit 0 ;;
+            *) error "Unknown option: $1" ;;
+        esac
+    done
+}
+
+collect_keys() {
+    local line
+    SSH_KEYS=()
+    if [[ -n "${SSH_KEY}" ]]; then
+        validate_ssh_key "${SSH_KEY}"
+        SSH_KEYS+=("${SSH_KEY}")
+    fi
+    if [[ -n "${SSH_KEY_FILE}" ]]; then
+        [[ -r "${SSH_KEY_FILE}" ]] || error "Cannot read ${SSH_KEY_FILE}"
+        while IFS= read -r line || [[ -n "${line}" ]]; do
+            line="${line%$'\r'}"
+            [[ -z "${line}" || "${line}" == \#* ]] && continue
+            validate_ssh_key "${line}"
+            SSH_KEYS+=("${line}")
+        done < "${SSH_KEY_FILE}"
+    fi
+}
+
+validate() {
+    if [[ "${DEPLOY_USER}" == "root" ]]; then
+        error "The deploy user must be an unprivileged account, not root"
+    fi
+    if [[ ! "${DEPLOY_USER}" =~ ^[a-z][a-z0-9-]{0,31}$ ]]; then
+        error "Invalid deploy user: ${DEPLOY_USER} (a lowercase letter, then lowercase letters, digits or hyphens)"
+    fi
+    if [[ "${CS_BACKUP}" != "0" && "${CS_BACKUP}" != "1" ]]; then
+        error "Invalid CS_BACKUP: ${CS_BACKUP} (expected 0 or 1)"
+    fi
+    if [[ "${FASTDL}" != "0" && "${FASTDL}" != "1" ]]; then
+        error "Invalid CS_FASTDL: ${FASTDL} (expected 0 or 1)"
+    fi
+    valid_port CS_PORT "${GAME_PORT}" 1024
+    valid_port CS_FASTDL_PORT "${FASTDL_PORT}" 1024
+    if [[ -n "${CS_SSH_PORT:-}" ]]; then
+        valid_port CS_SSH_PORT "${CS_SSH_PORT}" 1
+    fi
+    collect_keys
+}
+
+choose_engine() {
+    case "${ID}:${VERSION_ID}" in
+        debian:13 | debian:13.*)
+            ENGINE="podman"
+            ENGINE_WHY="Debian 13 ships Podman 5"
+            ;;
+        ubuntu:24.04 | ubuntu:24.04.*)
+            ENGINE="podman"
+            ENGINE_WHY="Ubuntu 24.04 ships Podman 4.9; health-gated auto-update rollback needs Podman 5"
+            ;;
+        debian:12 | debian:12.*)
+            ENGINE="docker"
+            ENGINE_WHY="Debian 12's Podman is 4.3, older than Quadlet (4.4)"
+            ;;
+        *)
+            error "This bootstrap supports Debian 13 (Podman 5), Debian 12 (Docker) and Ubuntu 24.04 (Podman 4.9). This machine reports ${ID} ${VERSION_ID}. Install Podman 4.4+ or Docker and run install.sh as a normal user."
+            ;;
+    esac
+    # An already-installed Podman wins over the distro default when it is new
+    # enough, and loses when it is older than Quadlet.
+    if command -v podman >/dev/null 2>&1; then
+        local ver=""
+        if ver=$(podman_cli_version); then
+            if version_ge "${ver}" 4.4; then
+                ENGINE="podman"
+                if version_ge "${ver}" 5.0; then
+                    ENGINE_WHY="Podman ${ver}"
+                else
+                    ENGINE_WHY="Podman ${ver}; health-gated auto-update rollback needs Podman 5"
+                fi
+            else
+                ENGINE="docker"
+                ENGINE_WHY="Podman ${ver} is older than 4.4, which Quadlet needs"
+            fi
+        fi
+    fi
+}
+
+choose_firewall() {
+    # firewalld that is already running is left in place. ufw, if installed,
+    # is used instead of a second packet filter. Otherwise nftables.
+    FIREWALL="nftables"
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then
+        FIREWALL="firewalld"
+    elif command -v ufw >/dev/null 2>&1; then
+        FIREWALL="ufw"
+    fi
+}
+
+detect_ssh_port() {
+    local sshd_bin="" line=""
+    if [[ -n "${CS_SSH_PORT:-}" ]]; then
+        SSH_PORT="${CS_SSH_PORT}"
+        return 0
+    fi
+    SSH_PORT=22
+    sshd_bin=$(command -v sshd 2>/dev/null || true)
+    if [[ -z "${sshd_bin}" && -x /usr/sbin/sshd ]]; then
+        sshd_bin=/usr/sbin/sshd
+    fi
+    if [[ -n "${sshd_bin}" ]] && command -v awk >/dev/null 2>&1; then
+        line=$("${sshd_bin}" -T 2>/dev/null | awk '$1 == "port" { print $2; exit }' || true)
+        if [[ "${line}" =~ ^[0-9]+$ ]]; then
+            SSH_PORT="${line}"
+        fi
+    fi
+}
+
+deploy_home() {
+    local home=""
+    if command -v getent >/dev/null 2>&1; then
+        home=$(getent passwd "${DEPLOY_USER}" | cut -d: -f6 || true)
+    fi
+    if [[ -z "${home}" ]]; then
+        home="/home/${DEPLOY_USER}"
+    fi
+    printf '%s\n' "${home}"
+}
+
+# ssh-keygen -l accepts a file of one or more public keys and rejects a bad line.
+authorized_keys_ok() {
+    local auth="$1"
+    [[ -s "${auth}" ]] || return 1
+    command -v ssh-keygen >/dev/null 2>&1 || return 1
+    ssh-keygen -l -f "${auth}" >/dev/null 2>&1
+}
+
+# sudo -l -U reports whether the account is allowed to run sudo. It does not
+# need the account's password. The human check before --harden-ssh is sudo -v
+# in a real session, which does.
+deploy_can_sudo() {
+    command -v sudo >/dev/null 2>&1 || return 1
+    sudo -n -l -U "${DEPLOY_USER}" >/dev/null 2>&1
+}
+
+fill_packages() {
+    PACKAGES=(ca-certificates curl nftables fail2ban unattended-upgrades dbus-user-session sudo)
+    if [[ "${ENGINE}" == "podman" ]]; then
+        PACKAGES+=(podman uidmap)
+    else
+        PACKAGES+=(docker.io)
+    fi
+}
+
+firewall_words() {
+    local extra=""
+    if [[ "${FASTDL}" == "1" ]]; then
+        extra=", fastdl ${FASTDL_PORT}/tcp"
+    fi
+    printf '%s, SSH %s/tcp, game %s/udp%s, query-flood unit\n' \
+        "${FIREWALL}" "${SSH_PORT}" "${GAME_PORT}" "${extra}"
+}
+
+installer_path() {
+    local dir parent
+    dir="$(script_dir)"
+    if [[ -n "${dir}" && -f "${dir}/../install.sh" ]]; then
+        parent=$(cd "${dir}/.." && pwd) || return 1
+        printf '%s\n' "${parent}/install.sh"
+        return 0
+    fi
+    return 1
+}
+
+# A checkout already has install.sh. A piped bootstrap saves a copy that is
+# still there after this process exits, instead of a temp file.
+printed_installer() {
+    local path=""
+    if path=$(installer_path); then
+        printf '%s\n' "${path}"
+        return 0
+    fi
+    printf '%s\n' "${INSTALLER_STORE}"
+}
+
+save_installer() {
+    local path="" tmp=""
+    if path=$(installer_path); then
+        printf '%s\n' "${path}"
+        return 0
+    fi
+    install -d -m 755 /usr/local/lib/cs-server
+    tmp=$(mktemp)
+    curl -fsSL "${RAW_BASE}/install.sh" -o "${tmp}"
+    install -m 644 "${tmp}" "${INSTALLER_STORE}"
+    rm -f "${tmp}"
+    printf '%s\n' "${INSTALLER_STORE}"
+}
+
+# INSTALL_ENV is the environment install.sh runs with.
+build_install_env() {
+    local uid="$1" home="$2" name
+    INSTALL_ENV=(
+        "HOME=${home}"
+        "USER=${DEPLOY_USER}"
+        "LOGNAME=${DEPLOY_USER}"
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        "XDG_RUNTIME_DIR=/run/user/${uid}"
+        "CS_BACKUP=${CS_BACKUP}"
+        "CS_RUNTIME=${ENGINE}"
+    )
+    for name in CS_SERVER_VERSION CS_SERVER_IMAGE CS_FASTDL CS_FASTDL_PORT CS_FASTDL_HOST \
+        CS_PORT CS_MODE CS_BOTS CS_PROFILE SERVER_IP CS_RCON CS_AUTO_UPDATE \
+        CS_METRICS_PORT CS_METRICS_BIND CS_GAME CS_INSTANCE CS_LAN_KIT FASTDL_URL \
+        CS_BACKUP_KEEP; do
+        if [[ -n "${!name:-}" ]]; then
+            INSTALL_ENV+=("${name}=${!name}")
+        fi
+    done
+}
+
+print_install_command() {
+    local installer="$1" item
+    printf 'runuser -u %q -- env' "${DEPLOY_USER}"
+    for item in "${INSTALL_ENV[@]}"; do
+        printf ' %q' "${item}"
+    done
+    printf ' bash %q\n' "${installer}"
+}
+
+print_plan() {
+    local uid="UID" home="/home/${DEPLOY_USER}" installer=""
+    info "Host: ${ID} ${VERSION_ID}"
+    if command -v id >/dev/null 2>&1 && id "${DEPLOY_USER}" >/dev/null 2>&1; then
+        info "Deploy user: ${DEPLOY_USER} (already exists)"
+        uid=$(id -u "${DEPLOY_USER}")
+        home=$(deploy_home)
+    else
+        info "Deploy user: ${DEPLOY_USER} (will create)"
+    fi
+    info "Engine: ${ENGINE} (${ENGINE_WHY})"
+    info "Packages: ${PACKAGES[*]}"
+    info "SSH: authentication unchanged (run --harden-ssh after key login and sudo -v work)"
+    info "Hardening: unattended-upgrades, fail2ban sshd jail"
+    info "Firewall: $(firewall_words)"
+    info "Linger: loginctl enable-linger ${DEPLOY_USER}"
+    if [[ "${CS_BACKUP}" == "1" ]]; then
+        info "Backups: on, daily, keep ${CS_BACKUP_KEEP:-14}, ~${DEPLOY_USER}/cs-server-backups"
+    else
+        info "Backups: off (CS_BACKUP=0)"
+    fi
+    if mem_is_small; then
+        info "Swap: add a 1 GiB swap file (this host has little RAM and little swap)"
+    fi
+    installer=$(printed_installer)
+    build_install_env "${uid}" "${home}"
+    info "Install command:"
+    print_install_command "${installer}"
+}
+
+mem_is_small() {
+    local mem_kb=0 swap_kb=0 key val
+    [[ -r /proc/meminfo ]] || return 1
+    while read -r key val _; do
+        case "${key}" in
+            MemTotal:) mem_kb="${val}" ;;
+            SwapTotal:) swap_kb="${val}" ;;
+        esac
+    done < /proc/meminfo
+    [[ "${mem_kb}" =~ ^[0-9]+$ ]] || return 1
+    [[ "${swap_kb}" =~ ^[0-9]+$ ]] || swap_kb=0
+    [[ "${mem_kb}" -lt 1800000 && "${swap_kb}" -lt 524288 ]]
+}
+
+require_root() {
+    [[ "$(id -u)" -eq 0 ]] || error "Run as root: sudo bash ops/bootstrap-vps.sh"
+    command -v systemctl >/dev/null 2>&1 || error "systemd is required. This script targets a VPS; --dry-run is the container check."
+}
+
+create_user() {
+    if id "${DEPLOY_USER}" >/dev/null 2>&1; then
+        ok "User ${DEPLOY_USER} already exists"
+        return 0
+    fi
+    useradd --create-home --shell /bin/bash --comment "CS 1.6 server" "${DEPLOY_USER}"
+    ok "Created user ${DEPLOY_USER}"
+}
+
+install_ssh_keys() {
+    local home auth key
+    [[ ${#SSH_KEYS[@]} -gt 0 ]] || return 0
+    home=$(deploy_home)
+    [[ -d "${home}" ]] || error "Home directory ${home} does not exist"
+    auth="${home}/.ssh/authorized_keys"
+    install -d -m 700 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${home}/.ssh"
+    if [[ ! -f "${auth}" ]]; then
+        touch "${auth}"
+    fi
+    chown "${DEPLOY_USER}:${DEPLOY_USER}" "${auth}"
+    chmod 600 "${auth}"
+    for key in "${SSH_KEYS[@]}"; do
+        if grep -qxF -- "${key}" "${auth}"; then
+            info "SSH key already present for ${DEPLOY_USER}"
+        else
+            printf '%s\n' "${key}" >> "${auth}"
+            ok "Installed an SSH key for ${DEPLOY_USER}"
+        fi
+    done
+}
+
+sshd_bin() {
+    local bin=""
+    bin=$(command -v sshd 2>/dev/null || true)
+    if [[ -z "${bin}" && -x /usr/sbin/sshd ]]; then
+        bin=/usr/sbin/sshd
+    fi
+    printf '%s\n' "${bin}"
+}
+
+# --harden-ssh only. The ordinary bootstrap never calls this.
+harden_ssh() {
+    local home auth drop bin
+    if [[ ${#SSH_KEYS[@]} -gt 0 && "${DRY_RUN}" != "1" ]]; then
+        install_ssh_keys
+    fi
+    home=$(deploy_home)
+    auth="${home}/.ssh/authorized_keys"
+    if ! authorized_keys_ok "${auth}"; then
+        error "${DEPLOY_USER} has no valid authorized key at ${auth}. From a second terminal, confirm 'ssh ${DEPLOY_USER}@<this-host>' works, then run --harden-ssh."
+    fi
+    if ! deploy_can_sudo; then
+        error "${DEPLOY_USER} cannot use sudo. From a second terminal, as that user, confirm 'sudo -v' succeeds, then run --harden-ssh."
+    fi
+    bin=$(sshd_bin)
+    [[ -n "${bin}" ]] || error "sshd is not installed; nothing was changed"
+    if [[ "${DRY_RUN}" == "1" ]]; then
+        info "SSH: would disable root login and password authentication after sshd -t"
+        info "Dry run: nothing was changed"
+        exit 0
+    fi
+    drop=/etc/ssh/sshd_config.d/99-cs-server.conf
+    mkdir -p /etc/ssh/sshd_config.d
+    cat > "${drop}" <<'EOF'
+# Managed by ops/bootstrap-vps.sh --harden-ssh.
+# Root login and passwords are off because the deploy user has an SSH key.
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+EOF
+    chmod 644 "${drop}"
+    if ! "${bin}" -t; then
+        rm -f "${drop}"
+        error "sshd -t rejected the drop-in. It was removed and sshd was not reloaded."
+    fi
+    if ! "${bin}" -T | grep -qi '^permitrootlogin no$'; then
+        rm -f "${drop}"
+        error "sshd still permits root login (sshd_config.d is not included, or an earlier setting wins). The drop-in was removed and sshd was not reloaded."
+    fi
+    if ! "${bin}" -T | grep -qi '^passwordauthentication no$'; then
+        rm -f "${drop}"
+        error "sshd still allows password authentication. The drop-in was removed and sshd was not reloaded."
+    fi
+    if systemctl cat ssh.service >/dev/null 2>&1; then
+        systemctl reload ssh
+    else
+        systemctl reload sshd
+    fi
+    ok "sshd: root login off, password authentication off"
+}
+
+install_packages() {
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y "${PACKAGES[@]}"
+    ok "Packages installed"
+}
+
+recheck_engine_version() {
+    local ver=""
+    [[ "${ENGINE}" == "podman" ]] || return 0
+    ver=$(podman_cli_version) || error "Podman is installed but its version could not be read"
+    if ! version_ge "${ver}" 4.4; then
+        warn "Podman ${ver} is older than 4.4. Installing Docker instead."
+        ENGINE="docker"
+        ENGINE_WHY="Podman ${ver} is older than 4.4, which Quadlet needs"
+        apt-get install -y docker.io
+        systemctl enable --now docker.service
+        return 0
+    fi
+    if ! version_ge "${ver}" 5.0; then
+        warn "Podman ${ver}: Quadlet is available. Notify=healthy needs Podman 5, so an automatic update cannot roll back."
+    else
+        ok "Podman ${ver}"
+    fi
+}
+
+configure_access() {
+    if getent group sudo >/dev/null 2>&1; then
+        usermod -aG sudo "${DEPLOY_USER}"
+        ok "${DEPLOY_USER} is in the sudo group"
+    else
+        warn "No sudo group; ${DEPLOY_USER} was not granted sudo"
+    fi
+    if [[ "${ENGINE}" == "docker" ]]; then
+        usermod -aG docker "${DEPLOY_USER}"
+        systemctl enable --now docker.service
+        ok "Docker is enabled and ${DEPLOY_USER} is in the docker group"
+        return 0
+    fi
+    if ! grep -q "^${DEPLOY_USER}:" /etc/subuid 2>/dev/null; then
+        usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "${DEPLOY_USER}"
+        ok "Added subordinate uids for ${DEPLOY_USER}"
+    fi
+    if ! grep -q "^${DEPLOY_USER}:" /etc/subgid 2>/dev/null; then
+        usermod --add-subgids 100000-165535 "${DEPLOY_USER}"
+    fi
+}
+
+add_swap_if_small() {
+    mem_is_small || return 0
+    info "Adding a 1 GiB swap file so the image pull can finish on this host."
+    if [[ ! -f /swapfile ]]; then
+        if ! fallocate -l 1G /swapfile; then
+            dd if=/dev/zero of=/swapfile bs=1M count=1024 status=none
+        fi
+        chmod 600 /swapfile
+        mkswap /swapfile
+    fi
+    if ! swapon --show=NAME --noheadings 2>/dev/null | grep -qx '/swapfile'; then
+        swapon /swapfile
+    fi
+    if ! grep -q '^/swapfile[[:space:]]' /etc/fstab; then
+        printf '/swapfile none swap sw 0 0\n' >> /etc/fstab
+    fi
+    ok "Swap file /swapfile is on"
+}
+
+relax_userns() {
+    local sys="/proc/sys/kernel/apparmor_restrict_unprivileged_userns"
+    [[ "${ENGINE}" == "podman" ]] || return 0
+    [[ -r "${sys}" ]] || return 0
+    [[ "$(cat "${sys}")" == "1" ]] || return 0
+    info "This kernel restricts unprivileged user namespaces. Relaxing that so rootless Podman can run."
+    printf 'kernel.apparmor_restrict_unprivileged_userns=0\n' > /etc/sysctl.d/99-cs-server-userns.conf
+    sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 >/dev/null
+    ok "Unprivileged user namespaces are allowed"
+}
+
+configure_upgrades() {
+    cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+    if systemctl cat unattended-upgrades.service >/dev/null 2>&1; then
+        systemctl enable --now unattended-upgrades.service
+    fi
+    ok "Unattended upgrades are on"
+}
+
+configure_fail2ban() {
+    mkdir -p /etc/fail2ban/jail.d
+    cat > /etc/fail2ban/jail.d/cs-server.local <<EOF
+[sshd]
+enabled = true
+backend = systemd
+port = ${SSH_PORT}
+maxretry = 5
+bantime = 1h
+EOF
+    systemctl enable --now fail2ban.service
+    systemctl reload fail2ban.service || systemctl restart fail2ban.service
+    ok "fail2ban sshd jail is on"
+}
+
+# Download a sibling under ops/ when this script was piped in. A checkout
+# uses the file next to this one.
+ops_file() {
+    local rel="$1" dir local_path dest
+    dir="$(script_dir)"
+    local_path="${dir}/${rel}"
+    if [[ -n "${dir}" && -f "${local_path}" ]]; then
+        printf '%s\n' "${local_path}"
+        return 0
+    fi
+    if [[ -z "${OPS_CACHE}" ]]; then
+        OPS_CACHE=$(mktemp -d)
+    fi
+    dest="${OPS_CACHE}/${rel}"
+    mkdir -p "${dest%/*}"
+    if [[ ! -f "${dest}" ]]; then
+        curl -fsSL "${RAW_BASE}/ops/${rel}" -o "${dest}"
+    fi
+    printf '%s\n' "${dest}"
+}
+
+apply_firewall() {
+    local src_fw src_unit src_in src_in_unit fastdl_line=""
+    src_fw=$(ops_file firewall/cs-server.nft)
+    src_unit=$(ops_file firewall/cs-server-firewall.service)
+    install -d -m 755 /etc/cs-server
+    awk -v game="${GAME_PORT}" '
+        /^define game_port/ { print "define game_port = " game; next }
+        { print }
+    ' "${src_fw}" > /etc/cs-server/firewall.nft
+    chmod 644 /etc/cs-server/firewall.nft
+    install -Dm644 "${src_unit}" /etc/systemd/system/cs-server-firewall.service
+
+    if [[ "${FIREWALL}" == "nftables" ]]; then
+        src_in=$(ops_file firewall/cs-server-input.nft)
+        src_in_unit=$(ops_file firewall/cs-server-input.service)
+        if [[ "${FASTDL}" == "1" ]]; then
+            fastdl_line="        tcp dport ${FASTDL_PORT} accept"
+        fi
+        awk -v ssh="${SSH_PORT}" -v game="${GAME_PORT}" -v fastdl="${fastdl_line}" '
+            /^define ssh_port/ { print "define ssh_port = " ssh; next }
+            /^define game_port/ { print "define game_port = " game; next }
+            /^[[:space:]]*# FASTDL_RULE$/ { if (fastdl != "") print fastdl; next }
+            { print }
+        ' "${src_in}" > /etc/cs-server/input.nft
+        chmod 644 /etc/cs-server/input.nft
+        install -Dm644 "${src_in_unit}" /etc/systemd/system/cs-server-input.service
+    elif [[ -f /etc/systemd/system/cs-server-input.service ]]; then
+        systemctl disable --now cs-server-input.service
+    fi
+
+    systemctl daemon-reload
+    systemctl enable --now cs-server-firewall.service
+    ok "Query-flood nftables unit is enabled"
+
+    if [[ "${FIREWALL}" == "nftables" ]]; then
+        systemctl enable --now cs-server-input.service
+        ok "nftables allows SSH ${SSH_PORT}/tcp and ${GAME_PORT}/udp"
+        warn "Confirm a new SSH session before closing this one."
+    elif [[ "${FIREWALL}" == "ufw" ]]; then
+        ufw allow "${SSH_PORT}/tcp"
+        ufw allow "${GAME_PORT}/udp"
+        if [[ "${FASTDL}" == "1" ]]; then
+            ufw allow "${FASTDL_PORT}/tcp"
+        fi
+        if ufw status | grep -q 'Status: active'; then
+            ok "ufw is already active; the server ports are allowed"
+        else
+            info "Enabling ufw. SSH ${SSH_PORT}/tcp is allowed."
+            ufw --force enable
+            ok "ufw is enabled"
+        fi
+        warn "Confirm a new SSH session before closing this one."
+    else
+        firewall-cmd --permanent --add-port="${SSH_PORT}/tcp"
+        firewall-cmd --permanent --add-port="${GAME_PORT}/udp"
+        if [[ "${FASTDL}" == "1" ]]; then
+            firewall-cmd --permanent --add-port="${FASTDL_PORT}/tcp"
+        fi
+        firewall-cmd --reload
+        ok "firewalld allows the server ports"
+    fi
+}
+
+enable_linger_user() {
+    loginctl enable-linger "${DEPLOY_USER}"
+    ok "Lingering enabled for ${DEPLOY_USER}"
+}
+
+run_installer() {
+    local installer="" uid home waited=0 runuser_bin=""
+    home=$(deploy_home)
+    uid=$(id -u "${DEPLOY_USER}")
+    # Persistent path: a piped --no-install must still be runnable after exit.
+    installer=$(save_installer)
+    systemctl start "user@${uid}.service"
+    while [[ "${waited}" -lt 10 ]]; do
+        [[ -d "/run/user/${uid}" ]] && break
+        sleep 0.2
+        waited=$((waited + 1))
+    done
+    [[ -d "/run/user/${uid}" ]] || error "The user manager for ${DEPLOY_USER} did not start"
+    build_install_env "${uid}" "${home}"
+    if [[ "${RUN_INSTALL}" == "0" ]]; then
+        info "Host setup is done. Install command:"
+        print_install_command "${installer}"
+        return 0
+    fi
+    info "Running install.sh as ${DEPLOY_USER}"
+    runuser_bin=$(command -v runuser 2>/dev/null || true)
+    if [[ -z "${runuser_bin}" && -x /usr/sbin/runuser ]]; then
+        runuser_bin=/usr/sbin/runuser
+    fi
+    [[ -n "${runuser_bin}" ]] || error "runuser is not installed (package util-linux)"
+    "${runuser_bin}" -u "${DEPLOY_USER}" -- env "${INSTALL_ENV[@]}" bash "${installer}"
+}
+
+parse_args "$@"
+validate
+if [[ "${HARDEN_SSH}" == "1" ]]; then
+    if [[ "${DRY_RUN}" != "1" ]]; then
+        require_root
+    fi
+    harden_ssh
+    exit 0
+fi
+load_os
+choose_engine
+fill_packages
+choose_firewall
+detect_ssh_port
+print_plan
+
+if [[ "${DRY_RUN}" == "1" ]]; then
+    info "Dry run: nothing was changed"
+    exit 0
+fi
+
+require_root
+create_user
+install_ssh_keys
+info "SSH authentication was not changed."
+info "From a second terminal: ssh ${DEPLOY_USER}@<this-host>"
+info "Then, as ${DEPLOY_USER}: sudo -v"
+info "After both succeed: sudo bash ops/bootstrap-vps.sh --harden-ssh"
+install_packages
+recheck_engine_version
+configure_access
+add_swap_if_small
+relax_userns
+configure_upgrades
+configure_fail2ban
+apply_firewall
+enable_linger_user
+run_installer

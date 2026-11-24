@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Daily archive of the cs-server-state volume. Installed by install.sh when
+# CS_BACKUP=1 (ops/bootstrap-vps.sh turns that on). The script is copied to
+# ~/.local/bin/cs-server-backup.
+
+[Unit]
+Description=Back up the CS 1.6 server state volume
+Documentation=https://github.com/KevinTCoughlin/cs-server#deploy-on-a-fresh-vps
+
+[Service]
+Type=oneshot
+# install.sh writes this. It pins CS_RUNTIME and CS_BACKUP_KEEP so a host
+# with both engines does not back up through whichever one is found first.
+EnvironmentFile=%h/.config/cs-server/backup.env
+ExecStart=%h/.local/bin/cs-server-backup
+Nice=10

@@ -47,4 +47,22 @@ jobs:
           bash tests/release_notes_test.sh
           bash tests/firewall_test.sh
           bash tests/ops_test.sh
+          bash tests/bootstrap_test.sh
+          bash tests/backup_test.sh
+          bash tests/backup_docker_test.sh
           bash tests/compose_test.sh
+
+  bootstrap:
+    name: Bootstrap dry-run (${{ matrix.image }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [debian:13, ubuntu:24.04]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Dry-run inside ${{ matrix.image }}
+        run: |
+          docker run --rm -v "${GITHUB_WORKSPACE}:/src:ro" -w /src "${{ matrix.image }}" \
+            bash ops/bootstrap-vps.sh --dry-run
