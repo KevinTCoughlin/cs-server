@@ -46,6 +46,10 @@
 #      CS_DOD_MODE and CS_DOD_PASSWORD are passed only to the Day of Defeat
 #      install. An inherited value is removed from the Counter-Strike install,
 #      which exits when it sees one
+#   9. Install a systemd user timer that restarts each game server at 05:00
+#      America/Los_Angeles, and every 20 minutes until 08:00, when A2S_INFO
+#      reports no human players (CS_RESTART=1 unless CS_RESTART=0).
+#      --restart-only does this step and nothing else
 #
 # --no-install does the host setup and prints an install.sh command whose
 # path still exists after this process exits (/usr/local/lib/cs-server/install.sh
@@ -68,6 +72,10 @@ INSTALLER_STORE="/usr/local/lib/cs-server/install.sh"
 if [[ -z "${CS_BACKUP+x}" ]]; then
     CS_BACKUP=1
 fi
+if [[ -z "${CS_RESTART+x}" ]]; then
+    CS_RESTART=1
+fi
+RESTART_ONLY=0
 FASTDL="${CS_FASTDL:-0}"
 GAME_PORT="${CS_PORT:-27015}"
 # Day of Defeat beside Counter-Strike: its own install on 27016/udp.
@@ -117,6 +125,8 @@ Options:
   --ssh-key-file PATH File of public keys (one per line)
   --no-install        Set the host up and print a lasting install.sh command
   --no-backup         Do not install daily state-volume backups (CS_BACKUP=0)
+  --no-restart        Do not install the daily idle-restart timer (CS_RESTART=0)
+  --restart-only      Install or remove only that timer, for an existing user
   --dod               Also install Day of Defeat on 27016/udp (CS_DOD=1)
   --harden-ssh        Disable root and password SSH, and nothing else
   --dry-run           Print what would be done; change nothing
@@ -129,7 +139,8 @@ after both succeed.
 Environment (passed through to install.sh when set):
   CS_SERVER_VERSION, CS_SERVER_IMAGE, CS_PORT, CS_FASTDL, CS_FASTDL_PORT,
   CS_MODE, CS_BOTS, CS_PROFILE, SERVER_IP, CS_RCON, CS_GAME, CS_INSTANCE,
-  CS_BACKUP (default 1), CS_SSH_PORT, CS_DOD, CS_DOD_PORT, CS_DOD_GSLT, CS_GSLT
+  CS_BACKUP (default 1), CS_RESTART (default 1), CS_SSH_PORT, CS_DOD,
+  CS_DOD_PORT, CS_DOD_GSLT, CS_GSLT
   CS_DOD_MODE (pub or match) and CS_DOD_PASSWORD are Day of Defeat only.
   They are removed from the Counter-Strike install.
 EOF
@@ -238,6 +249,8 @@ parse_args() {
             --dry-run) DRY_RUN=1; shift ;;
             --no-install) RUN_INSTALL=0; shift ;;
             --no-backup) CS_BACKUP=0; shift ;;
+            --no-restart) CS_RESTART=0; shift ;;
+            --restart-only) RESTART_ONLY=1; shift ;;
             --dod) DOD=1; shift ;;
             --harden-ssh) HARDEN_SSH=1; shift ;;
             --user)
@@ -288,6 +301,12 @@ validate() {
     fi
     if [[ "${CS_BACKUP}" != "0" && "${CS_BACKUP}" != "1" ]]; then
         error "Invalid CS_BACKUP: ${CS_BACKUP} (expected 0 or 1)"
+    fi
+    if [[ "${CS_RESTART}" != "0" && "${CS_RESTART}" != "1" ]]; then
+        error "Invalid CS_RESTART: ${CS_RESTART} (expected 0 or 1)"
+    fi
+    if [[ "${RESTART_ONLY}" == "1" && "${HARDEN_SSH}" == "1" ]]; then
+        error "--restart-only and --harden-ssh are separate commands"
     fi
     if [[ "${FASTDL}" != "0" && "${FASTDL}" != "1" ]]; then
         error "Invalid CS_FASTDL: ${FASTDL} (expected 0 or 1)"
@@ -565,6 +584,11 @@ print_plan() {
         info "Backups: on, daily, keep ${CS_BACKUP_KEEP:-14}, ~${DEPLOY_USER}/cs-server-backups"
     else
         info "Backups: off (CS_BACKUP=0)"
+    fi
+    if [[ "${CS_RESTART}" == "1" ]]; then
+        info "Daily restart: on, 05:00 America/Los_Angeles, every 20 min until 08:00, only with no human players"
+    else
+        info "Daily restart: off (CS_RESTART=0)"
     fi
     if mem_is_small; then
         info "Swap: add a 1 GiB swap file (this host has little RAM and little swap)"
@@ -938,13 +962,9 @@ enable_network_online() {
     ok "multi-user.target wants network-online.target"
 }
 
-run_installer() {
-    local installer="" uid home waited=0 runuser_bin="" name
-    local -a unset_args=()
-    home=$(deploy_home)
+start_user_manager() {
+    local uid waited=0
     uid=$(id -u "${DEPLOY_USER}")
-    # Persistent path: a piped --no-install must still be runnable after exit.
-    installer=$(save_installer)
     systemctl start "user@${uid}.service"
     while [[ "${waited}" -lt 10 ]]; do
         [[ -d "/run/user/${uid}" ]] && break
@@ -952,6 +972,140 @@ run_installer() {
         waited=$((waited + 1))
     done
     [[ -d "/run/user/${uid}" ]] || error "The user manager for ${DEPLOY_USER} did not start"
+    printf '%s\n' "${uid}"
+}
+
+user_systemctl() {
+    local uid bin
+    uid=$(id -u "${DEPLOY_USER}")
+    [[ -d "/run/user/${uid}" ]] || error "The user manager for ${DEPLOY_USER} did not start"
+    bin=$(command -v runuser 2>/dev/null || true)
+    if [[ -z "${bin}" && -x /usr/sbin/runuser ]]; then
+        bin=/usr/sbin/runuser
+    fi
+    [[ -n "${bin}" ]] || error "runuser is not installed (package util-linux)"
+    "${bin}" -u "${DEPLOY_USER}" -- env "XDG_RUNTIME_DIR=/run/user/${uid}" systemctl --user "$@"
+}
+
+# Matches install.sh set_names for the Counter-Strike (or CS_GAME) install.
+primary_service_name() {
+    local game="${CS_GAME:-cstrike}" instance="${CS_INSTANCE:-}"
+    if [[ "${game}" != "cstrike" ]]; then
+        printf '%s-server%s\n' "${game}" "${instance:+-${instance}}"
+    elif [[ -n "${instance}" ]]; then
+        printf 'cs-server-%s\n' "${instance}"
+    else
+        printf '%s\n' scoutzknivez
+    fi
+}
+
+detect_engine_name() {
+    if [[ -n "${ENGINE}" ]]; then
+        printf '%s\n' "${ENGINE}"
+        return 0
+    fi
+    if command -v podman >/dev/null 2>&1; then
+        printf '%s\n' podman
+        return 0
+    fi
+    if command -v docker >/dev/null 2>&1; then
+        printf '%s\n' docker
+        return 0
+    fi
+    printf '%s\n' podman
+}
+
+write_restart_files() {
+    local home="$1" runtime="$2" dest host="" name
+    # install -d resets an existing directory to 755. server.cfg lives here
+    # and install.sh keeps the directory mode 700, so match that.
+    mkdir -p "${home}/.config/cs-server"
+    chown "${DEPLOY_USER}:${DEPLOY_USER}" "${home}/.config/cs-server"
+    chmod 700 "${home}/.config/cs-server"
+    printf 'CS_RUNTIME=%s\n' "${runtime}" > "${home}/.config/cs-server/restart.env"
+    chown "${DEPLOY_USER}:${DEPLOY_USER}" "${home}/.config/cs-server/restart.env"
+    chmod 644 "${home}/.config/cs-server/restart.env"
+    # Quadlet files override these ports. Docker has no Quadlet file, so this
+    # list is how the timer finds those containers. --restart-only leaves an
+    # existing list in place and discovers Quadlet units on disk.
+    if [[ "${RESTART_ONLY}" == "1" ]]; then
+        return 0
+    fi
+    if [[ "${SERVER_IP:-}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        host="${SERVER_IP}"
+    fi
+    dest="${home}/.config/cs-server/restart.targets"
+    {
+        name=$(primary_service_name)
+        if [[ -n "${host}" ]]; then
+            printf '%s %s %s\n' "${name}" "${GAME_PORT}" "${host}"
+        else
+            printf '%s %s\n' "${name}" "${GAME_PORT}"
+        fi
+        if [[ "${DOD}" == "1" ]]; then
+            if [[ -n "${host}" ]]; then
+                printf 'dod-server %s %s\n' "${DOD_PORT}" "${host}"
+            else
+                printf 'dod-server %s\n' "${DOD_PORT}"
+            fi
+        fi
+    } > "${dest}"
+    chown "${DEPLOY_USER}:${DEPLOY_USER}" "${dest}"
+    chmod 644 "${dest}"
+}
+
+remove_restart_units() {
+    local home="$1"
+    if [[ -f "${home}/.config/systemd/user/cs-server-restart.timer" ]]; then
+        user_systemctl disable --now cs-server-restart.timer || true
+    fi
+    rm -f \
+        "${home}/.config/systemd/user/cs-server-restart.service" \
+        "${home}/.config/systemd/user/cs-server-restart.timer" \
+        "${home}/.local/bin/cs-server-restart" \
+        "${home}/.config/cs-server/restart.env" \
+        "${home}/.config/cs-server/restart.targets"
+    if [[ -d "/run/user/$(id -u "${DEPLOY_USER}")" ]]; then
+        user_systemctl daemon-reload || true
+    fi
+}
+
+# Copy the script and the user timer. A second run replaces the same files
+# and enables the timer again. CS_RESTART=0 removes them.
+install_daily_restart() {
+    local home script unit timer runtime
+    home=$(deploy_home)
+    if [[ "${CS_RESTART}" != "1" ]]; then
+        remove_restart_units "${home}"
+        ok "Daily restart: off"
+        return 0
+    fi
+    script=$(ops_file restart-idle.sh)
+    unit=$(ops_file systemd/cs-server-restart.service)
+    timer=$(ops_file systemd/cs-server-restart.timer)
+    runtime=$(detect_engine_name)
+    install -d -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" \
+        "${home}/.local/bin" "${home}/.config/systemd/user"
+    install -m 755 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" \
+        "${script}" "${home}/.local/bin/cs-server-restart"
+    install -m 644 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" \
+        "${unit}" "${home}/.config/systemd/user/cs-server-restart.service"
+    install -m 644 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" \
+        "${timer}" "${home}/.config/systemd/user/cs-server-restart.timer"
+    write_restart_files "${home}" "${runtime}"
+    user_systemctl daemon-reload
+    user_systemctl enable --now cs-server-restart.timer
+    ok "Daily idle restart installed for ${DEPLOY_USER} (05:00 America/Los_Angeles, every 20 min until 08:00)"
+}
+
+run_installer() {
+    local installer="" uid home runuser_bin="" name
+    local -a unset_args=()
+    home=$(deploy_home)
+    uid=$(start_user_manager)
+    # Persistent path: a piped --no-install must still be runnable after exit.
+    installer=$(save_installer)
+    install_daily_restart
     build_install_env "${uid}" "${home}"
     if [[ "${RUN_INSTALL}" == "0" ]]; then
         info "Host setup is done. Install command:"
@@ -983,6 +1137,24 @@ run_installer() {
 
 parse_args "$@"
 validate
+if [[ "${RESTART_ONLY}" == "1" ]]; then
+    if [[ "${DRY_RUN}" == "1" ]]; then
+        if [[ "${CS_RESTART}" == "1" ]]; then
+            info "Daily restart only: install the timer for ${DEPLOY_USER} (05:00 America/Los_Angeles, every 20 min until 08:00)"
+        else
+            info "Daily restart only: remove the timer for ${DEPLOY_USER}"
+        fi
+        info "Dry run: nothing was changed"
+        exit 0
+    fi
+    require_root
+    id "${DEPLOY_USER}" >/dev/null 2>&1 ||
+        error "Deploy user ${DEPLOY_USER} does not exist. Run a full bootstrap before --restart-only."
+    enable_linger_user
+    start_user_manager >/dev/null
+    install_daily_restart
+    exit 0
+fi
 if [[ "${HARDEN_SSH}" == "1" ]]; then
     if [[ "${DRY_RUN}" != "1" ]]; then
         require_root

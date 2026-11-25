@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Restart game servers that have no human players. Installed by
+# ops/bootstrap-vps.sh (CS_RESTART=1). The script is copied to
+# ~/.local/bin/cs-server-restart. Stdout is the user journal.
+
+[Unit]
+Description=Restart idle game servers when no human players are online
+Documentation=https://github.com/KevinTCoughlin/cs-server#daily-restart
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cs-server-restart
+EnvironmentFile=-%h/.config/cs-server/restart.env
+Nice=10
+# Each restart waits out the in-game countdown and for the unit to become
+# healthy again. Two servers fit well inside this; a longer list still
+# finishes or is retried on the next timer slot.
+TimeoutStartSec=900
+SyslogIdentifier=cs-server-restart

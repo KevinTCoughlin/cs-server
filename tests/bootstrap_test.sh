@@ -62,6 +62,8 @@ run_boot "${DEBIAN13}" --help
 expect_ok "--help"
 assert_contains "--help mentions dry-run" "${output}" "--dry-run"
 assert_contains "--help mentions the key flag" "${output}" "--ssh-key"
+assert_contains "--help mentions opting out of the daily restart" "${output}" "--no-restart"
+assert_contains "--help mentions installing only the daily restart" "${output}" "--restart-only"
 
 run_boot "${DEBIAN13}" --not-a-flag
 expect_die "unknown option" "Unknown option"
@@ -93,6 +95,7 @@ assert_contains "debian 13 pulls network-online into boot" "${output}" "Boot: sy
 assert_contains "debian 13 clears an inherited DoD mode" "${output}" "-u CS_DOD_MODE"
 assert_not_contains "debian 13 does not pass a DoD mode" "${output}" "CS_DOD_MODE="
 assert_contains "debian 13 backups" "${output}" "Backups: on, daily, keep 14"
+assert_contains "debian 13 daily restart" "${output}" "Daily restart: on, 05:00 America/Los_Angeles, every 20 min until 08:00, only with no human players"
 assert_contains "debian 13 install command" "${output}" "runuser -u cstest193c"
 assert_contains "debian 13 pins the runtime" "${output}" "CS_RUNTIME=podman"
 assert_contains "debian 13 turns backups on" "${output}" "CS_BACKUP=1"
@@ -163,6 +166,38 @@ run_boot "${DEBIAN13}" --user cstest193c --dry-run
 output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_BACKUP=0 \
     "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1)
 assert_contains "CS_BACKUP=0" "${output}" "Backups: off (CS_BACKUP=0)"
+
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_RESTART=0 \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1)
+assert_contains "CS_RESTART=0" "${output}" "Daily restart: off (CS_RESTART=0)"
+assert_not_contains "CS_RESTART=0 is not also on" "${output}" "Daily restart: on"
+
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --no-restart --dry-run 2>&1)
+assert_contains "--no-restart" "${output}" "Daily restart: off (CS_RESTART=0)"
+
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_RESTART=2 \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1) && status=0 || status=$?
+expect_die "bad CS_RESTART" "Invalid CS_RESTART"
+
+output=$(env -i PATH="/var/empty" \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --restart-only --dry-run 2>&1)
+status=$?
+expect_ok "--restart-only dry-run"
+assert_contains "--restart-only installs the timer" "${output}" "Daily restart only: install the timer for cstest193c"
+assert_contains "--restart-only changes nothing" "${output}" "Dry run: nothing was changed"
+assert_not_contains "--restart-only does not run install.sh" "${output}" "Install command"
+assert_not_contains "--restart-only does not install packages" "${output}" "podman uidmap"
+
+output=$(env -i PATH="/var/empty" \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --restart-only --no-restart --dry-run 2>&1)
+status=$?
+expect_ok "--restart-only --no-restart"
+assert_contains "--restart-only can remove the timer" "${output}" "Daily restart only: remove the timer for cstest193c"
+
+output=$(env -i PATH="/var/empty" \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --restart-only --harden-ssh --dry-run 2>&1) && status=0 || status=$?
+expect_die "--restart-only is not ssh hardening" "separate commands"
 
 output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_FASTDL=1 \
     "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1)
@@ -275,5 +310,8 @@ install_at=$(step_at run_installer)
 if ((curl_at >= fw_at || fw_at >= boot_at || boot_at >= install_at)); then
     fail "bootstrap call order: ensure_curl=${curl_at} apply_firewall=${fw_at} enable_network_online=${boot_at} run_installer=${install_at}"
 fi
+
+installer_body=$(awk '/^run_installer\(\)/,/^}/' "${ROOT}/ops/bootstrap-vps.sh")
+assert_contains "the install step installs the daily restart" "${installer_body}" "install_daily_restart"
 
 printf 'bootstrap tests passed\n'

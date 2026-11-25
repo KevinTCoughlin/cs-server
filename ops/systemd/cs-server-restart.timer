@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# 05:00 America/Los_Angeles, then every 20 minutes through 08:00. The service
+# restarts a server only when it has no human players, and only once that day.
+# Persistent=false: a VPS that was off at 05:00 does not restart when it
+# comes back. RandomizedDelaySec keeps the check off the exact minute.
+# AccuracySec stays tight so the random delay is the only slack.
+
+[Unit]
+Description=Daily idle restart of game servers
+
+[Timer]
+OnCalendar=*-*-* 05,06,07:00,20,40:00 America/Los_Angeles
+OnCalendar=*-*-* 08:00:00 America/Los_Angeles
+RandomizedDelaySec=90s
+AccuracySec=1s
+Persistent=false
+Unit=cs-server-restart.service
+
+[Install]
+WantedBy=timers.target
