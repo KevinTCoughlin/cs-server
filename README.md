@@ -1,6 +1,7 @@
 # CS 1.6 ScoutzKnivez Server
 
 [![GHCR](https://img.shields.io/badge/ghcr.io-cs--server-blue?style=flat-square&logo=github)](https://ghcr.io/kevintcoughlin/cs-server)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/KevinTCoughlin/cs-server/badge)](https://scorecard.dev/viewer/?uri=github.com/KevinTCoughlin/cs-server)
 
 Containerized Counter-Strike 1.6 scoutzknivez server using the ReHLDS stack.
 
