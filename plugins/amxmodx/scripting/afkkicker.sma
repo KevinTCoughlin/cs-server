@@ -3,12 +3,17 @@
 //
 // AFK Kicker — Moves idle players to spectator, then kicks them if still
 // inactive. Keeps slots open for active players on bot-filled servers.
+//
+// The clock pauses while a player on a team is dead or the round is frozen
+// (a match timeout holds that freeze open). Standing still there is not a
+// choice. A spectator who sits still still counts: that slot can be freed.
 
 #pragma semicolon 1
 
 #include <amxmodx>
 #include <fakemeta>
 #include <cstrike>
+#include <reapi>
 
 #define CHECK_INTERVAL 10.0
 
@@ -48,22 +53,34 @@ public task_check_afk() {
     new Float:fKickTime = float(get_pcvar_num(g_pcvarKickTime));
     new iMinPlayers = get_pcvar_num(g_pcvarMinPlayers);
 
-    // Count human players
+    // "c" skips bots and "h" skips HLTV. Dead players and spectators stay
+    // in the list so a spectator who never moves can still be removed.
     new players[32], num;
     get_players(players, num, "ch");
 
     if (num < iMinPlayers)
         return;
 
+    new bool:inFreeze = false;
+    if (get_member_game(m_bFreezePeriod))
+        inFreeze = true;
+
     for (new i = 0; i < num; i++) {
         new id = players[i];
 
-        if (is_user_bot(id))
-            continue;
-
-        // Check if player has moved
         new Float:fPos[3];
         pev(id, pev_origin, fPos);
+
+        new CsTeams:team = cs_get_user_team(id);
+        new bool:onTeam = (team == CS_TEAM_T || team == CS_TEAM_CT);
+
+        // Pause, don't reset: idle time already earned still counts once
+        // the player can move again. Remember this origin so a spawn or
+        // an unfreeze is not read as the player walking.
+        if (onTeam && (inFreeze || !is_user_alive(id))) {
+            g_fLastPos[id] = fPos;
+            continue;
+        }
 
         new Float:fDist = get_distance_f(fPos, g_fLastPos[id]);
         g_fLastPos[id] = fPos;

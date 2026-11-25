@@ -157,12 +157,18 @@ jobs:
 
       - name: Run Trivy vulnerability scanner
         id: trivy
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.LOCAL_IMAGE }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
+          # The Security tab gets what can be acted on: critical and high
+          # findings that have a fixed package to move to. Without the first
+          # option the action ignores `severity` for SARIF and uploads every
+          # level. The table below still lists unfixed findings in the log.
+          limit-severities-for-sarif: true
+          ignore-unfixed: true
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
@@ -172,7 +178,7 @@ jobs:
           category: trivy-${{ matrix.arch }}
 
       - name: Run Trivy vulnerability scanner (table format)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.LOCAL_IMAGE }}
           format: 'table'
@@ -274,7 +280,7 @@ jobs:
         run: docker buildx imagetools inspect "${{ fromJSON(steps.meta.outputs.json).tags[0] }}"
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0.24.3
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: spdx-json
