@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
 //
 // Website Bot — Adds a spectator bot to the scoreboard displaying the server
-// website URL. Auto-kicks when the server is near capacity.
+// website URL. Steps aside when the server is within websitebot_kick_slots
+// of full, and does not come back until it would sit below that same line.
 
 #pragma semicolon 1
 
@@ -10,11 +11,35 @@
 #include <fakemeta>
 
 #define BOT_DEFAULT_NAME "kevintcoughlin.com/cs-server/"
+#define TASK_CREATE_BOT 7101
 
 new g_iBotId;
 new g_pcvarBotName;
 new g_pcvarEnabled;
 new g_pcvarKickSlots;
+
+// Kick, a failed connect and every disconnect all ask for a bot. One pending
+// task, replaced rather than stacked: a pile of timers each used to spawn
+// another client on a server that was already full.
+schedule_create(Float:delay) {
+    remove_task(TASK_CREATE_BOT);
+    set_task(delay, "task_create_bot", TASK_CREATE_BOT);
+}
+
+// The kick line is maxplayers - websitebot_kick_slots. get_playersnum()
+// counts the bot only once it has joined, so a check made before creating
+// it has to include the slot it is about to take. Otherwise the bot joins
+// one player under the line and the next capacity check kicks it.
+bool:over_capacity() {
+    new iPlayers = get_playersnum();
+    if (g_iBotId <= 0 || !is_user_connected(g_iBotId))
+        iPlayers++;
+
+    new iLimit = get_maxplayers() - get_pcvar_num(g_pcvarKickSlots);
+    if (iPlayers >= iLimit)
+        return true;
+    return false;
+}
 
 public plugin_init() {
     register_plugin("Website Bot", "1.0", "cs-server");
@@ -23,7 +48,7 @@ public plugin_init() {
     g_pcvarBotName = register_cvar("websitebot_name", BOT_DEFAULT_NAME);
     g_pcvarKickSlots = register_cvar("websitebot_kick_slots", "2");
 
-    set_task(10.0, "task_create_bot");
+    schedule_create(10.0);
     set_task(30.0, "task_check_capacity", _, _, _, "b");
 }
 
@@ -34,6 +59,11 @@ public task_create_bot() {
     if (g_iBotId > 0 && is_user_connected(g_iBotId))
         return;
 
+    if (over_capacity()) {
+        log_amx("[WebsiteBot] Not creating bot (server near capacity)");
+        return;
+    }
+
     new szName[64];
     get_pcvar_string(g_pcvarBotName, szName, charsmax(szName));
 
@@ -41,7 +71,7 @@ public task_create_bot() {
 
     if (g_iBotId == 0) {
         log_amx("[WebsiteBot] Failed to create bot (retrying in 30s)");
-        set_task(30.0, "task_create_bot");
+        schedule_create(30.0);
         return;
     }
 
@@ -61,7 +91,7 @@ public task_create_bot() {
         engfunc(EngFunc_FreeEntPrivateData, g_iBotId);
         g_iBotId = 0;
         log_amx("[WebsiteBot] Bot rejected (retrying in 30s)");
-        set_task(30.0, "task_create_bot");
+        schedule_create(30.0);
         return;
     }
 
@@ -77,30 +107,24 @@ public task_check_capacity() {
     if (g_iBotId == 0 || !is_user_connected(g_iBotId))
         return;
 
-    new iMaxPlayers = get_maxplayers();
-    new iPlayers = get_playersnum();
-    new iThreshold = get_pcvar_num(g_pcvarKickSlots);
-
-    // Kick bot if server is near capacity
-    if (iPlayers >= (iMaxPlayers - iThreshold)) {
+    // Kick bot if server is near capacity. g_iBotId stays set until the
+    // disconnect lands, so that departure is the bot's and not a player
+    // leaving (which would retry in 5s and put the client straight back).
+    if (over_capacity()) {
         server_cmd("kick #%d", get_user_userid(g_iBotId));
-        g_iBotId = 0;
         log_amx("[WebsiteBot] Kicked bot (server near capacity)");
-
-        // Try to re-add when a slot opens
-        set_task(30.0, "task_create_bot");
+        schedule_create(30.0);
     }
 }
 
 public client_disconnected(id) {
     if (id == g_iBotId) {
         g_iBotId = 0;
-        set_task(10.0, "task_create_bot");
+        schedule_create(10.0);
         return;
     }
 
     // A real player left — try to re-add bot if it was kicked for capacity
-    if (g_iBotId == 0) {
-        set_task(5.0, "task_create_bot");
-    }
+    if (g_iBotId == 0 || !is_user_connected(g_iBotId))
+        schedule_create(5.0);
 }
