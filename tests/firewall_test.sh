@@ -87,7 +87,12 @@ listing=$(nft list table inet cs_server_input)
 assert_contains "input policy drops" "${listing}" "policy drop"
 assert_contains "loopback is accepted" "${listing}" "iif \"lo\" accept"
 assert_contains "ssh is allowed" "${listing}" "tcp dport 22"
-assert_contains "the game port is allowed" "${listing}" "udp dport 27015"
+assert_contains "the game port is allowed" "${listing}" "27015"
+assert_contains "the movement port is allowed" "${listing}" "27016"
+assert_contains "fastdl uses add on the dynamic sets" "${listing}" "add @fastdl_new"
+assert_contains "fastdl new connections are limited per source" "${listing}" "limit rate over 40/second burst 80 packets"
+assert_contains "fastdl concurrency is limited per source" "${listing}" "ct count over 60"
+assert_contains "fastdl port is accepted after the limits" "${listing}" "tcp dport 27080 accept"
 nft delete table inet cs_server_input || fail "the input table cannot be removed"
 
 # Bootstrap rewrites `define game_port` into a set when Day of Defeat is
@@ -110,5 +115,37 @@ listing=$(nft list table inet cs_server_input)
 assert_contains "27016 is allowed" "${listing}" "27016"
 nft delete table inet cs_server_input
 rm -f "${both}"
+
+# Bootstrap keeps the three FastDL rules when CS_FASTDL=1 and deletes them
+# otherwise. This is the awk in ops/bootstrap-vps.sh apply_firewall.
+render_input() {
+    local enable="$1" port="$2"
+    awk -v ssh="22" -v game="27015" -v port="${port}" -v enable="${enable}" '
+        /^define ssh_port/ { print "define ssh_port = " ssh; next }
+        /^define game_port/ { print "define game_port = " game; next }
+        /^define fastdl_port/ {
+            if (enable == "1") print "define fastdl_port = " port
+            next
+        }
+        /^[[:space:]]*set fastdl_(new|ct) / { if (enable != "1") { skip = 1; next } }
+        skip && /^[[:space:]]*}/ { skip = 0; next }
+        skip { next }
+        /^[[:space:]]*# FASTDL_RULE/ { if (enable != "1") next }
+        /\$fastdl_port/ { if (enable != "1") next }
+        { print }
+    ' "${INPUT}"
+}
+kept=$(render_input 1 27081)
+assert_contains "enabled FastDL uses the configured port" "${kept}" "define fastdl_port = 27081"
+assert_contains "enabled FastDL keeps the rate limit" "${kept}" "limit rate over 40/second burst 80 packets"
+assert_not_contains "enabled FastDL is not a bare accept only" "${kept}" "tcp dport 27081 accept"$'\n'"        tcp dport"
+off=$(render_input 0 27080)
+assert_not_contains "disabled FastDL drops the port define" "${off}" $'\ndefine fastdl_port'
+# shellcheck disable=SC2016 # $fastdl_port is nft syntax, not a shell variable
+assert_not_contains "disabled FastDL drops the rules" "${off}" 'tcp dport $fastdl_port'
+nft -f - <<EOF || fail "rendered FastDL rules do not load"
+$(render_input 1 27080)
+EOF
+nft delete table inet cs_server_input
 
 printf 'firewall tests passed (%s of 200 queries allowed, 200 of 200 game packets)\n' "${queries}"

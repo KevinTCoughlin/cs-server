@@ -100,7 +100,7 @@ assert_contains "debian 13 schedules the restore test" "${output}" "Restore test
 assert_contains "debian 13 rolls main" "${output}" "tracks main"
 assert_contains "debian 13 leaves host keys" "${output}" "SSH host keys: left as they are"
 assert_contains "debian 13 off-site hook stays off without credentials" "${output}" "offsite.env is mode 600"
-assert_contains "debian 13 firewall" "${output}" "Firewall: nftables, SSH 22/tcp, game 27015/udp, query-flood unit"
+assert_contains "debian 13 firewall" "${output}" "Firewall: nftables, SSH 22/tcp, game 27015/udp, 27016/udp, query-flood unit"
 assert_contains "debian 13 reloads both nftables units" "${output}" "Firewall reload: systemctl reload cs-server-input cs-server-firewall"
 assert_contains "debian 13 linger" "${output}" "Linger: loginctl enable-linger cstest193c"
 assert_contains "debian 13 pulls network-online into boot" "${output}" "Boot: systemctl add-wants multi-user.target network-online.target"
