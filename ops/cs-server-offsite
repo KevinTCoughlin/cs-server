@@ -10,9 +10,13 @@
 #   OFFSITE_ACCESS_KEY_ID=...
 #   OFFSITE_SECRET_ACCESS_KEY=...
 #   OFFSITE_KEEP_DAYS=14        (optional)
+#   OFFSITE_PRUNE=0             (optional; never delete remote objects)
 #
 # Only archives newer than KEEP_DAYS+1 are uploaded, so objects pruned remotely
 # are not re-uploaded from the (longer) local history.
+# OFFSITE_PRUNE=0 skips the delete step, for a bucket that expires objects
+# with its own lifecycle rule and refuses deletes (object lock, or a key with
+# no delete permission): a stolen key then cannot remove the backups.
 # CS_OFFSITE_REMOTE=/some/dir uploads to a local directory instead (tests).
 set -euo pipefail
 umask 077
@@ -37,13 +41,20 @@ else
     DEST="${CS_OFFSITE_REMOTE}"
 fi
 KEEP_DAYS="${OFFSITE_KEEP_DAYS:-14}"
+PRUNE="${OFFSITE_PRUNE:-1}"
+[[ "${KEEP_DAYS}" =~ ^[1-9][0-9]*$ ]] || { echo "error: OFFSITE_KEEP_DAYS must be a positive integer (is ${KEEP_DAYS})" >&2; exit 1; }
+[[ "${PRUNE}" == "0" || "${PRUNE}" == "1" ]] || { echo "error: OFFSITE_PRUNE must be 0 or 1 (is ${PRUNE})" >&2; exit 1; }
 export RCLONE_CONFIG=/dev/null   # everything comes from the environment
 
 [[ -d "${SRC}" ]] || { echo "error: ${SRC} not found" >&2; exit 1; }
 echo "offsite: uploading archives from the last $((KEEP_DAYS + 1)) days"
 rclone copy "${SRC}" "${DEST}" --include '*.tar.gz' --max-age "$((KEEP_DAYS + 1))d" \
     --s3-no-head --transfers 2 --checksum -v 2>&1 | grep -E 'Copied|ERROR|Transferred:.*[0-9]+ / [0-9]+' || true
-echo "offsite: pruning objects older than ${KEEP_DAYS} days"
-rclone delete "${DEST}" --include '*.tar.gz' --min-age "${KEEP_DAYS}d" -v 2>&1 | grep -E 'Deleted|ERROR' || true
+if [[ "${PRUNE}" == "1" ]]; then
+    echo "offsite: pruning objects older than ${KEEP_DAYS} days"
+    rclone delete "${DEST}" --include '*.tar.gz' --min-age "${KEEP_DAYS}d" -v 2>&1 | grep -E 'Deleted|ERROR' || true
+else
+    echo "offsite: not pruning (OFFSITE_PRUNE=0); the bucket's lifecycle rule expires old objects"
+fi
 echo "offsite: remote now holds:"
 rclone ls "${DEST}" --include '*.tar.gz' | awk '{print $1, $2}' | sort -k2 | tail -20
