@@ -187,7 +187,7 @@ assert_contains "VM size can be overridden" "${calls}" "-m 1G -c 4"
 fresh
 ops -- install
 expect_ok "install"
-assert_contains "install builds a missing image" "${calls}" "container build --platform linux/arm64 -t localhost/cs-server:latest -f "
+assert_contains "install builds a missing image" "${calls}" "container build --platform linux/arm64 -t localhost/cs-server:latest --build-arg MAP_POLICY=local -f "
 # Apple's builder refuses a Containerfile over 16384 bytes (apple/container#735).
 built="${STATE}/containerfile"
 size=$(wc -c < "${built}")

@@ -77,6 +77,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Refuse uncleared maps in the build context
+        run: bash scripts/check-published-maps.sh maps docs/cstrike/maps
+
       - name: Lowercase image name
         run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
 
@@ -107,6 +110,7 @@ jobs:
         with:
           context: .
           file: ./Containerfile
+          build-args: MAP_POLICY=cleared
           platforms: linux/${{ matrix.arch }}
           push: false
           load: true
@@ -114,6 +118,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: Refuse uncleared maps in the image
+        run: bash scripts/check-published-maps.sh --from-image docker "${LOCAL_IMAGE}"
 
       - name: Smoke test — verify binaries present and executable
         run: |
@@ -193,6 +200,7 @@ jobs:
         with:
           context: .
           file: ./Containerfile
+          build-args: MAP_POLICY=cleared
           platforms: linux/${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true

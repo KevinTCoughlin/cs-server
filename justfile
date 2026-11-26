@@ -98,7 +98,7 @@ lint:
 
 # Lint shell scripts with shellcheck
 shellcheck:
-    shellcheck entrypoint.sh install.sh scripts/i386-compat.sh scripts/mode.sh scripts/fetch-maps.sh scripts/movement-maps.sh scripts/healthcheck.sh scripts/game-env.sh scripts/release-notes.sh scripts/build-regamedll.sh ops/cs-server ops/bootstrap-vps.sh ops/backup-state.sh ops/restart-idle.sh ops/cs ops/cs-reboot-if-idle ops/cs-server-offsite ops/cs-restore-test ops/cs-server-update tests/*.sh
+    shellcheck entrypoint.sh install.sh scripts/i386-compat.sh scripts/mode.sh scripts/fetch-maps.sh scripts/movement-maps.sh scripts/cleared-maps.sh scripts/install-maps.sh scripts/check-published-maps.sh scripts/healthcheck.sh scripts/game-env.sh scripts/release-notes.sh scripts/build-regamedll.sh ops/cs-server ops/bootstrap-vps.sh ops/backup-state.sh ops/restart-idle.sh ops/cs ops/cs-reboot-if-idle ops/cs-server-offsite ops/cs-restore-test ops/cs-server-update tests/*.sh
 
 # Run all checks
 check: lint shellcheck test
@@ -109,6 +109,7 @@ check: lint shellcheck test
 test:
     {{ if ENGINE == "container" { "container run --rm -m 512M -v " + justfile_directory() + ":/repo -w /repo debian:trixie-slim bash -c 'bash tests/entrypoint_test.sh && bash tests/shutdown_test.sh'" } else { "bash tests/entrypoint_test.sh && bash tests/shutdown_test.sh" } }}
     bash tests/mapcycle_test.sh
+    bash tests/cleared_maps_test.sh
     bash tests/dod_config_test.sh
     bash tests/mounts_test.sh
     bash tests/mode_test.sh
@@ -188,14 +189,10 @@ fastdl:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p docs/cstrike/sound/quake docs/cstrike/maps
-    # Maps pinned in maps/manifest.tsv stay off FastDL unless their row says
-    # fastdl=yes (the author's terms allow re-hosting).
-    blocked=" "
-    while IFS= read -r row; do
-        IFS=$'\037' read -r name _url _sum _license _attribution _extras fastdl <<< "${row//$'\t'/$'\037'}"
-        [[ -z "$name" || "$name" == \#* || "${fastdl:-no}" == yes ]] && continue
-        blocked+="$name "
-    done < maps/manifest.tsv
+    # Pinned maps stay off FastDL unless scripts/cleared-maps.sh lists them
+    # (maps/manifest.tsv fastdl=yes). The published image build uses that
+    # same allowlist.
+    blocked=" $(bash scripts/cleared-maps.sh --uncleared | tr '\n' ' ')"
     count=0
     skipped=0
     for f in sound/quake/*.wav maps/*.bsp maps/*.nav; do

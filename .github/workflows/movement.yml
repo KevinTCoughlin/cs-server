@@ -2,9 +2,10 @@
 name: Movement Image
 
 # The movement server image: the Counter-Strike image (same Containerfile,
-# GAME=cstrike) plus the climb and surf maps from maps/manifest.tsv.
-# scripts/movement-maps.sh is the list. The default image workflow does not
-# fetch those maps, so ghcr.io/<repo> does not contain them.
+# GAME=cstrike). scripts/movement-maps.sh names the climb and surf rotations.
+# Only names that scripts/cleared-maps.sh also lists (manifest fastdl=yes)
+# are fetched and copied. A pinned map that is not cleared fails this
+# workflow if it is in the build context or in the image.
 #
 # Tags match what cs-server-update already follows on the default image:
 #   push to main    :main and :sha-<7>
@@ -89,14 +90,39 @@ jobs:
       - name: Lowercase image name
         run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
 
-      # The maps are gitignored. Fetch only the movement rotations so the
-      # nipper pack stays out of this public image.
-      - name: Fetch climb and surf maps
+      # The maps are gitignored. Fetch only movement maps that are also on
+      # the redistribution allowlist. Nipper stays out, and so does every
+      # pinned map whose manifest row is not fastdl=yes. fetch-maps.sh with
+      # no names downloads the whole manifest, so an empty intersection
+      # must not call it.
+      - name: Fetch cleared movement maps
         run: |
           set -euo pipefail
-          mapfile -t maps < <(bash scripts/movement-maps.sh)
-          [[ "${#maps[@]}" -gt 0 ]]
-          echo "movement maps: ${maps[*]}"
+          mapfile -t wanted < <(bash scripts/movement-maps.sh)
+          [[ "${#wanted[@]}" -gt 0 ]]
+          mapfile -t cleared < <(bash scripts/cleared-maps.sh)
+          maps=()
+          for name in "${wanted[@]}"; do
+            hit=0
+            if [[ "${#cleared[@]}" -gt 0 ]]; then
+              for ok in "${cleared[@]}"; do
+                if [[ "${name}" == "${ok}" ]]; then
+                  hit=1
+                  break
+                fi
+              done
+            fi
+            if [[ "${hit}" -eq 1 ]]; then
+              maps+=("${name}")
+            else
+              echo "not cleared, not fetched: ${name}"
+            fi
+          done
+          if [[ "${#maps[@]}" -eq 0 ]]; then
+            echo "cleared movement maps: none"
+            exit 0
+          fi
+          echo "cleared movement maps: ${maps[*]}"
           ok=0
           for _ in 1 2 3; do
             if bash scripts/fetch-maps.sh "${maps[@]}"; then
@@ -110,6 +136,9 @@ jobs:
           for name in "${maps[@]}"; do
             [[ -s "maps/${name}.bsp" ]] || { echo "::error::missing maps/${name}.bsp"; exit 1; }
           done
+
+      - name: Refuse uncleared maps in the build context
+        run: bash scripts/check-published-maps.sh maps docs/cstrike/maps
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -138,6 +167,7 @@ jobs:
         with:
           context: .
           file: ./Containerfile
+          build-args: MAP_POLICY=cleared
           platforms: linux/${{ matrix.arch }}
           push: false
           load: true
@@ -146,12 +176,21 @@ jobs:
           cache-from: type=gha,scope=movement-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=movement-${{ matrix.arch }}
 
+      - name: Refuse uncleared maps in the image
+        run: bash scripts/check-published-maps.sh --from-image docker "${LOCAL_IMAGE}"
+
       - name: Smoke test — binaries and movement maps
         run: |
           set -euo pipefail
           script='set -eu; test -x /hlds/hlds_linux && test -x /hlds/hlds_run && test -x /entrypoint.sh && test -s /etc/ssl/certs/ca-certificates.crt'
+          cleared=$(bash scripts/cleared-maps.sh)
           while IFS= read -r name; do
-            script+="; test -s /hlds/cstrike/maps/${name}.bsp"
+            [[ -n "${name}" ]] || continue
+            if grep -Fxq "${name}" <<< "${cleared}"; then
+              script+="; test -s /hlds/cstrike/maps/${name}.bsp"
+            else
+              script+="; test ! -e /hlds/cstrike/maps/${name}.bsp"
+            fi
           done < <(bash scripts/movement-maps.sh)
           docker run --rm --entrypoint /bin/sh "${LOCAL_IMAGE}" -c "${script}"
 
@@ -176,8 +215,8 @@ jobs:
           docker rm -f hlds-smoke >/dev/null
           exit 1
 
-      # Maps are in the image, so the climb and surf sections of this test
-      # run, along with the usual plugin and shutdown checks.
+      # Climb and surf sections run only when that map is in the image.
+      # A published build has a movement map only if it is on the allowlist.
       - name: End-to-end test — plugins, mode switching, maps, shutdown
         env:
           CS_E2E_TIMEOUT_SCALE: ${{ matrix.e2e_timeout_scale }}
@@ -218,6 +257,7 @@ jobs:
         with:
           context: .
           file: ./Containerfile
+          build-args: MAP_POLICY=cleared
           platforms: linux/${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true

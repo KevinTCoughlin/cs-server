@@ -34,6 +34,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Refuse uncleared maps in the build context
+        run: bash scripts/check-published-maps.sh maps docs/cstrike/maps
+
       - name: Lowercase image name
         run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
 
@@ -52,12 +55,16 @@ jobs:
         with:
           context: .
           file: ./Containerfile
+          build-args: MAP_POLICY=cleared
           platforms: linux/${{ matrix.arch }}
           push: false
           load: true
           tags: ${{ env.LOCAL_IMAGE }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: Refuse uncleared maps in the image
+        run: bash scripts/check-published-maps.sh --from-image docker "${LOCAL_IMAGE}"
 
       - name: Run Trivy vulnerability scanner
         id: trivy
@@ -94,6 +101,7 @@ jobs:
         with:
           context: .
           file: ./Containerfile
+          build-args: MAP_POLICY=cleared
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.arch }}

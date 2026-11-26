@@ -537,8 +537,11 @@ console splits on `:`). The times are this server's
 own and are not records of any climbing community. The movement server
 publishes its lists on the [records page](#records-page).
 
-The published image has none of these maps, because the project does not
-redistribute them. Build an image that does (`just fetch-maps && just build`);
+The published images have none of these maps, because the project does not
+redistribute them. That includes `ghcr.io/kevintcoughlin/cs-server-movement`:
+`scripts/cleared-maps.sh` is the allowlist (`fastdl=yes` in
+`maps/manifest.tsv`), and none of the four is on it. Build a private image
+that does (`just fetch-maps && just build`);
 `MODE=climb` stops at start, saying so, when it finds none of the rotation's
 maps.
 
@@ -578,7 +581,9 @@ Zones are kept in the state volume (`amxmodx/zones/<map>.txt`). The server
 console can also save one from numbers: `mv_zone_set end x1 y1 z1 x2 y2 z2`.
 
 The rotation is `surf_ski_5`, `surf_nice_fly_4`, `surf_srventer`,
-`surf_nice_fly` and `surf_colorama_beta`. A rotation can mix surf and climb
+`surf_nice_fly` and `surf_colorama_beta`. None of these is on the
+redistribution allowlist, so the published images do not contain them
+either. A rotation can mix surf and climb
 maps: the map's prefix picks the physics, so a `kz_` or `bkz_` map in a surf
 rotation gets climb settings and a `surf_` map in a climb rotation gets surf
 settings. That overlay stays in place for `MODE=surf` and `MODE=climb`.
@@ -790,10 +795,11 @@ curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/insta
 - One sidecar (`cs-server-fastdl`) serves every Counter-Strike server on the
   machine. `CS_FASTDL=1 bash install.sh --uninstall` removes it along with
   the server; without `CS_FASTDL=1` it stays for the others.
-- It serves every map in the image, including maps whose `maps/manifest.tsv`
-  row says `fastdl=no`. That is the same set a client can fetch from the
-  game server with `sv_allowdownload`. `just fastdl` is the other tree: it
-  fills GitHub Pages and skips `fastdl=no`.
+- It serves the maps that are in the image. A published image contains a
+  pinned map only when `maps/manifest.tsv` marks it `fastdl=yes`.
+  `scripts/cleared-maps.sh` is that allowlist, and `just fastdl` uses it
+  for GitHub Pages. A private `just build` includes maps you fetched into
+  `maps/`, and that image's sidecar serves them.
 - By hand: `podman run -d --entrypoint /fastdl.sh -p 27080:27080 --read-only --cap-drop ALL <image>`
   and `FASTDL_URL=http://<host>:27080/cstrike/` on the server.
 - The movement server's pair is

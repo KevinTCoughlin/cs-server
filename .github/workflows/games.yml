@@ -114,6 +114,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Refuse uncleared maps in the build context
+        run: bash scripts/check-published-maps.sh maps docs/cstrike/maps
+
       - name: Lowercase image name
         run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
 

@@ -3,6 +3,11 @@ services:
     build:
       context: .
       dockerfile: Containerfile
+      # Private server: include maps fetched into maps/. Published CI builds
+      # do not pass this, so they keep the Containerfile default (cleared)
+      # and copy only the redistribution allowlist.
+      args:
+        MAP_POLICY: ${MAP_POLICY:-local}
     image: localhost/cs-server:latest
     # CS_CONTAINER_NAME, PORT and CS_STATE_VOLUME let a second copy run next
     # to this one: give each its own values and its own project (-p).
