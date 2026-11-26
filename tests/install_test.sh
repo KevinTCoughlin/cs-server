@@ -30,7 +30,7 @@ UNIT="${HOME_DIR}/.config/containers/systemd/scoutzknivez.container"
 BASH_BIN=$(command -v bash)
 mkdir -p "${TOOLS}" "${STUBS}"
 
-for tool in cat mktemp tar mkdir cp mv od tr chmod find rm grep awk cut sed; do
+for tool in cat mktemp tar mkdir cp mv od tr chmod find rm grep awk cut sed sort dirname; do
     path=$(command -v "${tool}") || fail "missing tool: ${tool}"
     ln -s "${path}" "${TOOLS}/${tool}"
 done
@@ -717,6 +717,45 @@ install CS_GSLT=zzzz
 expect_die "bad CS_GSLT" "Invalid CS_GSLT"
 install CS_BOTS=yes
 expect_die "bad CS_BOTS" "Invalid CS_BOTS"
+install CS_MAPS_LOCAL=maybe
+expect_die "bad CS_MAPS_LOCAL" "Invalid CS_MAPS_LOCAL"
+
+fresh_home
+MAPS="${WORK}/maps-host"
+install CS_MAPS_LOCAL=1 CS_MAPS_HOST="${MAPS}" -- --print-unit
+expect_die "missing host maps directory" "is not a directory"
+mkdir -p "${MAPS}"
+install CS_MAPS_LOCAL=1 CS_MAPS_HOST="${MAPS}" -- --print-unit
+expect_die "empty host maps directory" "no .bsp"
+mkdir -p "${MAPS}/maps" "${MAPS}/sound/quake"
+printf 'x\n' > "${MAPS}/maps/kz_fromhost.bsp"
+printf 'wav\n' > "${MAPS}/sound/quake/horn.wav"
+printf 'x\n' > "${MAPS}/maps/de_dust2.bsp"
+install CS_MAPS_LOCAL=1 CS_MAPS_HOST="${MAPS}" -- --print-unit
+expect_die "host file must not cover a stock map" "must not hide"
+rm -f "${MAPS}/maps/de_dust2.bsp"
+install CS_MAPS_LOCAL=1 CS_MAPS_HOST="${MAPS}" CS_SERVER_IMAGE=localhost/cs-server:latest -- --print-unit
+expect_ok "print-unit with host maps"
+assert_contains "host tree is mounted" "${output}" "Volume=${MAPS}:/maps-local:ro,Z"
+assert_contains "host bsp is a file mount" "${output}" \
+    "Volume=${MAPS}/maps/kz_fromhost.bsp:/hlds/cstrike/maps/kz_fromhost.bsp:ro,Z"
+assert_contains "host sound is a file mount" "${output}" \
+    "Volume=${MAPS}/sound/quake/horn.wav:/hlds/cstrike/sound/quake/horn.wav:ro,Z"
+assert_contains "entrypoint is told about the tree" "${output}" "Environment=MAPS_LOCAL=/maps-local"
+mkdir -p "${HOME_DIR}/cs-maps/maps"
+printf 'x\n' > "${HOME_DIR}/cs-maps/maps/kz_fromhost.bsp"
+install CS_MAPS_LOCAL=1 CS_SERVER_IMAGE=localhost/cs-server:latest -- --print-unit
+expect_ok "print-unit with the default host path"
+assert_contains "default host path uses the home specifier" "${output}" \
+    "Volume=%h/cs-maps/maps/kz_fromhost.bsp:/hlds/cstrike/maps/kz_fromhost.bsp:ro,Z"
+install CS_MAPS_LOCAL=1 CS_FASTDL=1
+expect_ok "sidecar with host maps"
+side=$(cat "${HOME_DIR}/.config/containers/systemd/cs-server-fastdl.container")
+assert_contains "sidecar mounts the host tree" "${side}" "Volume=%h/cs-maps:/maps-local:ro,Z"
+assert_contains "sidecar is told to filter the tree" "${side}" "Environment=MAPS_LOCAL=/maps-local"
+assert_not_contains "sidecar does not file-mount the host bsp" "${side}" "/hlds/cstrike/maps/kz_fromhost.bsp"
+assert_contains "game unit still file-mounts the host bsp" "$(cat "${UNIT}")" \
+    "kz_fromhost.bsp:/hlds/cstrike/maps/kz_fromhost.bsp"
 
 fresh_home
 install CS_FASTDL=1

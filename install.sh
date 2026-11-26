@@ -49,6 +49,11 @@
 #                      same image that serves the maps to clients over HTTP
 #                      (CS_FASTDL_PORT, default 27080/tcp; CS_FASTDL_HOST is the
 #                      address clients use, default this machine's first one)
+#   CS_MAPS_LOCAL=1    bind-mount ~/cs-maps (CS_MAPS_HOST) into the server so a
+#                      published image can play maps it does not contain. The
+#                      sidecar mounts the same tree and serves only fastdl=yes.
+#                      Needs a checkout (scripts/overlay-host-maps.sh). Populate
+#                      the directory first: just fetch-maps-host
 #   CS_LAN_KIT=<n>     LAN event: n servers (1 to 8) named lan1..lan<n> on
 #                      consecutive ports from CS_PORT, LAN profile, match mode,
 #                      no bots, and one FastDL sidecar for all of them
@@ -274,6 +279,18 @@ if [[ -n "${FASTDL_HOST}" && ! "${FASTDL_HOST}" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,
     printf '[error] Invalid CS_FASTDL_HOST: %s (expected a host name or an IPv4 address)\n' "${FASTDL_HOST}" >&2
     exit 1
 fi
+# Host maps (~/cs-maps). Off unless asked. The movement Quadlets in quadlet/
+# turn it on; a scoutz install does not, so a missing directory is not an error.
+MAPS_LOCAL_ON="${CS_MAPS_LOCAL:-0}"
+if [[ "${MAPS_LOCAL_ON}" != "0" && "${MAPS_LOCAL_ON}" != "1" ]]; then
+    printf '[error] Invalid CS_MAPS_LOCAL: %s (expected 0 or 1)\n' "${MAPS_LOCAL_ON}" >&2
+    exit 1
+fi
+MAPS_HOST="${CS_MAPS_HOST:-${HOME}/cs-maps}"
+if [[ "${MAPS_LOCAL_ON}" == "1" && ! "${MAPS_HOST}" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+    printf '[error] Invalid CS_MAPS_HOST: %s (expected an absolute path)\n' "${MAPS_HOST}" >&2
+    exit 1
+fi
 FASTDL_NAME="cs-server-fastdl"
 if [[ "${GAME}" != "cstrike" ]]; then
     FASTDL_NAME="${GAME}-server-fastdl"
@@ -389,6 +406,8 @@ Environment:
   CS_MODE=<mode>           Start in scoutz (default), knife, vanilla, match, climb, surf or auto
   CS_BOTS=0                No bots
   CS_FASTDL=1              Also serve the maps to clients over HTTP (port 27080/tcp)
+  CS_MAPS_LOCAL=1          Mount ~/cs-maps into the server (CS_MAPS_HOST). FastDL
+                           serves only the fastdl=yes files from that tree
   CS_LAN_KIT=<n>           LAN event: n match servers (lan1..lan<n>) and FastDL
   CS_METRICS_PORT=<port>   Prometheus metrics at http://127.0.0.1:<port>/metrics
 
@@ -793,7 +812,46 @@ fastdl_url() {
     FASTDL_URL="http://${host}:${FASTDL_PORT}/${GAME}/"
 }
 
+# Quadlet source prefix for the host maps directory. %h when it is the
+# default ~/cs-maps, so the unit does not bake this machine's home path.
+maps_local_prefix() {
+    if [[ "${MAPS_HOST}" == "${HOME}/cs-maps" ]]; then
+        printf '%s\n' '%h/cs-maps'
+    else
+        printf '%s\n' "${MAPS_HOST}"
+    fi
+}
+
+# Game unit block: one file mount per host file, plus the tree at /maps-local.
+# Empty when CS_MAPS_LOCAL is off. The sidecar must not use this block: file
+# mounts under /hlds would publish fastdl=no maps.
+maps_local_block() {
+    local script dir prefix=${1:-$(maps_local_prefix)}
+    [[ "${MAPS_LOCAL_ON}" == "1" ]] || return 0
+    dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    script="${dir}/scripts/overlay-host-maps.sh"
+    [[ -f "${script}" ]] || error "CS_MAPS_LOCAL=1 needs scripts/overlay-host-maps.sh next to install.sh. Run it from a checkout of this repository (the movement units in quadlet/ are the other way)."
+    # shellcheck disable=SC1090 # the file is linted on its own; a curled install.sh may not have it
+    source "${script}"
+    maps_volume_block "${MAPS_HOST}" "${GAME}" "${prefix}"
+}
+
+# Sidecar block: the tree only. fastdl.sh decides what to publish.
+maps_local_fastdl_block() {
+    local prefix
+    [[ "${MAPS_LOCAL_ON}" == "1" ]] || return 0
+    prefix=$(maps_local_prefix)
+    printf '%s\n' "# maps-local: begin"
+    printf 'Volume=%s:/maps-local:ro,Z\n' "${prefix}"
+    printf '%s\n' "Environment=MAPS_LOCAL=/maps-local"
+    printf '%s\n' "Tmpfs=/tmp"
+    printf '%s\n' "# maps-local: end"
+}
+
 fastdl_unit() {
+    local maps_lines=""
+    maps_lines=$(maps_local_fastdl_block) || exit 1
+    [[ -z "${maps_lines}" ]] || maps_lines+=$'\n'
     cat << QUADLET
 [Unit]
 Description=${GAME_TITLE} FastDL (maps over HTTP)
@@ -806,7 +864,7 @@ ContainerName=${FASTDL_NAME}
 PodmanArgs=--entrypoint /fastdl.sh
 PublishPort=${FASTDL_PORT}:${FASTDL_PORT}/tcp
 Environment=FASTDL_PORT=${FASTDL_PORT}
-ReadOnly=true
+${maps_lines}ReadOnly=true
 DropCapability=ALL
 NoNewPrivileges=true
 HealthCmd=/fastdl.sh check
@@ -839,12 +897,17 @@ install_fastdl_docker() {
     if docker container inspect "${FASTDL_NAME}" &>/dev/null; then
         docker rm -f "${FASTDL_NAME}" >/dev/null 2>&1 || true
     fi
+    local maps_run=()
+    if [[ "${MAPS_LOCAL_ON}" == "1" ]]; then
+        maps_run=(-v "${MAPS_HOST}:/maps-local:ro" -e MAPS_LOCAL=/maps-local --tmpfs /tmp)
+    fi
     docker run -d \
         --name "${FASTDL_NAME}" \
         --restart on-failure:10 \
         --entrypoint /fastdl.sh \
         -p "${FASTDL_PORT}:${FASTDL_PORT}/tcp" \
         -e "FASTDL_PORT=${FASTDL_PORT}" \
+        ${maps_run[@]+"${maps_run[@]}"} \
         --read-only \
         --cap-drop ALL \
         --security-opt no-new-privileges \
@@ -1047,10 +1110,14 @@ quadlet_unit() {
             metrics_publish=$'\n'"PublishPort=${METRICS_BIND}:${METRICS_PORT}:${METRICS_PORT}/tcp"
         fi
     fi
-    local volumes="" f
+    local volumes="" f maps_block=""
     for f in "${CONFIG_FILES[@]}" ${CONFIG_DIRS[@]+"${CONFIG_DIRS[@]}"}; do
         volumes+="Volume=${CONFIG_DIR}/${f}:/hlds/${GAME}/${f}:ro,Z"$'\n'
     done
+    if [[ "${MAPS_LOCAL_ON}" == "1" ]]; then
+        maps_block=$(maps_local_block) || exit 1
+        [[ -z "${maps_block}" ]] || maps_block+=$'\n'
+    fi
     # The image of another game starts on that game's own map; MODE is the
     # ScoutzKnivez plugin's. Day of Defeat has DOD_MODE instead.
     local map_env="" mode_env="" dod_env="" insecure_env=""
@@ -1081,7 +1148,7 @@ After=network-online.target
 Image=${IMAGE}${auto_update}
 ContainerName=${SERVICE_NAME}
 ${network}${metrics_publish}
-${volumes}Volume=${STATE_VOLUME}:/hlds/state
+${volumes}${maps_block}Volume=${STATE_VOLUME}:/hlds/state
 ${map_env}Environment=MAXPLAYERS=${START_PLAYERS}
 Environment=PORT=${PORT}
 Environment=BOTS=${BOTS}
@@ -1221,7 +1288,7 @@ install_docker() {
             metrics_args+=(-p "${METRICS_BIND}:${METRICS_PORT}:${METRICS_PORT}/tcp")
         fi
     fi
-    local mount_args=() f
+    local mount_args=() f line spec
     for f in "${CONFIG_FILES[@]}" ${CONFIG_DIRS[@]+"${CONFIG_DIRS[@]}"}; do
         mount_args+=(-v "${CONFIG_DIR}/${f}:/hlds/${GAME}/${f}:ro")
     done
@@ -1241,6 +1308,22 @@ install_docker() {
     fi
     if [[ "${INSECURE}" == "1" ]]; then
         game_args+=(-e INSECURE=1)
+    fi
+    if [[ "${MAPS_LOCAL_ON}" == "1" ]]; then
+        local maps_lines=""
+        maps_lines=$(maps_local_block "${MAPS_HOST}") || exit 1
+        while IFS= read -r line; do
+            case "${line}" in
+                Volume=*)
+                    spec=${line#Volume=}
+                    spec=${spec%,Z}
+                    mount_args+=(-v "${spec}")
+                    ;;
+                Environment=MAPS_LOCAL=*)
+                    game_args+=(-e "MAPS_LOCAL=/maps-local")
+                    ;;
+            esac
+        done <<< "${maps_lines}"
     fi
 
     # Docker 29.4.2 blocked socketcall(2) in its built-in seccomp profile, so

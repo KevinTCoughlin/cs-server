@@ -551,10 +551,11 @@ publishes its lists on the [records page](#records-page).
 The published images have none of these maps, because the project does not
 redistribute them. That includes `ghcr.io/kevintcoughlin/cs-server-movement`:
 `scripts/cleared-maps.sh` is the allowlist (`fastdl=yes` in
-`maps/manifest.tsv`), and none of the four is on it. Build a private image
-that does (`just fetch-maps && just build`);
-`MODE=climb` stops at start, saying so, when it finds none of the rotation's
-maps.
+`maps/manifest.tsv`), and none of the four is on it. A private image
+(`just fetch-maps && just build`) still contains them. The public movement
+server reads them from `~/cs-maps` instead (`just fetch-maps-host`,
+[Rebuilding the CS VPS](docs/REBUILD.md)). `MODE=climb` stops at start,
+saying so, when it finds none of the rotation's maps.
 
 The rotation is `kz_man_everest`, `bkz_goldbhop`, `bkz_toonworld` and
 `kz_climbers_b01`, pinned in [`maps/manifest.tsv`](maps/manifest.tsv). A map
@@ -835,9 +836,13 @@ curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/insta
 - The movement server's pair is
   [`quadlet/cs-server-movement.container`](quadlet/cs-server-movement.container)
   and [`quadlet/cs-fastdl-movement.container`](quadlet/cs-fastdl-movement.container).
-  Both `Image=` lines are one string. Change a tag or a digest in both, or
-  the sidecar serves a different map set than the server is running.
+  Both `Image=` lines are one string. Change a tag or a digest in both.
   Replace `HOST` in `FASTDL_URL` with the address clients use.
+  `~/cs-maps` is mounted into both. The game unit also bind-mounts each
+  `.bsp` onto `/hlds/cstrike/maps`, so stock maps stay. The sidecar does
+  not get those file mounts. It serves a host file only when
+  `maps/manifest.tsv` says `fastdl=yes`. The climb maps stay off FastDL.
+  Players still download those through the game connection.
 
 The sidecar needs an image from 1.4.0 or newer; the installer says so when
 the image has none. It serves what is in the image. Maps you add later go into the image with a

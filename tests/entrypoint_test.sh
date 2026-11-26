@@ -496,4 +496,33 @@ if grep -q '^sv_downloadurl' "${ROOT}/config/server.cfg"; then
     exit 1
 fi
 
+# Host maps. A missing directory or an empty one fails before HLDS starts.
+expect_invalid "is not a directory" MAPS_LOCAL=/no/such/cs-maps
+mkdir -p "${WORK_DIR}/empty-maps"
+expect_invalid "no .bsp" MAPS_LOCAL="${WORK_DIR}/empty-maps" MODE=climb
+mkdir -p "${WORK_DIR}/hostmaps/maps" "${WORK_DIR}/cstrike/maps"
+printf 'baked\n' > "${WORK_DIR}/cstrike/maps/kz_baked.bsp"
+printf 'hostbaked\n' > "${WORK_DIR}/hostmaps/maps/kz_baked.bsp"
+printf 'host\n' > "${WORK_DIR}/hostmaps/maps/kz_fromhost.bsp"
+printf 'kz_fromhost\nkz_baked\n' > "${WORK_DIR}/cstrike/mapcycle-climb.txt"
+run_stub MODE=climb MAPS_LOCAL="${WORK_DIR}/hostmaps"
+if [[ "${status}" -ne 17 ]]; then
+    printf 'Expected host maps to reach HLDS, got %d\n' "${status}" >&2
+    cat "${WORK_DIR}/output" >&2
+    exit 1
+fi
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"+map kz_fromhost "*) ;;
+    *) printf 'Expected the host map to be the start map, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+if [[ "$(cat "${WORK_DIR}/cstrike/maps/kz_baked.bsp")" != "baked" ]]; then
+    printf 'A host file must not hide a map that is already there\n' >&2
+    exit 1
+fi
+[[ -L "${WORK_DIR}/cstrike/maps/kz_fromhost.bsp" ]] || {
+    printf 'The host map was not linked into cstrike/maps\n' >&2
+    exit 1
+}
+
 printf 'entrypoint tests passed\n'

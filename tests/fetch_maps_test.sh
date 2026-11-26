@@ -240,4 +240,14 @@ fetch CURL_SERVE="${FIX}/plain.bsp"
 expect_ok "empty extras column"
 cmp -s "${FIX}/plain.bsp" "${TREE}/maps/plain.bsp" || fail "empty extras column: the map was not installed"
 
+# A host populate writes the bsp and the extras outside the repo tree.
+reset
+mkdir -p "${TREE}/host"
+row arena "${URL}" "${PACK_SUM}" test-license sound/arena/horn.wav
+fetch FETCH_MAPS_DEST="${TREE}/host/maps" FETCH_MAPS_ROOT="${TREE}/host" CURL_SERVE="${FIX}/pack.zip" -- arena
+expect_ok "host destination"
+cmp -s "${FIX}/pack/maps/arena.bsp" "${TREE}/host/maps/arena.bsp" || fail "host destination: bsp"
+cmp -s "${FIX}/pack/sound/arena/horn.wav" "${TREE}/host/sound/arena/horn.wav" || fail "host destination: extra"
+[[ ! -e "${TREE}/maps/arena.bsp" ]] || fail "host destination: also wrote the repo maps/ tree"
+
 printf 'fetch-maps tests passed\n'
