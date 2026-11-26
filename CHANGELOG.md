@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **The records page never reached GitHub Pages.** The Pages check looked for `fetch("./records.json")`, but the page calls `fetch("./records.json", ...)`. With `bash -e` that failed the build before the site was uploaded, so `cs-server-update` would not roll `main`. The check now matches the call. Pull requests build the site and run the check, and do not deploy
+
 ### Added
 - **Published movement image.** `.github/workflows/movement.yml` builds the Counter-Strike image with the maps `scripts/movement-maps.sh` names (`mapcycle-movement.txt`, plus the climb and surf rotations, pinned in `maps/manifest.tsv`) and publishes `ghcr.io/kevintcoughlin/cs-server-movement` as `:main` and `:sha-<7>` on main, and as the release version tags on `v*.*.*`. The default image does not gain those maps. Nipper maps stay out. `cs-server-update` pulls each image named in `update.units` on its own. A sidecar named on that line (or `cs-fastdl-<suffix>` beside `cs-server-<suffix>`) is pinned to the same digest, restarted with the game unit, and restored with it if the game port does not answer
 - **Movement records page.** `ops/scripts/cs-records-export` reads the movement server's record TSVs (`cs-server-state-movement`, `amxmodx/records/<map>.tsv`) the way `load_records()` does and writes `records.json` without starting, stopping, reloading or restarting the game server. A systemd user timer (`ops/systemd/cs-records-export.timer`) runs it every 10 minutes for user `cs`. GitHub Pages serves `docs/records/` at https://kevintcoughlin.com/cs-server/records/ . The committed `records.json` is sample data, not live times

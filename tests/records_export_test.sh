@@ -305,6 +305,22 @@ pages=$(cat "${ROOT}/.github/workflows/pages.yml")
 assert_contains "pages builds the docs tree" "${pages}" "source: ./docs"
 assert_contains "pages checks the records html" "${pages}" "test -s _site/records/index.html"
 assert_contains "pages checks the records json" "${pages}" "test -s _site/records/records.json"
+assert_contains "pages looks for the real fetch call" "${pages}" 'fetch("./records.json"'
+assert_not_contains "pages does not require a paren tight against the quote" "${pages}" 'fetch("./records.json")'
+grep -q 'fetch("./records.json"' "${ROOT}/docs/records/index.html" \
+    || fail "records page no longer contains the fetch call the Pages check looks for"
+# Same checks the workflow runs, against a Jekyll build when jekyll is installed.
+if command -v jekyll >/dev/null 2>&1; then
+    site="${WORK}/jekyll-site"
+    jekyll build --source "${ROOT}/docs" --destination "${site}" --quiet --disable-disk-cache
+    test -s "${site}/records/index.html" || fail "Jekyll did not copy records/index.html"
+    test -s "${site}/records/records.json" || fail "Jekyll did not copy records/records.json"
+    grep -q 'fetch("./records.json"' "${site}/records/index.html" \
+        || fail "built records page does not fetch ./records.json"
+    if [ -d "${site}/cstrike" ] && find "${site}/cstrike" -name records.json -print -quit | grep -q .; then
+        fail "Jekyll published records.json under cstrike"
+    fi
+fi
 
 readme=$(cat "${ROOT}/README.md")
 assert_contains "readme links the records page" "${readme}" "https://kevintcoughlin.com/cs-server/records/"
