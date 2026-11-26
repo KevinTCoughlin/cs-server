@@ -35,7 +35,7 @@ To uninstall: `curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-se
 
 ## Deploy on a fresh VPS
 
-One script on a new KVM VPS. A minimal image needs `ca-certificates` and `curl` installed first, so the script can be fetched. It creates an unprivileged user, installs the container engine, turns on unattended upgrades and fail2ban, opens the firewall, installs a daily idle-restart timer, and runs `install.sh`.
+One script on a new KVM VPS. A minimal image needs `ca-certificates` and `curl` installed first, so the script can be fetched. It creates an unprivileged user, installs the container engine, turns on unattended upgrades (they install packages and do not reboot), fail2ban, a small sysctl, and a player-aware reboot timer, opens the firewall, installs a daily idle-restart timer, and runs `install.sh`. The installer pins the Quadlet image to the digest it just pulled. Off-site backups stay off until a credentials file exists.
 
 | Host | Engine | Notes |
 |------|--------|-------|
@@ -64,11 +64,11 @@ On Podman the bootstrap also runs `systemctl add-wants multi-user.target network
 
 ### Turn off SSH passwords
 
-Do this only after a second terminal can log in with the key and use sudo. On the second terminal:
+Do this only after a second terminal can log in with a key. The deploy user's password may be locked. Root's key is the admin path until you opt into passwordless sudo. On the second terminal:
 
 ```bash
 ssh cs@<this-host>
-sudo -v
+# or, when cs has no working password: ssh root@<this-host>
 ```
 
 Leave that session open. On the first terminal:
@@ -77,7 +77,99 @@ Leave that session open. On the first terminal:
 sudo bash ops/bootstrap-vps.sh --harden-ssh
 ```
 
-`--harden-ssh` refuses to run unless `cs` has a valid `authorized_keys` (`ssh-keygen -l -f`) and is allowed to sudo. It writes the sshd drop-in, runs `sshd -t`, and reloads sshd only when that check passes. A failed check removes the drop-in and does not reload.
+`--harden-ssh` refuses to run unless `cs` or root has a valid `authorized_keys` (`ssh-keygen -l -f`). It does not check sudo. It writes `/etc/ssh/sshd_config.d/00-cs-server.conf` and aligns the same active directives in `sshd_config`. The file is named `00-` because sshd keeps the first value it reads and drop-ins load in lexical order, so this file beats a provider file such as `99-ctrl.conf`. A previous revision wrote `99-cs-server.conf`, which lost to that provider file; a re-run removes that old file when this script created it.
+
+The drop-in sets `PermitRootLogin prohibit-password` (root can still log in with a key), `PasswordAuthentication no`, `KbdInteractiveAuthentication no`, `MaxAuthTries 3`, `LoginGraceTime 30`, `X11Forwarding no`, and `AllowAgentForwarding no`. It runs `sshd -t` and `sshd -T`, and reloads sshd only when both agree. It does not restart sshd, so the session you have open stays up. A failed check restores the previous sshd config from `/root/cs-server-ssh-<timestamp>/` and does not reload.
+
+To make `cs` the admin and turn root SSH off, pass `--nopasswd-sudo` as well. That writes `/etc/sudoers.d/cs-server` (`NOPASSWD:ALL`, checked with `visudo`) and sets `PermitRootLogin no`, and only after `sudo -n true` works for `cs`. Without that flag, root key login stays.
+
+```bash
+sudo bash ops/bootstrap-vps.sh --harden-ssh --nopasswd-sudo
+```
+
+### Replace template SSH host keys
+
+Some VPS images bake in SSH host keys. Every clone then has the same fingerprint. This is off unless you pass the flag, and a later bootstrap without the flag does not touch the keys:
+
+```bash
+sudo bash ops/bootstrap-vps.sh --regenerate-host-keys --no-install
+```
+
+`--no-install` keeps the game server from being restarted. The command backs `/etc/ssh/ssh_host_*` up under `/root/cs-server-hostkeys-<timestamp>/`, generates new keys, removes a DSA key if one appears, prints the new fingerprints, and reloads sshd. It does not restart sshd. **Clients will see a changed fingerprint** and refuse to connect until they forget the old key (`ssh-keygen -R <host>`). Running the flag again changes the fingerprint again. If `sshd -t` or the reload fails, the previous keys are put back.
+
+### Kernel sysctl
+
+The bootstrap writes `/etc/sysctl.d/61-cs-hardening.conf` and loads it (`sysctl -p`). A second run writes the same file. It turns off ICMP redirects and source routing, sets `kernel.yama.ptrace_scope = 1`, and sets `net.core.bpf_jit_harden = 2`. It does not set `accept_ra=0` (that can break IPv6 if the provider enables it later), `log_martians`, or `sysrq`.
+
+To remove it: `sudo rm /etc/sysctl.d/61-cs-hardening.conf && sudo sysctl --system`.
+
+### Reboot only when nobody is playing
+
+Unattended upgrades install kernel and library updates and do not reboot (`/etc/apt/apt.conf.d/52unattended-upgrades-local`, `Automatic-Reboot "false"`). `cs-reboot-if-idle.timer` runs at 04:05 America/Los_Angeles and every 20 minutes through 07:45 (`Persistent=false`, `RandomizedDelaySec=60`). The oneshot calls `/usr/local/sbin/cs-reboot-if-idle`.
+
+A reboot happens only when all of these are true:
+
+- `/var/run/reboot-required` exists (a package asked for a reboot)
+- every game port in `CS_REBOOT_PORTS` is either not listening, or answers A2S_INFO (`/usr/local/sbin/cs-players`) with zero human players
+- `who` shows no interactive session
+
+A port that is listening but does not answer counts as unknown and blocks the reboot, including a server started with `NOMASTER=1`. The default list is the ports this bootstrap knows, plus `27015` and `27016`, so a second server on the usual extra port blocks a reboot even when this script did not create it. Set `CS_REBOOT_PORTS` to replace that list (`/etc/cs-server/reboot.env`). A dry run prints the decision and does not reboot:
+
+```bash
+sudo /usr/local/sbin/cs-reboot-if-idle --dry-run
+```
+
+To turn the timer off: `sudo systemctl disable --now cs-reboot-if-idle.timer`. To let unattended-upgrades reboot on its own again, remove `52unattended-upgrades-local`.
+
+### Pin the image digest
+
+`install.sh` resolves the digest of the image it just pulled and writes the Quadlet `Image=` line as `ghcr.io/kevintcoughlin/cs-server:<tag>@sha256:<digest>`. The digest is Podman's `.Digest` (what `podman images --digests` shows for this machine). A multi-arch tag can also list the index digest in `RepoDigests`; that one is not used when `.Digest` is present. Re-running the installer with a new `CS_SERVER_VERSION` pulls that tag and writes the new digest. That is how a release is rolled out, including a daily run of the installer against a moving tag such as `1`.
+
+`CS_AUTO_UPDATE=1` leaves `Image=` on the tag. `podman-auto-update.timer` can then follow the tag. A digest never moves, so the two are not combined. `CS_PIN_DIGEST=0` also leaves the tag. A local image with no registry digest (a `just` build) stays on its tag. See [Releases, upgrade and rollback](#releases-upgrade-and-rollback).
+
+Resolve the digest this host would pin, without changing the unit:
+
+```bash
+podman pull ghcr.io/kevintcoughlin/cs-server:1.4.2
+podman image inspect --format '{{.Digest}}' ghcr.io/kevintcoughlin/cs-server:1.4.2
+```
+
+Roll forward by running the installer again. Roll back by running it with the previous digest (`CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:<digest>`).
+
+### Off-site backups
+
+Daily archives stay on the VPS (`~cs/cs-server-backups`, 14 copies). A copy in an S3-compatible bucket (Cloudflare R2, or another endpoint) is optional and stays disabled until a credentials file exists. Nothing in this repository holds a key.
+
+Create the file as `cs`, mode `0600`:
+
+```bash
+install -m 600 /dev/null /home/cs/.config/cs-server/offsite.env
+```
+
+```
+OFFSITE_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+OFFSITE_BUCKET=cs-server-backups
+OFFSITE_ACCESS_KEY_ID=...
+OFFSITE_SECRET_ACCESS_KEY=...
+OFFSITE_KEEP_DAYS=14
+```
+
+Then re-run the bootstrap (or `sudo bash ops/bootstrap-vps.sh --no-install` on a machine that already has the server). It installs `rclone` and `~cs/.local/bin/cs-server-offsite`, and, only when that file is mode `600`, the user drop-in `~cs/.config/systemd/user/cs-server-backup.service.d/offsite.conf` so the upload runs after each daily backup. A re-run with the file missing, or with any other mode, removes the drop-in. The script uploads archives from the last 15 days (`KEEP_DAYS+1`, so a pruned remote object is not uploaded again from the longer local history) and deletes remote objects older than 14 days. A bucket lifecycle rule of 30 days is an optional backstop; this repo does not create the bucket or the token.
+
+To stop uploads: delete `offsite.env` and re-run the bootstrap, or remove the drop-in and `systemctl --user daemon-reload`.
+
+### Roll back the host hardening
+
+Each step keeps the previous files or is a unit you can disable.
+
+| Change | Put it back |
+| --- | --- |
+| sshd drop-in | Copy `sshd_config` and `sshd_config.d/` from `/root/cs-server-ssh-<timestamp>/` back to `/etc/ssh/`, then `sudo sshd -t && sudo systemctl reload ssh`. Confirm a second session before closing the one you have. |
+| Host keys | `sudo cp -a /root/cs-server-hostkeys-<timestamp>/ssh_host_* /etc/ssh/ && sudo sshd -t && sudo systemctl reload ssh`. Clients that accepted the new fingerprint must forget it again. |
+| sysctl | `sudo rm /etc/sysctl.d/61-cs-hardening.conf && sudo sysctl --system` |
+| Idle reboot | `sudo systemctl disable --now cs-reboot-if-idle.timer`. Remove `52unattended-upgrades-local` if unattended-upgrades should reboot by itself. |
+| Digest pin | Re-run `install.sh` with `CS_PIN_DIGEST=0` or with `CS_SERVER_IMAGE=...@sha256:<previous>`. |
+| Off-site hook | Delete `~cs/.config/systemd/user/cs-server-backup.service.d/offsite.conf` and `systemctl --user daemon-reload`. The credentials file is the only copy of the keys. |
 
 ### Provider firewall
 
@@ -1064,7 +1156,7 @@ Each release is a git tag (`v1.0.0`), a [GitHub release](https://github.com/Kevi
 | `nightly` | Weekly rebuild of `main` (fresh base image) | Testing |
 | `@sha256:…` | Never | Exactly one build, including its base image |
 
-**Pin.** A fresh `install.sh` runs the release named by `DEFAULT_VERSION` in that script (currently `1.4.2`, kept equal to the newest `## [x.y.z]` heading in [CHANGELOG.md](CHANGELOG.md)). `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` still override it. `:latest` moves with every push to `main` and is not the default; set `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server:latest` to run it. `compose.yml` and [`quadlet/scoutzknivez.container`](quadlet/scoutzknivez.container) stay on `localhost/cs-server:latest` because those are local builds (`just quadlet`). The checked-in unit's `Notify=healthy` needs Podman 5; on Podman 4.4 through 4.9 the installer omits that line. The installer prints the digest of what it pulled; note it down, because it is what you roll back to.
+**Pin.** A fresh `install.sh` runs the release named by `DEFAULT_VERSION` in that script (currently `1.4.2`, kept equal to the newest `## [x.y.z]` heading in [CHANGELOG.md](CHANGELOG.md)). `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` still override it. `:latest` moves with every push to `main` and is not the default; set `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server:latest` to run it. `compose.yml` and [`quadlet/scoutzknivez.container`](quadlet/scoutzknivez.container) stay on `localhost/cs-server:latest` because those are local builds (`just quadlet`). The checked-in unit's `Notify=healthy` needs Podman 5; on Podman 4.4 through 4.9 the installer omits that line. After a pull, the installer writes `Image=<name>:<tag>@sha256:<digest>` into the Quadlet (and the Docker `run` image), using the digest this engine stored (`podman image inspect --format '{{.Digest}}'`, the same value `podman images --digests` shows). A multi-arch tag can list a second digest for the index; that one is not what the unit pins. Re-running the installer is the rollout: it pulls the tag you name and writes the new digest, so a daily run against `CS_SERVER_VERSION=1` (or `1.4`) moves the pin when that tag moves. `CS_AUTO_UPDATE=1` leaves the tag unpinned so `podman-auto-update.timer` can follow it; a digest pin and auto-update are not combined. `CS_PIN_DIGEST=0` also leaves the tag. The installer prints `CS_SERVER_IMAGE=<repo>@sha256:<digest>` for the rollback command.
 
 A release tag's copy of `install.sh` is the script from that tag. Pass `CS_SERVER_VERSION` when you curl a tag. The copy on `main` carries `DEFAULT_VERSION`.
 

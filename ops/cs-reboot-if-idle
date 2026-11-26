@@ -1,0 +1,52 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+# Reboot for pending package updates (kernel, libc, ...) only when no human is
+# connected to a game server and nobody is logged in over SSH.
+#
+#   cs-reboot-if-idle             reboot if needed and idle
+#   cs-reboot-if-idle --dry-run   print the decision, never reboot
+#
+# Game ports are checked with cs-players (A2S_INFO). A port nobody listens on is
+# ignored. A port that listens but does not answer counts as "unknown" and
+# blocks the reboot. CS_REBOOT_PORTS overrides the default "27015 27016".
+# CS_PLAYERS and CS_REBOOT_REQUIRED_FILE override the helper and stamp paths
+# (tests). CS_REBOOT_ASSUME_REQUIRED=1 skips the stamp check.
+set -euo pipefail
+DRY=0
+[[ "${1:-}" == "--dry-run" ]] && DRY=1
+PORTS="${CS_REBOOT_PORTS:-27015 27016}"
+PLAYERS="${CS_PLAYERS:-/usr/local/sbin/cs-players}"
+REQUIRED_FILE="${CS_REBOOT_REQUIRED_FILE:-/var/run/reboot-required}"
+say() { logger -t cs-reboot-if-idle -- "$*"; printf '%s\n' "$*"; }
+
+if [[ ! -e "${REQUIRED_FILE}" && "${CS_REBOOT_ASSUME_REQUIRED:-0}" != "1" ]]; then
+    say "no reboot required"
+    exit 0
+fi
+# Ports are a whitespace-separated list of integers (CS_REBOOT_PORTS).
+# shellcheck disable=SC2086
+for port in ${PORTS}; do
+    if ! ss -uHln "sport = :${port}" | grep -q .; then
+        continue
+    fi
+    if ! out=$(${PLAYERS} 127.0.0.1 "${port}" 2>&1); then
+        say "port ${port}: player count unknown (${out}); not rebooting"
+        exit 0
+    fi
+    humans=${out#humans=}; humans=${humans%% *}
+    if ((humans > 0)); then
+        say "port ${port}: ${humans} human player(s); not rebooting"
+        exit 0
+    fi
+done
+if [[ -n "$(who)" ]]; then
+    say "interactive session(s) logged in; not rebooting"
+    exit 0
+fi
+if ((DRY)); then
+    say "reboot required and idle: would reboot (dry run)"
+    exit 0
+fi
+say "reboot required and idle: rebooting"
+exec systemctl reboot

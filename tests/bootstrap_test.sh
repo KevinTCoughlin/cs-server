@@ -64,6 +64,9 @@ assert_contains "--help mentions dry-run" "${output}" "--dry-run"
 assert_contains "--help mentions the key flag" "${output}" "--ssh-key"
 assert_contains "--help mentions opting out of the daily restart" "${output}" "--no-restart"
 assert_contains "--help mentions installing only the daily restart" "${output}" "--restart-only"
+assert_contains "--help mentions ssh hardening" "${output}" "--harden-ssh"
+assert_contains "--help mentions host key regeneration" "${output}" "--regenerate-host-keys"
+assert_contains "--help mentions nopasswd sudo" "${output}" "--nopasswd-sudo"
 
 run_boot "${DEBIAN13}" --not-a-flag
 expect_die "unknown option" "Unknown option"
@@ -85,9 +88,15 @@ expect_ok "debian 13 dry-run"
 assert_contains "debian 13 user" "${output}" "Deploy user: cstest193c (will create)"
 assert_contains "debian 13 engine" "${output}" "Engine: podman (Debian 13 ships Podman 5)"
 assert_contains "debian 13 packages" "${output}" "podman uidmap"
+assert_contains "debian 13 installs python3 for player queries" "${output}" "python3"
+assert_contains "debian 13 installs rclone for off-site backups" "${output}" "rclone"
 assert_contains "debian 13 installs curl before downloads" "${output}" "install ca-certificates and curl before anything is fetched"
 assert_not_contains "debian 13 is not Docker" "${output}" "docker.io"
 assert_contains "debian 13 leaves sshd" "${output}" "authentication unchanged"
+assert_contains "debian 13 does not reboot from unattended-upgrades" "${output}" "no automatic reboot"
+assert_contains "debian 13 installs the idle reboot timer" "${output}" "cs-reboot-if-idle.timer"
+assert_contains "debian 13 leaves host keys" "${output}" "SSH host keys: left as they are"
+assert_contains "debian 13 off-site hook stays off without credentials" "${output}" "offsite.env is mode 600"
 assert_contains "debian 13 firewall" "${output}" "Firewall: nftables, SSH 22/tcp, game 27015/udp, query-flood unit"
 assert_contains "debian 13 reloads both nftables units" "${output}" "Firewall reload: systemctl reload cs-server-input cs-server-firewall"
 assert_contains "debian 13 linger" "${output}" "Linger: loginctl enable-linger cstest193c"
@@ -148,7 +157,37 @@ fi
 assert_contains "ssh-keygen rejects a bad key" "${output}" "ssh-keygen rejected it"
 
 run_boot "${DEBIAN13}" --user cstest193c --harden-ssh --dry-run
-expect_die "harden without a key" "no valid authorized key"
+expect_die "harden without a key" "No valid authorized key"
+assert_contains "harden without a key changes nothing" "${output}" "Password login was not changed"
+
+HOME_KEYS="${WORK}/home-cs"
+mkdir -p "${HOME_KEYS}/.ssh"
+printf '%s\n' "${KEY}" > "${HOME_KEYS}/.ssh/authorized_keys"
+output=$(env -i PATH="${SSH_TOOLS}" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 \
+    CS_DEPLOY_HOME="${HOME_KEYS}" \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --harden-ssh --dry-run 2>&1)
+status=$?
+expect_ok "harden dry-run with a key"
+assert_contains "harden writes the 00- drop-in" "${output}" "00-cs-server.conf"
+assert_contains "harden keeps root key login" "${output}" "root login by key only"
+assert_contains "harden reloads and does not restart" "${output}" "reload sshd, not restart"
+assert_not_contains "harden does not require sudo" "${output}" "cannot use sudo"
+assert_contains "harden dry-run changes nothing" "${output}" "Dry run: nothing was changed"
+
+output=$(env -i PATH="${SSH_TOOLS}" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 \
+    CS_DEPLOY_HOME="${HOME_KEYS}" \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --harden-ssh --nopasswd-sudo --dry-run 2>&1)
+status=$?
+expect_ok "harden with nopasswd sudo"
+assert_contains "nopasswd turns root ssh off" "${output}" "PermitRootLogin no"
+assert_contains "nopasswd installs sudoers" "${output}" "NOPASSWD sudo"
+
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --regenerate-host-keys --dry-run 2>&1)
+status=$?
+expect_ok "host key flag is in the plan"
+assert_contains "host key flag warns about the fingerprint" "${output}" "changed fingerprint"
+assert_contains "host key flag names the client step" "${output}" "ssh-keygen -R"
 
 # A piped script has no checkout beside it. The printed command must be a
 # path that a later shell can still run, not a temp file.
@@ -198,6 +237,20 @@ assert_contains "--restart-only can remove the timer" "${output}" "Daily restart
 output=$(env -i PATH="/var/empty" \
     "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --restart-only --harden-ssh --dry-run 2>&1) && status=0 || status=$?
 expect_die "--restart-only is not ssh hardening" "separate commands"
+
+output=$(env -i PATH="/var/empty" \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --restart-only --regenerate-host-keys --dry-run 2>&1) && status=0 || status=$?
+expect_die "--restart-only is not host key regeneration" "separate commands"
+
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_REBOOT_PORTS="27015 27016 27999" \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1)
+status=$?
+expect_ok "custom reboot ports"
+assert_contains "custom reboot ports are accepted" "${output}" "Idle reboot:"
+
+output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_REBOOT_PORTS=nope \
+    "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1) && status=0 || status=$?
+expect_die "bad reboot port" "Invalid CS_REBOOT_PORTS"
 
 output=$(env -i PATH="/var/empty" CS_OS_RELEASE="${DEBIAN13}" CS_SSH_PORT=22 CS_FASTDL=1 \
     "${BASH_BIN}" "${ROOT}/ops/bootstrap-vps.sh" --user cstest193c --dry-run 2>&1)
