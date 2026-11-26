@@ -67,9 +67,21 @@ fi
 # Climb maps have no bot navigation and nothing for a bot to do.
 if [[ "${GAME}" = "cstrike" && "${MODE}" = "climb" ]]; then
     MAPCYCLE="${MAPCYCLE:-mapcycle-climb.txt}"
-    # Start on the rotation's first map, whatever an edited rotation holds.
+    # Start on the rotation's first map that this image has. The published
+    # image has none of them: third-party maps are fetched and built in
+    # locally (maps/manifest.tsv).
     if [[ -z "${MAP:-}" && -f "${GAME}/${MAPCYCLE}" ]]; then
-        MAP=$(awk '!/^[[:space:]]*($|;|\/)/ { print $1; exit }' "${GAME}/${MAPCYCLE}")
+        while read -r candidate _; do
+            case "${candidate}" in '' | \;* | /*) continue ;; esac
+            if [[ -f "${GAME}/maps/${candidate}.bsp" ]]; then
+                MAP="${candidate}"
+                break
+            fi
+        done < "${GAME}/${MAPCYCLE}"
+        if [[ -z "${MAP:-}" ]]; then
+            echo "[entrypoint] MODE=climb: this image has none of the maps in ${MAPCYCLE}. Build one that does (just fetch-maps && just build), or set MAP and MAPCYCLE" >&2
+            exit 1
+        fi
     fi
     BOTS="${BOTS:-0}"
 fi

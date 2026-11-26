@@ -414,6 +414,11 @@ on the server console, and `mv_record "<player>" "<name>" <centiseconds>
 console splits on `:`). The times are this server's
 own and are not records of any climbing community.
 
+The published image has none of these maps, because the project does not
+redistribute them. Build an image that does (`just fetch-maps && just build`);
+`MODE=climb` stops at start, saying so, when it finds none of the rotation's
+maps.
+
 The rotation is `kz_man_everest`, `bkz_goldbhop`, `bkz_toonworld` and
 `kz_climbers_b01`, pinned in [`maps/manifest.tsv`](maps/manifest.tsv). A map
 needs the usual timer buttons (a `func_button` that targets `counter_start`

@@ -285,7 +285,16 @@ case "${args}" in
 esac
 
 # Climb: its own rotation, the rotation's first map, and no bots unless asked.
-printf '; a comment\n\n// another\nkz_first extra\nkz_second\n' > "${WORK_DIR}/cstrike/mapcycle-climb.txt"
+printf '; a comment\n\n// another\nkz_absent\nkz_first extra\nkz_second\n' > "${WORK_DIR}/cstrike/mapcycle-climb.txt"
+run_stub MODE=climb
+if [[ "${status}" -eq 0 ]] || ! grep -q "has none of the maps in mapcycle-climb.txt" "${WORK_DIR}/output"; then
+    printf 'Expected MODE=climb to stop without a climb map, got %d:\n' "${status}" >&2
+    cat "${WORK_DIR}/output" >&2
+    exit 1
+fi
+mkdir -p "${WORK_DIR}/cstrike/maps"
+: > "${WORK_DIR}/cstrike/maps/kz_first.bsp"
+: > "${WORK_DIR}/cstrike/maps/kz_second.bsp"
 run_stub MODE=climb
 args=$(cat "${WORK_DIR}/args")
 case "${args}" in
