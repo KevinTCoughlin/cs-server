@@ -158,5 +158,19 @@ assert_contains "movement runs per-map mode" \
     "$(cat "${ROOT}/quadlet/cs-server-movement.container")" "Environment=MODE=auto"
 assert_contains "movement uses the combined rotation" \
     "$(cat "${ROOT}/quadlet/cs-server-movement.container")" "Environment=MAPCYCLE=mapcycle-movement.txt"
+assert_contains "movement mounts the host map tree" \
+    "$(cat "${ROOT}/quadlet/cs-server-movement.container")" \
+    "Volume=%h/cs-maps:/maps-local:ro,Z"
+assert_contains "movement asks the entrypoint to read host maps" \
+    "$(cat "${ROOT}/quadlet/cs-server-movement.container")" "Environment=MAPS_LOCAL=/maps-local"
+assert_contains "movement bind-mounts a rotation map on its own path" \
+    "$(cat "${ROOT}/quadlet/cs-server-movement.container")" \
+    "Volume=%h/cs-maps/maps/kz_man_everest.bsp:/hlds/cstrike/maps/kz_man_everest.bsp:ro,Z"
+assert_contains "FastDL mounts the same host tree" \
+    "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" \
+    "Volume=%h/cs-maps:/maps-local:ro,Z"
+assert_not_contains "FastDL does not file-mount a fastdl=no climb map" \
+    "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" \
+    "/hlds/cstrike/maps/kz_man_everest.bsp"
 
 printf 'qol tests passed\n'

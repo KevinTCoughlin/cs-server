@@ -2,9 +2,10 @@
 # mapcycle-movement.txt). Image= is the movement image CI publishes
 # (ghcr.io/kevintcoughlin/cs-server-movement:main and :sha-<7>). It must be
 # the same string as in quadlet/cs-fastdl-movement.container, including a
-# digest pin. cs-server-update rewrites both together: the sidecar serves
-# the maps baked into its image, and a different image than the game server
-# is running hands clients the wrong files.
+# digest pin. cs-server-update rewrites both together. The published image
+# does not contain the rotation. ~/cs-maps (this unit: %h/cs-maps) is mounted
+# read-only at /maps-local, and each .bsp is mounted on its own path so the
+# stock maps stay visible. The sidecar does not get those file mounts.
 # Replace HOST in FASTDL_URL with the address clients use (CS_FASTDL_HOST).
 # Do not set sv_downloadurl in server.cfg; the entrypoint maps FASTDL_URL to
 # +sv_downloadurl, which survives the per-map re-exec of server.cfg.
@@ -26,6 +27,19 @@ Volume=%h/.config/cs-server-movement/mapcycle-climb.txt:/hlds/cstrike/mapcycle-c
 Volume=%h/.config/cs-server-movement/mapcycle-surf.txt:/hlds/cstrike/mapcycle-surf.txt:ro,Z
 Volume=%h/.config/cs-server-movement/mapcycle-movement.txt:/hlds/cstrike/mapcycle-movement.txt:ro,Z
 Volume=%h/.config/cs-server-movement/modes:/hlds/cstrike/modes:ro,Z
+# maps-local: begin
+Volume=%h/cs-maps:/maps-local:ro,Z
+Volume=%h/cs-maps/maps/kz_man_everest.bsp:/hlds/cstrike/maps/kz_man_everest.bsp:ro,Z
+Volume=%h/cs-maps/maps/bkz_goldbhop.bsp:/hlds/cstrike/maps/bkz_goldbhop.bsp:ro,Z
+Volume=%h/cs-maps/maps/bkz_toonworld.bsp:/hlds/cstrike/maps/bkz_toonworld.bsp:ro,Z
+Volume=%h/cs-maps/maps/kz_climbers_b01.bsp:/hlds/cstrike/maps/kz_climbers_b01.bsp:ro,Z
+Volume=%h/cs-maps/maps/surf_ski_5.bsp:/hlds/cstrike/maps/surf_ski_5.bsp:ro,Z
+Volume=%h/cs-maps/maps/surf_nice_fly_4.bsp:/hlds/cstrike/maps/surf_nice_fly_4.bsp:ro,Z
+Volume=%h/cs-maps/maps/surf_srventer.bsp:/hlds/cstrike/maps/surf_srventer.bsp:ro,Z
+Volume=%h/cs-maps/maps/surf_nice_fly.bsp:/hlds/cstrike/maps/surf_nice_fly.bsp:ro,Z
+Volume=%h/cs-maps/maps/surf_colorama_beta.bsp:/hlds/cstrike/maps/surf_colorama_beta.bsp:ro,Z
+Environment=MAPS_LOCAL=/maps-local
+# maps-local: end
 Volume=cs-server-state-movement:/hlds/state
 Environment=MAXPLAYERS=20
 Environment=PORT=27016

@@ -192,4 +192,20 @@ assert_contains "spectating stops the run" "${sma}" 'CS_TEAM_SPECTATOR'
 assert_contains "the plugin logs which checkpoint rules it picked" "${sma}" \
     'checkpoints %s'
 
+# The published image has none of these maps. The movement unit bind-mounts
+# each one from ~/cs-maps. FastDL must not file-mount the fastdl=no rows.
+game_unit=$(cat "${ROOT}/quadlet/cs-server-movement.container")
+fastdl_unit=$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")
+while IFS= read -r map || [[ -n "${map}" ]]; do
+    [[ -n "${map}" ]] || continue
+    assert_contains "game unit bind-mounts ${map}" "${game_unit}" \
+        "Volume=%h/cs-maps/maps/${map}.bsp:/hlds/cstrike/maps/${map}.bsp:ro,Z"
+done < <(bash "${ROOT}/scripts/movement-maps.sh")
+for map in kz_man_everest bkz_goldbhop bkz_toonworld kz_climbers_b01; do
+    assert_not_contains "FastDL unit does not mount ${map}" "${fastdl_unit}" \
+        "/hlds/cstrike/maps/${map}.bsp"
+    row=$(grep -E "^${map}	" "${ROOT}/maps/manifest.tsv")
+    [[ "${row}" == *$'\t''no' ]] || fail "${map} must stay fastdl=no"
+done
+
 printf 'map mode tests passed\n'

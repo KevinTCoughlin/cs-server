@@ -2,10 +2,12 @@
 # in quadlet/cs-server-movement.container, including a digest pin.
 # cs-server-update rewrites both together from
 # ghcr.io/kevintcoughlin/cs-server-movement (:main, then :sha-<7>@sha256:…).
-# This container serves every map, sound, sprite, model, gfx, overview and
-# wad in that image, including maps whose manifest row says fastdl=no. That
-# matches sv_allowdownload: the client can fetch whatever the server has.
-# GitHub Pages (just fastdl) is the tree that skips fastdl=no.
+# ~/cs-maps is mounted at /maps-local only. fastdl.sh adds a host file to the
+# serve tree when maps/manifest.tsv says fastdl=yes. fastdl=no maps, including
+# kz_man_everest, bkz_goldbhop, bkz_toonworld and kz_climbers_b01, are not
+# published. Do not add per-file mounts of those .bsp files here: the serve
+# tree follows /hlds/cstrike/maps, so a file mount would publish them.
+# GitHub Pages (just fastdl) uses the same allowlist.
 [Unit]
 Description=CS 1.6 movement FastDL (maps over HTTP)
 Wants=network-online.target
@@ -17,6 +19,10 @@ ContainerName=cs-fastdl-movement
 PodmanArgs=--entrypoint /fastdl.sh
 PublishPort=27080:27080/tcp
 Environment=FASTDL_PORT=27080
+# maps-local: begin
+Volume=%h/cs-maps:/maps-local:ro,Z
+Environment=MAPS_LOCAL=/maps-local
+# maps-local: end
 ReadOnly=true
 Tmpfs=/tmp
 DropCapability=ALL

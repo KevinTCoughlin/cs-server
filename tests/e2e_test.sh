@@ -72,6 +72,7 @@ esac
 LOG=$(mktemp)
 LOG_PID=""
 MARK=0
+HOST_MAPS=""
 step() { printf '[e2e] %s\n' "$*"; }
 
 # shellcheck disable=SC2329 # invoked by the EXIT trap
@@ -88,7 +89,8 @@ cleanup() {
         printf '[e2e] container %s kept; log at %s\n' "${NAME}" "${LOG}" >&2
     else
         "${ENGINE}" rm -f "${NAME}" >/dev/null 2>&1 || true
-    "${ENGINE}" rm -f "${NAME}-fastdl" >/dev/null 2>&1 || true
+        "${ENGINE}" rm -f "${NAME}-fastdl" "${NAME}-maps-fastdl" "${NAME}-maps-yes" >/dev/null 2>&1 || true
+        [[ -z "${HOST_MAPS}" ]] || rm -rf "${HOST_MAPS}"
         if [[ -n "${STATE_DIR}" ]]; then
             rm -rf "${STATE_DIR}"
         else
@@ -795,6 +797,122 @@ if [[ "${ENGINE}" != "container" ]]; then
     [[ "${took}" -lt 8 ]] || fail "the FastDL sidecar ignored SIGTERM (stopped after ${took}s)"
     "${ENGINE}" rm -f "${FASTDL_NAME}" >/dev/null
     step "FastDL sidecar: serves maps and wads, nothing else, stops on SIGTERM"
+fi
+
+# --- Host maps (published image, files from the host) ------------------------
+# The movement rotation is not in a cleared image. The game container sees
+# each host .bsp through its own file mount, and the stock maps stay. The
+# sidecar mounts the tree at /maps-local and must not publish fastdl=no.
+if [[ "${ENGINE}" != "container" ]]; then
+    HOST_MAPS=$(mktemp -d)
+    mkdir -p "${HOST_MAPS}/maps"
+    printf 'not a real bsp\n' > "${HOST_MAPS}/maps/kz_man_everest.bsp"
+
+    set +e
+    missing=$(
+        "${ENGINE}" run --rm "${RUN_FLAGS[@]}" \
+            -e MAPS_LOCAL=/maps-local \
+            --entrypoint /entrypoint.sh \
+            "${IMAGE}" 2>&1
+    )
+    missing_status=$?
+    set -e
+    [[ "${missing_status}" -ne 0 ]] || fail "a missing host map directory should stop the entrypoint: ${missing}"
+    assert_contains "missing host dir names the populate command" "${missing}" "just fetch-maps-host"
+    assert_contains "missing host dir says it is not mounted" "${missing}" "is not a directory"
+
+    set +e
+    unmounted=$(
+        "${ENGINE}" run --rm "${RUN_FLAGS[@]}" \
+            -e MAPS_LOCAL=/maps-local \
+            -v "${HOST_MAPS}:/maps-local:ro" \
+            --entrypoint /entrypoint.sh \
+            "${IMAGE}" 2>&1
+    )
+    unmounted_status=$?
+    set -e
+    [[ "${unmounted_status}" -ne 0 ]] || fail "host maps without file mounts should stop the entrypoint: ${unmounted}"
+    assert_contains "entrypoint asks for a file mount" "${unmounted}" "is not visible"
+    assert_contains "the file mount names the host bsp" "${unmounted}" \
+        "kz_man_everest.bsp:/hlds/cstrike/maps/kz_man_everest.bsp:ro,Z"
+
+    "${ENGINE}" run --rm "${RUN_FLAGS[@]}" \
+        -e MAPS_LOCAL=/maps-local \
+        -v "${HOST_MAPS}:/maps-local:ro" \
+        -v "${HOST_MAPS}/maps/kz_man_everest.bsp:/hlds/cstrike/maps/kz_man_everest.bsp:ro" \
+        --entrypoint bash "${IMAGE}" -c '
+            set -euo pipefail
+            test -f /hlds/cstrike/maps/kz_man_everest.bsp
+            test -s /hlds/cstrike/maps/scoutzknivez.bsp
+            test -s /hlds/cstrike/maps/de_dust2.bsp
+            # shellcheck source=/usr/local/share/cs-server/overlay-host-maps.sh
+            source /usr/local/share/cs-server/overlay-host-maps.sh
+            maps_apply_game >/dev/null
+        ' || fail "file-mounted host map hid a stock map or was not visible"
+
+    printf 'not a real bsp\n' > "${HOST_MAPS}/maps/surf_ski_5.bsp"
+    printf 'cleared bsp\n' > "${HOST_MAPS}/maps/cleared_one.bsp"
+    printf 'cleared_one\thttps://example.invalid/c\t%s\ttest\ttest\t-\tyes\n' \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        > "${HOST_MAPS}/manifest.tsv"
+    printf 'kz_man_everest\thttps://example.invalid/k\t%s\ttest\ttest\t-\tno\n' \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        >> "${HOST_MAPS}/manifest.tsv"
+
+    MAPS_FASTDL="${NAME}-maps-fastdl"
+    "${ENGINE}" rm -f "${MAPS_FASTDL}" >/dev/null 2>&1 || true
+    "${ENGINE}" run -d --name "${MAPS_FASTDL}" --entrypoint /fastdl.sh --network none \
+        --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp \
+        -e MAPS_LOCAL=/maps-local -e FASTDL_PORT=27081 \
+        -v "${HOST_MAPS}:/maps-local:ro" \
+        "${IMAGE}" >/dev/null
+    served=0
+    for _ in $(seq $((20 * SCALE))); do
+        if "${ENGINE}" exec "${MAPS_FASTDL}" /fastdl.sh check 2>/dev/null; then
+            served=1
+            break
+        fi
+        sleep 1
+    done
+    assert_eq "host-map FastDL still serves the baked default map" 1 "${served}"
+    # http_code <port> <path>
+    http_code() {
+        # shellcheck disable=SC2016 # expanded by the container's bash
+        "${ENGINE}" exec "$3" bash -c 'exec 3<>/dev/tcp/127.0.0.1/"$1" && printf "HEAD %s HTTP/1.0\r\n\r\n" "$2" >&3 && read -r -t 3 -u 3 _ code _ && echo "${code}"' bash "$1" "$2"
+    }
+    code=$(http_code 27081 /cstrike/maps/kz_man_everest.bsp "${MAPS_FASTDL}")
+    assert_eq "FastDL does not serve kz_man_everest" 404 "${code}"
+    code=$(http_code 27081 /cstrike/maps/surf_ski_5.bsp "${MAPS_FASTDL}")
+    assert_eq "FastDL does not serve surf_ski_5" 404 "${code}"
+    code=$(http_code 27081 /cstrike/maps/scoutzknivez.bsp "${MAPS_FASTDL}")
+    assert_eq "FastDL still serves the baked map" 200 "${code}"
+    "${ENGINE}" rm -f "${MAPS_FASTDL}" >/dev/null
+
+    MAPS_YES="${NAME}-maps-yes"
+    "${ENGINE}" rm -f "${MAPS_YES}" >/dev/null 2>&1 || true
+    "${ENGINE}" run -d --name "${MAPS_YES}" --entrypoint /fastdl.sh --network none \
+        --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp \
+        -e MAPS_LOCAL=/maps-local -e FASTDL_PORT=27082 \
+        -e MAPS_MANIFEST=/maps-local/manifest.tsv \
+        -v "${HOST_MAPS}:/maps-local:ro" \
+        "${IMAGE}" >/dev/null
+    served=0
+    for _ in $(seq $((20 * SCALE))); do
+        if "${ENGINE}" exec "${MAPS_YES}" env FASTDL_PORT=27082 /fastdl.sh check 2>/dev/null; then
+            served=1
+            break
+        fi
+        sleep 1
+    done
+    assert_eq "cleared-host FastDL serves the baked default map" 1 "${served}"
+    code=$(http_code 27082 /cstrike/maps/cleared_one.bsp "${MAPS_YES}")
+    assert_eq "FastDL serves a host map marked fastdl=yes" 200 "${code}"
+    code=$(http_code 27082 /cstrike/maps/kz_man_everest.bsp "${MAPS_YES}")
+    assert_eq "FastDL still refuses kz_man_everest when another map is cleared" 404 "${code}"
+    "${ENGINE}" rm -f "${MAPS_YES}" >/dev/null
+    rm -rf "${HOST_MAPS}"
+    HOST_MAPS=""
+    step "host maps: file mount keeps stock maps, FastDL skips fastdl=no"
 fi
 
 # --- Offline LAN server -------------------------------------------------------

@@ -388,6 +388,10 @@ COPY --from=builder /usr/local/share/cs-server/game.env /usr/local/share/cs-serv
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 COPY --chmod=755 scripts/healthcheck.sh /healthcheck.sh
 COPY --chmod=755 scripts/fastdl.sh /fastdl.sh
+# Policy for host maps (~/cs-maps). The bytes stay on the host. A published
+# image still copies a pinned map only when MAP_POLICY=cleared allows it.
+COPY --chmod=755 scripts/overlay-host-maps.sh /usr/local/share/cs-server/overlay-host-maps.sh
+COPY --chmod=644 maps/manifest.tsv /usr/local/share/cs-server/maps-manifest.tsv
 COPY --chmod=755 scripts/metrics.pl /metrics.pl
 # Counter-Strike has it from its own plugin copy above; same file.
 COPY --from=plugins --chown=hlds:hlds /out/metrics.amxx /hlds/${GAME}/addons/amxmodx/plugins/metrics.amxx

@@ -271,6 +271,11 @@ assert_eq "movement game unit is pinned to the movement digest" \
 assert_eq "sidecar is pinned to the same digest" \
     "$(image_of cs-server-movement)" "$(image_of cs-fastdl-movement)"
 assert_contains "both movement units restarted" "$(cat "${WORK}/systemctl.log")" "restart cs-fastdl-movement"
+assert_contains "movement unit without a host mount is called out" "${output}" "no /maps-local mount"
+printf 'Volume=/tmp/cs-maps:/maps-local:ro,Z\n' >> "${QUAD}/cs-server-movement.container"
+printf 'Volume=/tmp/cs-maps:/maps-local:ro,Z\n' >> "${QUAD}/cs-fastdl-movement.container"
+run_update --dry-run
+assert_not_contains "a mounted movement unit is not warned" "${output}" "no /maps-local mount"
 
 # A port that dies after the restart restores that image only.
 unit_file

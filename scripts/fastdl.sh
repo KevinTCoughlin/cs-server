@@ -35,6 +35,31 @@ if [[ ! "${PORT}" =~ ^[0-9]{1,5}$ ]] || [[ "$((10#${PORT}))" -lt 1024 || "$((10#
 fi
 PORT="$((10#${PORT}))"
 
+# Host maps mounted at MAPS_LOCAL. Publish a file only when the manifest
+# says fastdl=yes. The image tree is unchanged when MAPS_LOCAL is unset.
+if [[ -n "${MAPS_LOCAL:-}" ]]; then
+    maps_overlay=""
+    for maps_overlay in \
+        "${HLDS_OVERLAY_SH:-}" \
+        /usr/local/share/cs-server/overlay-host-maps.sh
+    do
+        [[ -n "${maps_overlay}" && -f "${maps_overlay}" ]] && break
+        maps_overlay=""
+    done
+    if [[ -z "${maps_overlay}" ]]; then
+        maps_overlay="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/overlay-host-maps.sh"
+    fi
+    if [[ ! -f "${maps_overlay}" ]]; then
+        echo "[fastdl] missing overlay-host-maps.sh" >&2
+        exit 1
+    fi
+    # shellcheck source=scripts/overlay-host-maps.sh
+    source "${maps_overlay}"
+    if ! ROOT=$(maps_stage_fastdl); then
+        exit 1
+    fi
+fi
+
 case "${1:-serve}" in
     serve)
         [[ -d "${ROOT}/${GAME}/maps" ]] || { echo "[fastdl] ${ROOT}/${GAME}/maps is missing" >&2; exit 1; }

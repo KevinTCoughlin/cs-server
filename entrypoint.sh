@@ -69,6 +69,29 @@ fi
 if [[ "${GAME}" = "cstrike" && "${MODE}" = "movement" ]]; then
     MODE=auto
 fi
+
+# Host maps (~/cs-maps, mounted at MAPS_LOCAL). A published movement image
+# has none of the rotation. File mounts make them visible on the read-only
+# root; a writable tree gets symlinks instead. Stock files are left in place.
+maps_overlay=""
+for maps_overlay in \
+    "${HLDS_OVERLAY_SH:-}" \
+    /usr/local/share/cs-server/overlay-host-maps.sh
+do
+    [[ -n "${maps_overlay}" && -f "${maps_overlay}" ]] && break
+    maps_overlay=""
+done
+if [[ -z "${maps_overlay}" ]]; then
+    maps_overlay="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/overlay-host-maps.sh"
+fi
+if [[ ! -f "${maps_overlay}" ]]; then
+    echo "[entrypoint] missing overlay-host-maps.sh" >&2
+    exit 1
+fi
+# shellcheck source=scripts/overlay-host-maps.sh
+source "${maps_overlay}"
+maps_apply_game
+
 # Climb, surf and auto have no bot navigation and nothing for a bot to do.
 # auto rotates both kinds (mapcycle-movement.txt) and picks settings per map.
 if [[ "${GAME}" = "cstrike" && ( "${MODE}" = "climb" || "${MODE}" = "surf" || "${MODE}" = "auto" ) ]]; then
@@ -89,7 +112,7 @@ if [[ "${GAME}" = "cstrike" && ( "${MODE}" = "climb" || "${MODE}" = "surf" || "$
             fi
         done < "${GAME}/${MAPCYCLE}"
         if [[ -z "${MAP:-}" ]]; then
-            echo "[entrypoint] MODE=${MODE}: this image has none of the maps in ${MAPCYCLE}. Build one that does (just fetch-maps && just build), or set MAP and MAPCYCLE" >&2
+            echo "[entrypoint] MODE=${MODE}: this image has none of the maps in ${MAPCYCLE}. Populate ~/cs-maps (just fetch-maps-host) and mount it, or build a private image (just fetch-maps && just build)." >&2
             exit 1
         fi
     fi

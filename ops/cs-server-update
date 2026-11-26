@@ -522,6 +522,13 @@ apply_image() {
         ports+=("${port}")
         for member in "${members[@]}"; do
             file="${QUADLET_DIR}/${member}.container"
+            case "${member}" in
+                *movement*)
+                    if ! grep -q '/maps-local' "${file}"; then
+                        log "warning: ${member} has no /maps-local mount. Movement maps are not in the published image. Populate ~/cs-maps and add the mounts (docs/REBUILD.md) before this server can start a climb or surf map."
+                    fi
+                    ;;
+            esac
             if cur=$(current_digest "${file}") && [[ "${cur}" == "${digest}" ]]; then
                 log "${member}: already pinned to ${digest}"
                 continue

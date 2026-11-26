@@ -10,6 +10,10 @@
 #   scripts/fetch-maps.sh            fetch every row whose .bsp is missing
 #   scripts/fetch-maps.sh <name>...  (re)fetch only these maps
 #
+# FETCH_MAPS_DEST is the directory for .bsp/.nav/.res/.txt (default maps/).
+# FETCH_MAPS_ROOT is where a row's sound extras are copied (default repo root).
+# scripts/fetch-maps-host.sh sets both to ~/cs-maps.
+#
 # Each download must match its pinned SHA-256 and be a .zip or a GoldSrc .bsp.
 # Verified downloads are cached by hash in .cache/maps/ (FETCH_MAPS_CACHE), so
 # a pack shared by several rows is downloaded once. From a zip only
@@ -21,7 +25,10 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 MANIFEST="${ROOT}/maps/manifest.tsv"
-DEST="${ROOT}/maps"
+# FETCH_MAPS_DEST / FETCH_MAPS_ROOT point a host populate (fetch-maps-host.sh)
+# at ~/cs-maps. The default is still this repo: maps/ and the repo root.
+DEST="${FETCH_MAPS_DEST:-${ROOT}/maps}"
+EXTRA_ROOT="${FETCH_MAPS_ROOT:-${ROOT}}"
 CACHE="${FETCH_MAPS_CACHE:-${ROOT}/.cache/maps}"
 ALLOWED_EXT=(bsp nav res txt)
 MAX_BYTES=314572800 # 300 MiB
@@ -131,15 +138,18 @@ fetch_one() {
             [[ "${found}" -eq 1 ]] || die "${name}: zip has no ${extra}"
         done
 
+        mkdir -p "${DEST}"
         cp "${work}/out/"* "${DEST}/"
         if [[ -d "${work}/extra" ]]; then
-            cp -R "${work}/extra/." "${ROOT}/"
+            mkdir -p "${EXTRA_ROOT}"
+            cp -R "${work}/extra/." "${EXTRA_ROOT}/"
         fi
     else
         # A GoldSrc BSP starts with version 30 (0x1e) as a little-endian int.
         [[ "${kind}" == "1e000000" ]] ||
             die "${name}: download is neither a zip nor a GoldSrc .bsp"
         [[ "${#extra_list[@]}" -eq 0 ]] || die "${name}: extras need a zip download"
+        mkdir -p "${DEST}"
         cp "${file}" "${DEST}/${name}.bsp"
     fi
     log "${name}: ok"
