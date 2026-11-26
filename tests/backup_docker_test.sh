@@ -38,7 +38,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
-sudo docker pull busybox >/dev/null
+# Docker Hub's anonymous pull limit is shared by GitHub-hosted runners. A
+# rate-limit answer is not a test failure: the same image is on public ECR.
+set +e
+pull_out=$(sudo docker pull busybox 2>&1)
+pull_status=$?
+set -e
+if [[ "${pull_status}" -ne 0 ]]; then
+    if [[ "${pull_out}" == *toomanyrequests* ]]; then
+        printf 'Docker Hub rate limit; pulling busybox from public ECR\n'
+        sudo docker pull public.ecr.aws/docker/library/busybox:latest
+        sudo docker tag public.ecr.aws/docker/library/busybox:latest busybox
+    else
+        printf '%s\n' "${pull_out}" >&2
+        fail "could not pull busybox"
+    fi
+fi
 if id "${USER_NAME}" >/dev/null 2>&1; then
     sudo userdel -r "${USER_NAME}" >/dev/null 2>&1 || true
 fi

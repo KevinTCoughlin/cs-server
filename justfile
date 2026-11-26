@@ -98,7 +98,7 @@ lint:
 
 # Lint shell scripts with shellcheck
 shellcheck:
-    shellcheck entrypoint.sh install.sh scripts/i386-compat.sh scripts/mode.sh scripts/fetch-maps.sh scripts/healthcheck.sh scripts/game-env.sh scripts/release-notes.sh scripts/build-regamedll.sh ops/cs-server ops/bootstrap-vps.sh ops/backup-state.sh ops/restart-idle.sh ops/cs ops/cs-reboot-if-idle ops/cs-server-offsite ops/cs-restore-test ops/cs-server-update tests/*.sh
+    shellcheck entrypoint.sh install.sh scripts/i386-compat.sh scripts/mode.sh scripts/fetch-maps.sh scripts/movement-maps.sh scripts/healthcheck.sh scripts/game-env.sh scripts/release-notes.sh scripts/build-regamedll.sh ops/cs-server ops/bootstrap-vps.sh ops/backup-state.sh ops/restart-idle.sh ops/cs ops/cs-reboot-if-idle ops/cs-server-offsite ops/cs-restore-test ops/cs-server-update tests/*.sh
 
 # Run all checks
 check: lint shellcheck test
@@ -113,6 +113,7 @@ test:
     bash tests/mounts_test.sh
     bash tests/mode_test.sh
     bash tests/map_mode_test.sh
+    bash tests/records_export_test.sh
     bash tests/fetch_maps_test.sh
     bash tests/install_test.sh
     bash tests/release_notes_test.sh

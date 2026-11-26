@@ -1,0 +1,319 @@
+# SPDX-License-Identifier: MIT
+name: Movement Image
+
+# The movement server image: the Counter-Strike image (same Containerfile,
+# GAME=cstrike) plus the climb and surf maps from maps/manifest.tsv.
+# scripts/movement-maps.sh is the list. The default image workflow does not
+# fetch those maps, so ghcr.io/<repo> does not contain them.
+#
+# Tags match what cs-server-update already follows on the default image:
+#   push to main    :main and :sha-<7>
+#   release tag     :X.Y.Z, :X.Y, :X and :sha-<7> (no :latest; that tag stays
+#                   on the default image)
+# A tag push does not move :main. Path filters do not apply to tag pushes.
+# Linux runners only.
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+    paths:
+      - 'Containerfile'
+      - '.containerignore'
+      - 'entrypoint.sh'
+      - 'scripts/**'
+      - 'config/**'
+      - 'plugins/**'
+      - 'maps/**'
+      - 'docs/cstrike/maps/**'
+      - 'ops/seccomp/**'
+      - 'tests/e2e_test.sh'
+      - 'tests/lib.sh'
+      - '.github/workflows/movement.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Containerfile'
+      - '.containerignore'
+      - 'entrypoint.sh'
+      - 'scripts/**'
+      - 'config/**'
+      - 'plugins/**'
+      - 'maps/**'
+      - 'docs/cstrike/maps/**'
+      - 'ops/seccomp/**'
+      - 'tests/e2e_test.sh'
+      - 'tests/lib.sh'
+      - '.github/workflows/movement.yml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-movement
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+# Cancel superseded PR runs only; push/schedule runs get a unique group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # One native build per architecture. arm64 runs on a Linux arm runner.
+  # Cache scope is separate from docker.yml so this image's map layer does
+  # not evict the default image's cache.
+  image:
+    name: movement (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            steam_timeout: 180
+            e2e_timeout_scale: 1
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            steam_timeout: 300
+            e2e_timeout_scale: 2
+    env:
+      LOCAL_IMAGE: local/cs-server:movement
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Lowercase image name
+        run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      # The maps are gitignored. Fetch only the movement rotations so the
+      # nipper pack stays out of this public image.
+      - name: Fetch climb and surf maps
+        run: |
+          set -euo pipefail
+          mapfile -t maps < <(bash scripts/movement-maps.sh)
+          [[ "${#maps[@]}" -gt 0 ]]
+          echo "movement maps: ${maps[*]}"
+          ok=0
+          for _ in 1 2 3; do
+            if bash scripts/fetch-maps.sh "${maps[@]}"; then
+              ok=1
+              break
+            fi
+            echo "fetch-maps failed; retrying" >&2
+            sleep 15
+          done
+          [[ "${ok}" -eq 1 ]]
+          for name in "${maps[@]}"; do
+            [[ -s "maps/${name}.bsp" ]] || { echo "::error::missing maps/${name}.bsp"; exit 1; }
+          done
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          labels: |
+            org.opencontainers.image.title=CS 1.6 movement server
+            org.opencontainers.image.description=Containerized Counter-Strike 1.6 climb and surf server using the ReHLDS stack
+            org.opencontainers.image.vendor=KevinTCoughlin
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Containerfile
+          platforms: linux/${{ matrix.arch }}
+          push: false
+          load: true
+          tags: ${{ env.LOCAL_IMAGE }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=movement-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=movement-${{ matrix.arch }}
+
+      - name: Smoke test — binaries and movement maps
+        run: |
+          set -euo pipefail
+          script='set -eu; test -x /hlds/hlds_linux && test -x /hlds/hlds_run && test -x /entrypoint.sh && test -s /etc/ssl/certs/ca-certificates.crt'
+          while IFS= read -r name; do
+            script+="; test -s /hlds/cstrike/maps/${name}.bsp"
+          done < <(bash scripts/movement-maps.sh)
+          docker run --rm --entrypoint /bin/sh "${LOCAL_IMAGE}" -c "${script}"
+
+      - name: Smoke test — server starts and reaches Steam
+        env:
+          STEAM_TIMEOUT: ${{ matrix.steam_timeout }}
+        run: |
+          docker run -d --name hlds-smoke \
+            --cap-drop ALL --security-opt no-new-privileges:true "${LOCAL_IMAGE}"
+          for _ in $(seq $((STEAM_TIMEOUT / 3))); do
+            if docker logs hlds-smoke 2>&1 | grep -q 'Connection to Steam servers successful'; then
+              docker logs hlds-smoke 2>&1 | grep -E 'Connection to Steam|VAC secure'
+              docker exec hlds-smoke /healthcheck.sh
+              echo 'health check: server answers a ping on its game port'
+              docker rm -f hlds-smoke >/dev/null
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::HLDS did not report a Steam connection within ${STEAM_TIMEOUT}s"
+          docker logs hlds-smoke 2>&1 | tail -40
+          docker rm -f hlds-smoke >/dev/null
+          exit 1
+
+      # Maps are in the image, so the climb and surf sections of this test
+      # run, along with the usual plugin and shutdown checks.
+      - name: End-to-end test — plugins, mode switching, maps, shutdown
+        env:
+          CS_E2E_TIMEOUT_SCALE: ${{ matrix.e2e_timeout_scale }}
+        run: bash tests/e2e_test.sh docker "${LOCAL_IMAGE}"
+
+      - name: Run Trivy vulnerability scanner
+        id: trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.LOCAL_IMAGE }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          limit-severities-for-sarif: true
+          ignore-unfixed: true
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.trivy.outcome == 'success'
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: trivy-movement-${{ matrix.arch }}
+
+      - name: Run Trivy vulnerability scanner (table format)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.LOCAL_IMAGE }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      # Push this architecture untagged; the publish job tags a manifest
+      # list that points at both digests. Provenance is build-push-action's
+      # default, the same as docker.yml. No cosign in this repository.
+      - name: Push image by digest
+        id: push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Containerfile
+          platforms: linux/${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=movement-${{ matrix.arch }}
+
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: movement-digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  movement-image:
+    needs: image
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every movement image build to pass
+        env:
+          RESULT: ${{ needs.image.result }}
+        run: |
+          echo "movement image builds: ${RESULT}"
+          [ "${RESULT}" = success ]
+
+  publish:
+    needs: image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Lowercase image name
+        run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: movement-digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # Same tag set cs-server-update already parses, minus :latest.
+          # Push to main publishes :main and :sha-<7>. A release tag adds
+          # the version tags. A tag push does not move :main.
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,format=short,prefix=sha-
+
+      - name: Create and push the multi-arch manifest
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          tags=$(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "${DOCKER_METADATA_OUTPUT_JSON}")
+          sources=$(printf "${REGISTRY}/${IMAGE_NAME}@sha256:%s " *)
+          # shellcheck disable=SC2086 # word splitting is intended
+          docker buildx imagetools create ${tags} ${sources}
+
+      - name: Inspect manifest
+        run: docker buildx imagetools inspect "${{ fromJSON(steps.meta.outputs.json).tags[0] }}"
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v7
+        with:
+          name: movement-sbom
+          path: sbom.spdx.json
+          retention-days: 30

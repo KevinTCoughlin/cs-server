@@ -1256,13 +1256,16 @@ EOF
     fi
     if [[ ! -f "${home}/.config/cs-server/update.units" ]]; then
         cat > "${home}/.config/cs-server/update.units" <<EOF
-# name port [image]. The image defaults to CS_UPDATE_IMAGE.
-# One line per Quadlet. A localhost image is left alone.
+# name port [image] [sidecar ...]
+# The image defaults to CS_UPDATE_IMAGE, or to the repository already in the
+# Quadlet Image= line when that is a registry image. Extra names share that
+# image: they restart with the unit and roll back with it. A localhost image
+# is left alone.
 scoutzknivez ${GAME_PORT}
-# Movement is a local image (localhost/cs-server:movement-*) and is not built
-# or published by CI. When that image exists on GHCR with the same :main and
-# :sha-<7> tags, uncomment and name it:
-# cs-server-movement 27016 ghcr.io/kevintcoughlin/cs-server
+# Movement image (climb and surf maps): ghcr.io/kevintcoughlin/cs-server-movement
+# :main and :sha-<7>. Uncomment when those Quadlets are installed. The sidecar
+# is not a game port; it is pinned and restarted with the game unit.
+# cs-server-movement 27016 ghcr.io/kevintcoughlin/cs-server-movement cs-fastdl-movement
 EOF
         chown "${DEPLOY_USER}:${DEPLOY_USER}" "${home}/.config/cs-server/update.units"
         chmod 644 "${home}/.config/cs-server/update.units"

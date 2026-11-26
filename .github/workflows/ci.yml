@@ -44,6 +44,7 @@ jobs:
           bash tests/mounts_test.sh
           bash tests/mode_test.sh
           bash tests/map_mode_test.sh
+          bash tests/records_export_test.sh
           bash tests/fetch_maps_test.sh
           bash tests/install_test.sh
           bash tests/release_notes_test.sh
