@@ -28,6 +28,13 @@
 # buttons), kz_egypt_hz (the one map whose author allows redistribution, but
 # .rar only, with custom models and sprites the fetcher does not extract).
 #
+# Surf maps (MODE=surf): none has timer buttons (the timer uses zones, see
+# movement.sma) and each needs only its .bsp. surf_nice_fly_4's author chose
+# CC BY-NC-SA 3.0 on the map page, which allows sharing with credit; it stays
+# off FastDL like the rest until the stricter rule above is revisited. Left
+# out: surf_ski_2, surf_green and surf_egypt (.rar only), surf_water-run (a
+# custom sprite), surf_ninja (a sound the archive does not contain).
+#
 # Not pinned yet: ka_monkeybars (knife arena) ships without a bot .nav, and
 # ZBot would generate one at map load (very slow under qemu). Generate it once
 # on an x86 host (`bot_nav_generate`), then add a row and a mapcycle entry.
@@ -47,3 +54,8 @@ kz_man_everest	https://gamebanana.com/dl/497601	0200a82423339675fc864a8e55208d3b
 bkz_goldbhop	https://gamebanana.com/dl/298475	1ea520d78438fd4f8ef48d1cc2a1ab7dc767626bd0334029ea200619758381b9	unknown-no-fastdl	Sprite, gamebanana.com upload by another user; no terms found	-	no
 bkz_toonworld	https://gamebanana.com/dl/317825	58048d8af1caae2384cb27de306c85a1220126e64d642ea84282ce47d8c59d7b	CC-BY-NC-ND-4.0	csgrabben (Svampsi), gamebanana.com author upload	-	no
 kz_climbers_b01	https://gamebanana.com/dl/297816	6892821c7285cdfa39704510c493957be65dddd0123d2dd743d57390a046a471	CC-BY-NC-ND-4.0	V@LV3, gamebanana.com author upload	-	no
+surf_ski_5	https://gamebanana.com/dl/312177	d817f83db73605575274f15dcf389b8261b845fed20e8fb12a5c2e8efa218d88	unknown-no-fastdl	author unknown, gamebanana.com upload by another user; no terms found	-	no
+surf_nice_fly_4	https://gamebanana.com/dl/297597	5efd596d3b2956d109fbb472042a542059ea1819747f047c74f9c224e6527d35	CC-BY-NC-SA-3.0	MPD, gamebanana.com author upload	-	no
+surf_srventer	https://gamebanana.com/dl/298375	40f0f1643599490c8658a49dec2522c39176ec8b016313361ad3fb4adebb12d5	CC-BY-NC-ND-4.0	MPD, gamebanana.com author upload	-	no
+surf_nice_fly	https://gamebanana.com/dl/308762	5315a5435981d473aabde2a5ea254e698e493c61204bca895ef51c698b1b040c	CC-BY-NC-ND-4.0	MPD, gamebanana.com author upload	-	no
+surf_colorama_beta	https://gamebanana.com/dl/287810	08ba9363bd6263edd54bdef2eddd112b3ae43c327aeeeb855e42927313dd376b	CC-BY-NC-ND-4.0	burden, gamebanana.com author upload	-	no
