@@ -831,7 +831,7 @@ maps_local_block() {
     dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     script="${dir}/scripts/overlay-host-maps.sh"
     [[ -f "${script}" ]] || error "CS_MAPS_LOCAL=1 needs scripts/overlay-host-maps.sh next to install.sh. Run it from a checkout of this repository (the movement units in quadlet/ are the other way)."
-    # shellcheck source=scripts/overlay-host-maps.sh
+    # shellcheck disable=SC1090 # the file is linted on its own; a curled install.sh may not have it
     source "${script}"
     maps_volume_block "${MAPS_HOST}" "${GAME}" "${prefix}"
 }

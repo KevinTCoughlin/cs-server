@@ -807,6 +807,9 @@ if [[ "${ENGINE}" != "container" ]]; then
     HOST_MAPS=$(mktemp -d)
     mkdir -p "${HOST_MAPS}/maps"
     printf 'not a real bsp\n' > "${HOST_MAPS}/maps/kz_man_everest.bsp"
+    # The container runs as uid 10001. mktemp is mode 700, which that user cannot enter.
+    chmod 755 "${HOST_MAPS}" "${HOST_MAPS}/maps"
+    chmod 644 "${HOST_MAPS}/maps/kz_man_everest.bsp"
 
     set +e
     missing=$(
@@ -858,6 +861,7 @@ if [[ "${ENGINE}" != "container" ]]; then
     printf 'kz_man_everest\thttps://example.invalid/k\t%s\ttest\ttest\t-\tno\n' \
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
         >> "${HOST_MAPS}/manifest.tsv"
+    chmod -R a+rX "${HOST_MAPS}"
 
     MAPS_FASTDL="${NAME}-maps-fastdl"
     "${ENGINE}" rm -f "${MAPS_FASTDL}" >/dev/null 2>&1 || true

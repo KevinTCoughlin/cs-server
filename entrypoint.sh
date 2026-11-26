@@ -88,7 +88,7 @@ if [[ ! -f "${maps_overlay}" ]]; then
     echo "[entrypoint] missing overlay-host-maps.sh" >&2
     exit 1
 fi
-# shellcheck source=scripts/overlay-host-maps.sh
+# shellcheck disable=SC1090 # path is chosen at run time; the file is linted on its own
 source "${maps_overlay}"
 maps_apply_game
 

@@ -161,11 +161,19 @@ maps_list_host() {
 }
 
 maps_require_host() {
-    local host=${1:-${MAPS_LOCAL:-}}
+    local host=${1:-${MAPS_LOCAL:-}} resolved
     if [[ -z "${host}" || ! -d "${host}" ]]; then
         maps_die "MAPS_LOCAL=${host:-<unset>} is not a directory. Bind-mount the host maps read-only (Volume=%h/cs-maps:/maps-local:ro,Z). Populate ~/cs-maps with: just fetch-maps-host" || return 1
     fi
-    MAPS_LOCAL=$(cd "${host}" && pwd)
+    # The container user is not the host owner. Mode 700 (mktemp) is invisible
+    # to it. fetch-maps-host.sh leaves directories 755 and files 644.
+    if [[ ! -r "${host}" || ! -x "${host}" ]]; then
+        maps_die "MAPS_LOCAL=${host} is not readable by uid $(id -u). Directories in ~/cs-maps must be mode 755 and files mode 644." || return 1
+    fi
+    resolved=$(cd "${host}" && pwd) || {
+        maps_die "MAPS_LOCAL=${host} is not readable by uid $(id -u). Directories in ~/cs-maps must be mode 755 and files mode 644." || return 1
+    }
+    MAPS_LOCAL=${resolved}
 }
 
 maps_count_bsps() {

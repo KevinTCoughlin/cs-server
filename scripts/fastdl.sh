@@ -53,7 +53,7 @@ if [[ -n "${MAPS_LOCAL:-}" ]]; then
         echo "[fastdl] missing overlay-host-maps.sh" >&2
         exit 1
     fi
-    # shellcheck source=scripts/overlay-host-maps.sh
+    # shellcheck disable=SC1090 # path is chosen at run time; the file is linted on its own
     source "${maps_overlay}"
     if ! ROOT=$(maps_stage_fastdl); then
         exit 1
