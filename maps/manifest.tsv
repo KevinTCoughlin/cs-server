@@ -18,6 +18,16 @@
 # use, no modified BSPs. GameBanana's checklist asks that we get permission
 # before re-hosting elsewhere, so these stay off FastDL until NIPPER agrees.
 #
+# Climb maps (MODE=climb): every one has the standard timer buttons
+# (func_button targets counter_start / counter_off) and needs nothing beyond
+# its .bsp. None of the archives carries licence text. GameBanana shows its
+# default CC BY-NC-ND 4.0 on almost every map page, re-uploads by other people
+# included, so it counts as the author's terms only on the author's own upload
+# (bkz_toonworld, kz_climbers_b01). All stay off FastDL until an author agrees.
+# Looked at and left out: kz_longjumps2 and kz_kzarg_toonbhop (no timer
+# buttons), kz_egypt_hz (the one map whose author allows redistribution, but
+# .rar only, with custom models and sprites the fetcher does not extract).
+#
 # Not pinned yet: ka_monkeybars (knife arena) ships without a bot .nav, and
 # ZBot would generate one at map load (very slow under qemu). Generate it once
 # on an x86 host (`bot_nav_generate`), then add a row and a mapcycle entry.
@@ -33,3 +43,7 @@ xmas_nipperhouse	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2ce
 x-mas_tree	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	-	no
 xmas_lodge	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	sound/nm_wonderfulxmastime.wav	no
 xmas_crazytank	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	-	no
+kz_man_everest	https://gamebanana.com/dl/497601	0200a82423339675fc864a8e55208d3b740aa87d4ac2feed9861287bb53e77a7	unknown-no-fastdl	Kreedz, gamebanana.com upload by another user; no terms found	-	no
+bkz_goldbhop	https://gamebanana.com/dl/298475	1ea520d78438fd4f8ef48d1cc2a1ab7dc767626bd0334029ea200619758381b9	unknown-no-fastdl	Sprite, gamebanana.com upload by another user; no terms found	-	no
+bkz_toonworld	https://gamebanana.com/dl/317825	58048d8af1caae2384cb27de306c85a1220126e64d642ea84282ce47d8c59d7b	CC-BY-NC-ND-4.0	csgrabben (Svampsi), gamebanana.com author upload	-	no
+kz_climbers_b01	https://gamebanana.com/dl/297816	6892821c7285cdfa39704510c493957be65dddd0123d2dd743d57390a046a471	CC-BY-NC-ND-4.0	V@LV3, gamebanana.com author upload	-	no

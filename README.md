@@ -299,7 +299,8 @@ Edit files in `config/` — they're bind-mounted into the container:
 | `config/mapcycle-dust2.txt` | Dust 2 rotation (classic de_dust2) |
 | `config/mapcycle-nipper.txt` | Nipper Friday (knife mode) rotation |
 | `config/mapcycle-nipper-xmas.txt` | Nipper Friday Christmas rotation (Dec 1 to Jan 6) |
-| `config/modes/*.cfg` | Per-mode gameplay (gravity, round time, money), run after `server.cfg`: `scoutz.cfg`, `knife.cfg` (Nipper Friday; `knife_he.cfg` for grenade maps), `vanilla.cfg`, `match.cfg` |
+| `config/mapcycle-climb.txt` | Climb mode (KZ) rotation |
+| `config/modes/*.cfg` | Per-mode gameplay (gravity, round time, money), run after `server.cfg`: `scoutz.cfg`, `knife.cfg` (Nipper Friday; `knife_he.cfg` for grenade maps), `vanilla.cfg`, `match.cfg`, `climb.cfg` |
 | `config/autoexec.cfg` | Runs on server start |
 
 Changes to `server.cfg` take effect on the next map or via `just rcon "exec server.cfg"`.
@@ -379,6 +380,50 @@ admin and map-vote plugins without bunny hop, kill sounds and advertisements.
 A mode without such a file uses `plugins.ini`. Bots need a navigation mesh for
 each map; on a stock map they build one the first time it is played (a
 minute or two) and it is kept in the state volume.
+
+### Climb (KZ)
+
+`MODE=climb` is for climb maps: get from the start button to the stop button
+at the top. Physics are stock (gravity 800, air acceleration 10), because the
+maps are built around them. There are no rounds, a fall puts you straight back
+in, there are no bots, and players pass through each other and cannot hurt
+each other.
+
+```bash
+just mode climb           # climb maps on mapcycle-climb.txt
+CS_MODE=climb CS_INSTANCE=climb CS_PORT=27016 bash install.sh   # or a server of its own
+```
+
+`movement.amxx` times each run and keeps the checkpoints. In chat:
+
+| Say | What it does |
+|-----|--------------|
+| `/cp` | Save a checkpoint where you stand (on the ground only) |
+| `/tp` (or `/gc`) | Go back to the last checkpoint |
+| `/stuck` | Go back to the checkpoint before that |
+| `/start` (or `/restart`) | Go back to the start button and stop the timer |
+| `/top` | This map's best times |
+
+A run with no teleport is a **pro** run. A run that used `/tp` or `/stuck`, or
+died and came back on a checkpoint, is a **cp** run. Each map has a top 15 for
+both, one row per player, kept in the state volume
+(`amxmodx/records/<map>.tsv`, tab-separated: category, centiseconds,
+checkpoints, teleports, Unix time, Steam id, name). `mv_top` prints the lists
+on the server console, and `mv_record "<player>" "<name>" <centiseconds>
+<checkpoints> <teleports>` enters a time by hand (quote the Steam id: the
+console splits on `:`). The times are this server's
+own and are not records of any climbing community.
+
+The rotation is `kz_man_everest`, `bkz_goldbhop`, `bkz_toonworld` and
+`kz_climbers_b01`, pinned in [`maps/manifest.tsv`](maps/manifest.tsv). A map
+needs the usual timer buttons (a `func_button` that targets `counter_start`
+and one that targets `counter_off`, or the other names listed in
+`movement.sma`); on a map without them everything but the timer works. None of
+these maps is cleared for FastDL, so players download them from the game
+server itself, which is slow for a map of 2 to 6 MB. The mode starts on the
+rotation's first map, and a map changes after `mp_timelimit` minutes (30) or
+by `rtv`. Leaving the mode with `just mode scoutz` takes up to three minutes,
+because no round ends here.
 
 ### Match (5v5)
 
@@ -556,7 +601,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `DOD_PASSWORD` | empty | Day of Defeat `sv_password`. Ignored by every other game. Installer: `CS_DOD_PASSWORD` |
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
-| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike) or `match` (5v5: warmup, knife round, pause) |
+| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike), `match` (5v5: warmup, knife round, pause) or `climb` (KZ maps: timer, checkpoints, top lists; no bots unless `BOTS=1`) |
 | `METRICS_PORT` | empty | Serve Prometheus metrics on this port inside the container; see [Metrics](#metrics). `METRICS_BIND` (default `0.0.0.0`) is the address it listens on |
 | `FASTDL_URL` | empty | http(s) URL serving your `cstrike/` content (`sv_downloadurl`); see [FastDL](#fastdl-fast-downloads) |
 | `LOGS` | `1` | Write server log files (1=on, 0=off); see [Saved state and logs](#saved-state-and-logs) |

@@ -436,7 +436,11 @@ fi
 if [[ "${CS_E2E_SKIP_MAPS:-0}" != "1" ]]; then
     swept=0
     skipped=""
-    maps=$(sed -e 's/[[:space:]].*$//' -e '/^[;\/]/d' -e '/^$/d' "${ROOT}"/config/mapcycle*.txt | LC_ALL=C sort -u)
+    # Not the climb rotation: with bots on, each of its maps would have a
+    # navigation mesh generated. The climb section loads those, bots off.
+    maps=$(for cycle in "${ROOT}"/config/mapcycle*.txt; do
+        [[ "${cycle##*/}" == mapcycle-climb.txt ]] || sed -e 's/[[:space:]].*$//' -e '/^[;\/]/d' -e '/^$/d' "${cycle}"
+    done | LC_ALL=C sort -u)
     for name in ${maps}; do
         if ! map_in_image "${name}"; then
             skipped+=" ${name}"
@@ -588,6 +592,74 @@ assert_eq "MODE=vanilla starts on a stock map" de_dust2 "${map}"
 expect_cvar mapcyclefile mapcycle-dust2.txt "MODE=vanilla uses the stock rotation"
 expect_cvar sv_gravity 800 "vanilla gravity at startup"
 step "MODE=vanilla starts in vanilla"
+
+# --- MODE=climb from a cold start ----------------------------------------------
+# A KZ map, its own plugin list, no bots, no rounds. Nobody presses the map's
+# buttons here, so times go in through mv_record, the console's way to enter
+# one; the list has to survive a map change (it is read back from the state
+# volume) and the mode's respawn settings must not follow the server out.
+climb_map=$(awk '!/^[[:space:]]*($|;|\/)/ { print $1; exit }' "${ROOT}/config/mapcycle-climb.txt")
+climb_listed=$(grep -cE '^[A-Za-z0-9_]+\.amxx' "${ROOT}/plugins/amxmodx/modes/climb.ini" || true)
+"${ENGINE}" rm -f "${NAME}" >/dev/null
+BOOT_MODE=climb boot -e MODE=climb -e METRICS_PORT=9137
+climb_plugins=$(all_running "amxx plugins" "${climb_listed}")
+assert_eq "MODE=climb starts with its own plugin list" "${climb_listed}" "${climb_plugins}"
+map=$(current_map)
+assert_eq "MODE=climb starts on the rotation's first map" "${climb_map}" "${map}"
+expect_cvar mapcyclefile mapcycle-climb.txt "MODE=climb uses the climb rotation"
+expect_cvar sv_gravity 800 "climb gravity"
+expect_cvar sv_airaccelerate 10 "climb air acceleration"
+expect_cvar mp_round_infinite 1 "no rounds in climb mode"
+expect_cvar bot_quota 0 "no bots in climb mode"
+tr -d '\r' < "${LOG}" | grep -aqF "[MV] ${climb_map}: timer buttons found" ||
+    fail "movement.amxx found no timer buttons on ${climb_map}"
+
+line=$(ask 'mv_record "STEAM_0:0:1" "Ada" 12345 0 0' '\[MV\] (not )?recorded')
+assert_contains "a first time tops the pro list" "${line}" "recorded: pro #1"
+line=$(ask 'mv_record "STEAM_0:0:1" "Ada" 20000 0 0' '\[MV\] (not )?recorded')
+assert_contains "a slower time by the same player is not kept" "${line}" "not recorded"
+line=$(ask 'mv_record "STEAM_0:0:2" "Bo" 11000 4 2' '\[MV\] (not )?recorded')
+assert_contains "a run with teleports goes on the cp list" "${line}" "recorded: cp #1"
+line=$(ask 'mv_record "STEAM_0:0:3" "Cy" 9999 0 0' '\[MV\] (not )?recorded')
+assert_contains "a faster time takes first place" "${line}" "recorded: pro #1"
+line=$(ask mv_top '\[MV\] pro 2 ')
+assert_contains "the list is ordered and formatted" "${line}" "pro 2 02:03.45 STEAM_0:0:1 Ada"
+"${ENGINE}" exec "${NAME}" test -s "/hlds/state/amxmodx/records/${climb_map}.tsv" ||
+    fail "the top list is not in the state volume"
+mark
+send "changelevel ${climb_map}"
+wait_log '\[SK\] mode: climb' 90 >/dev/null || fail "the server did not reload ${climb_map}"
+line=$(ask mv_top '\[MV\] cp 1 ')
+assert_contains "the list survives a map change" "${line}" "cp 1 01:50.00 STEAM_0:0:2 Bo"
+waited=0
+until "${ENGINE}" exec "${NAME}" grep -q '^hlds_movement_bests_total 3$' /hlds/.runtime/metrics.prom; do
+    waited=$((waited + 1))
+    [[ "${waited}" -lt $((30 * SCALE)) ]] || fail "metrics.prom does not count the three list entries"
+    sleep 1
+done
+if [[ "${CS_E2E_SKIP_MAPS:-0}" != "1" ]]; then
+    climbs=0
+    while read -r name _; do
+        [[ -n "${name}" && "${name}" != \;* && "${name}" != /* ]] || continue
+        map_in_image "${name}" || fail "${name} (mapcycle-climb.txt) is not in the image"
+        mark
+        send "changelevel ${name}"
+        wait_log "\[MV\] ${name}: timer buttons found" 90 >/dev/null ||
+            fail "changelevel ${name}: the map did not load with its timer buttons"
+        wait_log '\[SK\] mode: climb' 90 >/dev/null || fail "changelevel ${name}: the mode did not come back"
+        climbs=$((climbs + 1))
+    done < "${ROOT}/config/mapcycle-climb.txt"
+    step "loaded ${climbs} climb maps, each with timer buttons"
+fi
+step "MODE=climb on ${climb_map}: ${climb_plugins} plugins, top lists kept"
+
+switch_mode scoutz mapcycle.txt scoutzknivez
+expect_cvar mp_round_infinite 0 "climb's endless round does not leak into scoutz"
+expect_cvar mp_forcerespawn 0 "climb's respawn does not leak into scoutz"
+expect_cvar sv_gravity "${gravity}" "scoutz gravity after climb"
+plugins_after=$(all_running "amxx plugins" "${listed}")
+assert_eq "plugins.ini is back after climb" "${plugins}" "${plugins_after}"
+step "switched from climb to scoutz"
 
 # --- FastDL sidecar -----------------------------------------------------------
 # The same image under another entrypoint serves maps and assets over HTTP,

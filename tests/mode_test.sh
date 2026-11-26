@@ -74,6 +74,7 @@ XMAS="sk_switchmode knife mapcycle-nipper-xmas.txt"
 expect_command "scoutz" "${SCOUTZ}" scoutz
 expect_command "vanilla" "sk_switchmode vanilla mapcycle-dust2.txt" vanilla
 expect_command "match" "sk_switchmode match mapcycle-dust2.txt" match
+expect_command "climb" "sk_switchmode climb mapcycle-climb.txt" climb
 expect_command "nipper out of season" "${NIPPER}" nipper
 assert_contains "names the queued switch" "${output}" "queued nipper (${NIPPER})"
 
