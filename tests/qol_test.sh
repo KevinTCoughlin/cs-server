@@ -19,8 +19,8 @@ assert_contains "sshd is killed last" "$(cat "${ROOT}/ops/ssh/oom.conf")" "OOMSc
 assert_contains "swappiness is lowered" "$(cat "${ROOT}/ops/sysctl/60-cs-server.conf")" "vm.swappiness = 10"
 assert_contains "health workflow reads the host variable" \
     "$(cat "${ROOT}/.github/workflows/server-health.yml")" 'vars.CS_HEALTH_HOST'
-assert_contains "health workflow can list extra ports" \
-    "$(cat "${ROOT}/.github/workflows/server-health.yml")" "CS_HEALTH_EXTRA_PORTS"
+assert_contains "health workflow defaults both game ports" \
+    "$(cat "${ROOT}/.github/workflows/server-health.yml")" "CS_HEALTH_PORTS || '27015 27016'"
 assert_contains "health workflow writes issues" \
     "$(cat "${ROOT}/.github/workflows/server-health.yml")" "issues: write"
 assert_not_contains "health workflow pins no third-party action" \
