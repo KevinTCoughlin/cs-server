@@ -86,6 +86,7 @@ tests/
   *_test.sh, lib.sh        Script tests with stubbed engines (`just test`)
 .github/workflows/
   docker.yml               CI: build, Trivy scan, push to ghcr.io
+  movement.yml             CI: movement image (climb/surf maps) to ghcr.io/<repo>-movement
   ci.yml                   CI: hadolint + shellcheck on every PR
   nightly.yml              Weekly: rebuild, scan, push nightly tag
   friday-dust2.yml         Scheduled Friday PST Dust 2 announcements
@@ -133,6 +134,7 @@ tests/
 ## CI
 
 - **docker.yml**: Builds container image on push/PR (path-filtered), smoke-tests and e2e-tests it, runs Trivy scan, pushes to ghcr.io with semantic tags, generates SBOM. A `v*.*.*` tag push also tags the image `X.Y.Z`, `X.Y` and `X` and creates the GitHub release from that version's `CHANGELOG.md` section (`scripts/release-notes.sh`)
+- **movement.yml**: Same supply chain for the movement image (`ghcr.io/<owner>/cs-server-movement`). It is the Counter-Strike image plus the maps `scripts/movement-maps.sh` names (`mapcycle-movement.txt`, and the climb and surf rotations). Tags are `:main` and `:sha-<7>` on main, plus release version tags. Linux runners only. Nipper maps stay out of it
 - **ci.yml**: Runs hadolint, shellcheck and the script tests on every push/PR (no path filter) — fast gate
 - **nightly.yml**: Weekly rebuild (Monday 00:00 UTC), Trivy scan, pushes `nightly` tag to ghcr.io
 - **pages.yml**: Builds `docs/` with Jekyll and deploys to GitHub Pages on push to main (Pages source must be "GitHub Actions")

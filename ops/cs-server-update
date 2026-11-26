@@ -11,8 +11,15 @@
 # Quadlet is pinned to the arch digest podman stored (Image=repo:sha-<7>@sha256:…).
 # A head commit message containing [skip deploy] or [manual] is not rolled.
 #
+# update.units may name a different image per unit
+# (ghcr.io/kevintcoughlin/cs-server-movement). Each repository is pulled and
+# pinned on its own. Extra unit names on that line, and a cs-fastdl-<suffix>
+# Quadlet beside cs-server-<suffix>, share the digest: they restart together
+# and roll back together. A localhost image is never rolled.
+#
 # CHANNEL=release follows the latest non-draft, non-prerelease GitHub release
 # and skips notes that match CS_UPDATE_BREAKING_RE. Tagged releases only.
+# Each unit's image repository is pulled at that version.
 #
 #   cs-server-update              inside the morning window
 #   cs-server-update --now        ignore the window
@@ -45,6 +52,8 @@ HEALTH_SLEEP="${CS_UPDATE_HEALTH_SLEEP:-5}"
 SHA_LEN=7
 DRY=0
 FORCE=0
+# Revisions already reported, so two images from one commit share one issue.
+declare -A NOTED_REV=()
 
 usage() {
     cat <<EOF
@@ -56,7 +65,8 @@ the digest. CHANNEL=release follows the latest stable GitHub release.
 A port with human players, or one that does not answer, waits for a later
 pass in the morning window (${START_HHMM}-${DEADLINE_HHMM} America/Los_Angeles).
 
-CS_UPDATE_UNITS          name, port, optional image (default: one scoutzknivez line)
+CS_UPDATE_UNITS          name, port, optional image, optional sidecar units
+                         (default: one scoutzknivez line)
 CS_UPDATE_CALENDAR       installed into the timer by bootstrap (OnCalendar)
 CS_MAINTENANCE_LOCK      shared flock path
 EOF
@@ -130,9 +140,39 @@ maintenance_lock() {
     fi
 }
 
-# Print unit lines: name port image
+# Repository without a tag or digest.
+# ghcr.io/owner/name:sha-aaa@sha256:bbb -> ghcr.io/owner/name
+image_repo() {
+    local ref="${1%%@*}" tail
+    if [[ "${ref}" == *:* ]]; then
+        tail="${ref##*:}"
+        if [[ "${tail}" != */* ]]; then
+            ref="${ref%:*}"
+        fi
+    fi
+    printf '%s\n' "${ref}"
+}
+
+valid_unit_name() {
+    [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9_.@-]*$ ]]
+}
+
+# Registry repository from a Quadlet Image= line, when it is not a local tag.
+quadlet_repo() {
+    local file="$1" line="" repo=""
+    [[ -f "${file}" ]] || return 1
+    line=$(sed -n 's/^Image=//p' "${file}" | head -1)
+    [[ -n "${line}" ]] || return 1
+    [[ "${line}" == localhost/* ]] && return 1
+    repo=$(image_repo "${line}")
+    [[ "${repo}" == */* ]] || return 1
+    printf '%s\n' "${repo}"
+}
+
+# Print unit lines: name port image companions
+# companions are extra unit names that share the image (no port of their own).
 units() {
-    local line name port image rest
+    local line name port image rest companions side repo
     if [[ ! -f "${UNITS_FILE}" ]]; then
         printf 'scoutzknivez 27015 %s\n' "${IMAGE}"
         return 0
@@ -142,8 +182,25 @@ units() {
         [[ -n "${line//[[:space:]]/}" ]] || continue
         read -r name port image rest <<<"${line}"
         [[ -n "${name}" && -n "${port}" ]] || continue
+        valid_unit_name "${name}" || { log "error: bad unit name in ${UNITS_FILE}: ${name}"; exit 1; }
         [[ "${port}" =~ ^[0-9]+$ ]] || { log "error: bad port in ${UNITS_FILE}: ${line}"; exit 1; }
-        printf '%s %s %s\n' "${name}" "${port}" "${image:-${IMAGE}}"
+        if [[ -n "${image}" ]]; then
+            image=$(image_repo "${image}")
+        elif repo=$(quadlet_repo "${QUADLET_DIR}/${name}.container"); then
+            image="${repo}"
+        else
+            image="${IMAGE}"
+        fi
+        companions="${rest}"
+        # The movement sidecar is named cs-fastdl-<suffix> next to
+        # cs-server-<suffix>. It is not a game port, so it is not its own line.
+        if [[ "${name}" == cs-server-* ]]; then
+            side="cs-fastdl-${name#cs-server-}"
+            if [[ -f "${QUADLET_DIR}/${side}.container" && " ${companions} " != *" ${side} "* ]]; then
+                companions="${companions:+${companions} }${side}"
+            fi
+        fi
+        printf '%s %s %s %s\n' "${name}" "${port}" "${image}" "${companions}"
     done < "${UNITS_FILE}"
 }
 
@@ -246,7 +303,7 @@ PY
 }
 
 resolve_main() {
-    local ref="${1}" cache revision short
+    local image="$1" ref="${1}:main" cache="" revision="" short=""
     if ! command -v podman >/dev/null 2>&1; then
         log "error: podman is required"
         return 1
@@ -261,15 +318,19 @@ resolve_main() {
     [[ "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || { log "no digest for ${ref}"; return 1; }
     [[ "${revision}" =~ ^[0-9a-f]{40}$ ]] || { log "image ${ref} has no commit revision"; return 1; }
     short="${revision:0:${SHA_LEN}}"
-    TARGET_REF="${IMAGE}:sha-${short}"
+    TARGET_REF="${image}:sha-${short}"
     if ! api_get "https://api.github.com/repos/${REPO}/commits/${revision}" "commit-${revision}"; then
         return 1
     fi
     cache="${STATE_DIR}/http/commit-${revision}.body"
     MESSAGE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["commit"]["message"])' "${cache}")
     if [[ "${MESSAGE}" =~ ${MANUAL_RE} ]]; then
-        note_skip "Update skipped: main commit ${short} is marked manual" \
-            "Commit ${revision} on ${ref} matches ${MANUAL_RE}. The Quadlet was not changed."
+        if [[ -z "${NOTED_REV[${revision}]:-}" ]]; then
+            note_skip "Update skipped: main commit ${short} is marked manual" \
+                "Commit ${revision} on ${ref} matches ${MANUAL_RE}. The Quadlet was not changed."
+            NOTED_REV["${revision}"]=1
+        fi
+        log "main commit ${short} is marked manual; not updating ${image}"
         return 3
     fi
     if ! api_get "https://api.github.com/repos/${REPO}/commits/${revision}/check-runs?per_page=100" "checks-${revision}"; then
@@ -297,21 +358,32 @@ resolve_main() {
     return 0
 }
 
-resolve_release() {
-    local cache tag version
+# One release for every image. Sets RELEASE_VERSION. Return 3 when a human
+# has to take the release; the caller then rolls nothing.
+load_release() {
+    local cache="" tag=""
+    if [[ -n "${RELEASE_VERSION:-}" ]]; then
+        return 0
+    fi
     if ! api_get "https://api.github.com/repos/${REPO}/releases/latest" "release-latest"; then
         return 1
     fi
     cache="${STATE_DIR}/http/release-latest.body"
     tag=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tag_name"])' "${cache}")
     MESSAGE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("body") or "")' "${cache}")
-    version="${tag#v}"
     if [[ "${MESSAGE}" =~ ${BREAKING_RE} ]]; then
         note_skip "Update skipped: ${tag} needs a human" \
             "Release ${tag} matches ${BREAKING_RE}. The Quadlet was not changed."
         return 3
     fi
-    TARGET_REF="${IMAGE}:${version}"
+    RELEASE_VERSION="${tag#v}"
+    [[ -n "${RELEASE_VERSION}" ]] || { log "release has no version"; return 1; }
+    return 0
+}
+
+resolve_release() {
+    local image="$1"
+    TARGET_REF="${image}:${RELEASE_VERSION}"
     log "pulling ${TARGET_REF}"
     if ! podman pull "${TARGET_REF}"; then
         log "could not pull ${TARGET_REF}"
@@ -335,8 +407,8 @@ current_digest() {
 }
 
 players_busy() {
-    local name port image line out humans
-    while read -r name port image; do
+    local name port out humans
+    while read -r name port _image _companions; do
         if ! out=$("${PLAYERS}" 127.0.0.1 "${port}" 2>/dev/null); then
             log "${name} port ${port}: player count unknown; not updating"
             return 0
@@ -379,70 +451,25 @@ health_ok() {
     return 1
 }
 
-apply_units() {
-    local name port image file old new
-    local -a changed=()
-    mkdir -p "${STATE_DIR}"
-    while read -r name port image; do
-        case "${image}" in
-            localhost/*)
-                log "${name}: local image ${image} is not rolled (publish it to GHCR first)"
-                continue
-                ;;
-        esac
-        file="${QUADLET_DIR}/${name}.container"
-        [[ -f "${file}" ]] || { log "error: missing ${file}"; return 1; }
-        if cur=$(current_digest "${file}") && [[ "${cur}" == "${DIGEST}" ]]; then
-            log "${name}: already pinned to ${DIGEST}"
-            continue
-        fi
-        old=$(sed -n 's/^Image=//p' "${file}" | head -1)
-        printf '%s\n' "${old}" > "${STATE_DIR}/${name}.image"
-        new="Image=${TARGET_REF}@${DIGEST}"
-        if [[ "${DRY}" == "1" ]]; then
-            log "dry-run: ${name} would set ${new} (was Image=${old})"
-            continue
-        fi
-        rewrite_image "${file}" "${new}" || { log "error: could not rewrite ${file}"; return 1; }
-        changed+=("${name}")
-        log "${name}: Image=${new}"
-    done < <(units)
-    if [[ "${DRY}" == "1" ]]; then
-        return 0
+# Names that share one image: the game unit plus its sidecars.
+group_members() {
+    local name="$1" companions="$2" member
+    local -a extra=()
+    printf '%s\n' "${name}"
+    if [[ -n "${companions}" ]]; then
+        read -r -a extra <<< "${companions}"
     fi
-    if ((${#changed[@]} == 0)); then
-        log "nothing to change"
-        return 0
-    fi
-    systemctl --user daemon-reload
-    for name in "${changed[@]}"; do
-        log "restarting ${name}"
-        systemctl --user restart "${name}" || { rollback "${changed[@]}"; return 1; }
+    for member in ${extra[@]+"${extra[@]}"}; do
+        [[ -n "${member}" ]] || continue
+        valid_unit_name "${member}" || { log "error: bad unit name ${member}"; return 1; }
+        printf '%s\n' "${member}"
     done
-    local failed=0
-    while read -r name port image; do
-        local skip=1
-        for c in "${changed[@]}"; do
-            [[ "${c}" == "${name}" ]] && skip=0
-        done
-        [[ "${skip}" == "1" ]] && continue
-        if ! health_ok "${port}"; then
-            log "HEALTH CHECK FAILED: ${name} port ${port} did not answer"
-            failed=1
-        else
-            log "${name} port ${port}: answering"
-        fi
-    done < <(units)
-    if [[ "${failed}" == "1" ]]; then
-        rollback "${changed[@]}"
-        return 1
-    fi
-    log "rollout ok: ${TARGET_REF}@${DIGEST}"
-    return 0
 }
 
-rollback() {
-    local name file old
+# Roll back the units named in the arguments. Health is the game port of any
+# primary in this set, including one whose sidecar was the unit that changed.
+rollback_names() {
+    local name file old port companions want c
     log "ROLLING BACK"
     for name in "$@"; do
         file="${QUADLET_DIR}/${name}.container"
@@ -456,11 +483,12 @@ rollback() {
     for name in "$@"; do
         systemctl --user restart "${name}" || log "error: restart of rolled-back ${name} failed"
     done
-    local name port image
-    while read -r name port image; do
-        local want=1
+    while read -r name port _image companions; do
+        want=1
         for c in "$@"; do
-            [[ "${c}" == "${name}" ]] && want=0
+            if [[ "${c}" == "${name}" || " ${companions} " == *" ${c} "* ]]; then
+                want=0
+            fi
         done
         [[ "${want}" == "1" ]] && continue
         if health_ok "${port}"; then
@@ -471,8 +499,87 @@ rollback() {
     done < <(units)
 }
 
+# Rewrite, restart, and health-check every unit that uses this image.
+# Sidecars have no port: a failed game-port check restores the whole group.
+apply_image() {
+    local image="$1" target="$2" digest="$3"
+    local name port img companions file old new member cur
+    local -a rows=() changed=() primaries=() ports=() members=()
+    local failed=0
+    mapfile -t rows < <(units)
+    for name in "${rows[@]}"; do
+        read -r name port img companions <<< "${name}"
+        [[ "${img}" == "${image}" ]] || continue
+        members=()
+        while IFS= read -r member; do
+            members+=("${member}")
+        done < <(group_members "${name}" "${companions}")
+        for member in "${members[@]}"; do
+            file="${QUADLET_DIR}/${member}.container"
+            [[ -f "${file}" ]] || { log "error: missing ${file}"; return 1; }
+        done
+        primaries+=("${name}")
+        ports+=("${port}")
+        for member in "${members[@]}"; do
+            file="${QUADLET_DIR}/${member}.container"
+            if cur=$(current_digest "${file}") && [[ "${cur}" == "${digest}" ]]; then
+                log "${member}: already pinned to ${digest}"
+                continue
+            fi
+            old=$(sed -n 's/^Image=//p' "${file}" | head -1)
+            new="Image=${target}@${digest}"
+            if [[ "${DRY}" == "1" ]]; then
+                log "dry-run: ${member} would set ${new} (was Image=${old})"
+                continue
+            fi
+            printf '%s\n' "${old}" > "${STATE_DIR}/${member}.image"
+            rewrite_image "${file}" "${new}" || { log "error: could not rewrite ${file}"; return 1; }
+            changed+=("${member}")
+            log "${member}: ${new}"
+        done
+    done
+    if [[ "${DRY}" == "1" ]]; then
+        return 0
+    fi
+    if ((${#changed[@]} == 0)); then
+        log "${image}: nothing to change"
+        return 0
+    fi
+    systemctl --user daemon-reload
+    for member in "${changed[@]}"; do
+        log "restarting ${member}"
+        systemctl --user restart "${member}" || { rollback_names "${changed[@]}"; return 1; }
+    done
+    for name in "${!primaries[@]}"; do
+        if ! health_ok "${ports[${name}]}"; then
+            log "HEALTH CHECK FAILED: ${primaries[${name}]} port ${ports[${name}]} did not answer"
+            failed=1
+        else
+            log "${primaries[${name}]} port ${ports[${name}]}: answering"
+        fi
+    done
+    if [[ "${failed}" == "1" ]]; then
+        rollback_names "${changed[@]}"
+        return 1
+    fi
+    log "rollout ok: ${target}@${digest}"
+    return 0
+}
+
+give_up() {
+    if [[ "${DRY}" == "1" || "${FORCE}" == "1" ]] || final_pass; then
+        log "could not resolve an image; giving up until the next run"
+    else
+        log "could not resolve an image; retrying later in the window"
+    fi
+    exit 0
+}
+
 main() {
-    local rc=0
+    local rc=0 any=0 hard=0 failed=0
+    local name="" port="" image=""
+    local -a images=()
+    local -A seen=() plan_target=() plan_digest=()
     case "${CHANNEL}" in
         main | release) ;;
         *) log "error: CHANNEL must be main or release (is ${CHANNEL})"; exit 1 ;;
@@ -482,20 +589,50 @@ main() {
         exit 0
     fi
     mkdir -p "${STATE_DIR}"
-    if [[ "${CHANNEL}" == "main" ]]; then
-        resolve_main "${IMAGE}:main" || rc=$?
-    else
-        resolve_release || rc=$?
-    fi
-    if [[ "${rc}" == "3" ]]; then
-        exit 0
-    fi
-    if [[ "${rc}" != "0" ]]; then
-        if [[ "${DRY}" == "1" || "${FORCE}" == "1" ]] || final_pass; then
-            log "could not resolve an image; giving up until the next run"
+    if [[ "${CHANNEL}" == "release" ]]; then
+        load_release || rc=$?
+        if [[ "${rc}" -eq 3 ]]; then
             exit 0
         fi
-        log "could not resolve an image; retrying later in the window"
+        if [[ "${rc}" -ne 0 ]]; then
+            give_up
+        fi
+    fi
+    while read -r name port image _companions; do
+        [[ -n "${name}" ]] || continue
+        if [[ "${image}" == localhost/* ]]; then
+            log "${name}: local image ${image} is not rolled (publish it to GHCR first)"
+            continue
+        fi
+        if [[ -z "${seen[${image}]:-}" ]]; then
+            seen["${image}"]=1
+            images+=("${image}")
+        fi
+    done < <(units)
+    if ((${#images[@]} == 0)); then
+        log "no registry image to roll"
+        exit 0
+    fi
+    for image in "${images[@]}"; do
+        rc=0
+        if [[ "${CHANNEL}" == "main" ]]; then
+            resolve_main "${image}" || rc=$?
+        else
+            resolve_release "${image}" || rc=$?
+        fi
+        if [[ "${rc}" -eq 0 ]]; then
+            plan_target["${image}"]="${TARGET_REF}"
+            plan_digest["${image}"]="${DIGEST}"
+            any=1
+        elif [[ "${rc}" -ne 3 ]]; then
+            hard=1
+            log "could not resolve ${image}; leaving its units"
+        fi
+    done
+    if [[ "${any}" -eq 0 ]]; then
+        if [[ "${hard}" -eq 1 ]]; then
+            give_up
+        fi
         exit 0
     fi
     if players_busy; then
@@ -511,7 +648,10 @@ main() {
         exit 0
     fi
     if [[ "${DRY}" == "1" ]]; then
-        apply_units
+        for image in "${images[@]}"; do
+            [[ -n "${plan_digest[${image}]:-}" ]] || continue
+            apply_image "${image}" "${plan_target[${image}]}" "${plan_digest[${image}]}"
+        done
         exit 0
     fi
     maintenance_lock
@@ -524,7 +664,11 @@ main() {
         log "error: backup failed; the image was not changed"
         exit 1
     fi
-    apply_units
+    for image in "${images[@]}"; do
+        [[ -n "${plan_digest[${image}]:-}" ]] || continue
+        apply_image "${image}" "${plan_target[${image}]}" "${plan_digest[${image}]}" || failed=1
+    done
+    exit "${failed}"
 }
 
 while [[ $# -gt 0 ]]; do

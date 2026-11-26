@@ -140,11 +140,11 @@ Roll forward by running the installer again, or let the on-box timer do it. Roll
 
 `ops/bootstrap-vps.sh` installs `cs-server-update` for the deploy user and a systemd user timer. It fires at 04:15 America/Los_Angeles and every 20 minutes through 07:55 (`Persistent=false`, `RandomizedDelaySec=90s`). `CS_UPDATE_CALENDAR` replaces that `OnCalendar` when the bootstrap runs. `CS_UPDATE=0` or `--no-update` removes the timer.
 
-`CHANNEL=main` is the default, in `~cs/.config/cs-server/update.env`. The script pulls `ghcr.io/kevintcoughlin/cs-server:main`. The image workflow publishes that tag on a push to `main`, and also `:sha-<7 character commit>`. It does not publish an image for every commit: the workflow is path-filtered, so a docs-only push leaves `:main` where it was. The script reads `org.opencontainers.image.revision` from the pulled image, and continues only when that commit's check-runs and combined status are green. A commit message containing `[skip deploy]` or `[manual]` is not rolled. The Quadlet `Image=` line becomes `repo:sha-<7>@sha256:<digest>` using the digest Podman stored for this machine. If that digest is already pinned, nothing restarts.
+`CHANNEL=main` is the default, in `~cs/.config/cs-server/update.env`. The script pulls `ghcr.io/kevintcoughlin/cs-server:main`, and the same `:main` tag of any other image named in `update.units` (the movement image is `ghcr.io/kevintcoughlin/cs-server-movement`). Each workflow publishes that tag on a push to `main`, and also `:sha-<7 character commit>`. They do not publish an image for every commit: the workflows are path-filtered, so a docs-only push leaves `:main` where it was. The script reads `org.opencontainers.image.revision` from each pulled image, and rolls that image only when that commit's check-runs and combined status are green. A commit message containing `[skip deploy]` or `[manual]` is not rolled. The Quadlet `Image=` line becomes `repo:sha-<7>@sha256:<digest>` using the digest Podman stored for this machine. If that digest is already pinned, nothing restarts. One image whose CI is still running does not hold the other back.
 
 `CHANNEL=release` follows the latest stable GitHub release (not a draft or a prerelease, and not `main`). Release notes that match `BREAKING`, `manual step`, or `migration required` (`CS_UPDATE_BREAKING_RE`) are left for a person. With a mode-0600 `~cs/.config/cs-server/github.token`, that skip opens or comments on a GitHub issue. Without the token, the decision is only in the journal.
 
-Either channel waits until `cs-players` reports no humans on every port in `~cs/.config/cs-server/update.units`. A port that does not answer also waits. The timer retries until 07:55 and then leaves the server until the next morning. Before a restart it runs `cs-server-backup.service`. If the new image does not answer A2S, the previous `Image=` line is restored, the unit is restarted, and the service exits non-zero.
+Either channel waits until `cs-players` reports no humans on every port in `~cs/.config/cs-server/update.units`. A port that does not answer also waits. The timer retries until 07:55 and then leaves the server until the next morning. Before a restart it runs `cs-server-backup.service`. If a game port does not answer A2S after the restart, the previous `Image=` lines for that image (the game unit and its sidecars) are restored, those units are restarted, and the service exits non-zero.
 
 `cs-server-restart`, `cs-reboot-if-idle`, and `cs-server-update` share `/run/lock/cs-server-maintenance.lock`. One of them runs at a time.
 
@@ -155,7 +155,13 @@ cs update --dry-run
 cs update
 ```
 
-`update.units` lists `name port [image]`. `scoutzknivez` is installed. The movement server's image (`localhost/cs-server:movement-*`) exists only on that box; CI does not build or publish it, so the line stays commented. When a GHCR image with the same `:main` and `:sha-<7>` tags exists, uncomment the line and name that image. A `localhost/` image is never rolled.
+`update.units` lists `name port [image] [sidecar ...]`. `scoutzknivez` is installed. The movement line stays commented until those Quadlets are on the machine:
+
+```
+cs-server-movement 27016 ghcr.io/kevintcoughlin/cs-server-movement cs-fastdl-movement
+```
+
+The image column is the repository (`:main` and `:sha-<7>` are added by the script). With no column, a Quadlet whose `Image=` is already a registry reference is followed at that repository; otherwise the line uses `CS_UPDATE_IMAGE`. Names after the image share the digest. They restart with the game unit and roll back with it. `cs-fastdl-<suffix>` is included automatically when it sits beside `cs-server-<suffix>`. The sidecar has no game port, so it is not its own line. A `localhost/` image is never rolled. A failed health check on the game port restores every unit in that image's group and leaves other images where this run put them.
 
 Podman auto-update stays off for this reason: it can only follow a moving tag, and the unit is pinned to a digest so a bad publish cannot move it. The timer above is the rollout. Switching back to releases is one line in `update.env`: `CHANNEL=release`.
 
