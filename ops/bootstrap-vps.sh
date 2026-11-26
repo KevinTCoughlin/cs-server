@@ -26,13 +26,25 @@
 #   1. Create a deploy user (default cs; --user / CS_DEPLOY_USER)
 #   2. Install an SSH public key (--ssh-key, --ssh-key-file, CS_SSH_PUBLIC_KEY)
 #   3. Leave SSH authentication as the VPS image set it. --harden-ssh is a
-#      later, separate step: it refuses to run until the deploy user has a
-#      valid authorized key and sudo access, and it checks sshd with sshd -t
-#      before reloading
+#      later, separate step: it refuses to run until an authorized key is
+#      present (the deploy user, or root), writes sshd_config.d/00-cs-server.conf
+#      (first match wins, so it beats a provider 99-ctrl.conf), aligns active
+#      directives in sshd_config, and reloads sshd only after sshd -t and
+#      sshd -T agree. It does not restart sshd. Root key login stays
+#      (PermitRootLogin prohibit-password). It does not require sudo: a
+#      locked password is normal, and root's key is the admin path.
+#      --nopasswd-sudo is opt-in. With --harden-ssh it also sets
+#      PermitRootLogin no, and only after NOPASSWD sudo for the deploy user
+#      actually works. --regenerate-host-keys is off unless passed. It backs
+#      up template-baked host keys, generates new ones, and reloads sshd.
+#      Clients then see a different fingerprint.
 #   4. Install ca-certificates and curl when either is missing. Install
 #      Podman or Docker from the distro, after reading the Podman version
 #      when Podman is already installed
-#   5. Enable unattended-upgrades and fail2ban's sshd jail
+#   5. Enable unattended-upgrades (Automatic-Reboot false) and fail2ban's
+#      sshd jail. Install /etc/sysctl.d/61-cs-hardening.conf. Install
+#      cs-reboot-if-idle, which reboots for a pending kernel update only when
+#      no human is on a game port and no SSH session is open.
 #   6. Install the query-flood nftables unit and reload it, so a second run
 #      picks up new ports. Allow SSH and 27015/udp (and 27016/udp when
 #      CS_DOD=1, and the FastDL port when CS_FASTDL=1) with nftables, or with
@@ -53,12 +65,17 @@
 #
 # --no-install does the host setup and prints an install.sh command whose
 # path still exists after this process exits (/usr/local/lib/cs-server/install.sh
-# when the script was piped in). --harden-ssh only changes sshd.
+# when the script was piped in). --harden-ssh only changes sshd (and, with
+# --nopasswd-sudo, the sudoers drop-in). --regenerate-host-keys during a full
+# run also replaces host keys; with --no-install the game server is not
+# restarted. A second run does not regenerate keys unless the flag is passed
+# again, and passing it again changes the fingerprint again.
 # A machine with under about 1.8 GB of RAM and no swap gets a 1 GiB swap file.
 # Ubuntu's unprivileged-user-namespace restriction is relaxed when it is on,
 # which rootless Podman needs.
 #
-# Tests point CS_OS_RELEASE at a fake os-release file.
+# Tests point CS_OS_RELEASE at a fake os-release file and CS_DEPLOY_HOME at a
+# home directory that is not the real account.
 set -euo pipefail
 
 RAW_BASE="https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main"
@@ -68,6 +85,8 @@ SSH_KEY_FILE=""
 DRY_RUN=0
 RUN_INSTALL=1
 HARDEN_SSH=0
+NOPASSWD_SUDO=0
+REGEN_HOST_KEYS=0
 INSTALLER_STORE="/usr/local/lib/cs-server/install.sh"
 if [[ -z "${CS_BACKUP+x}" ]]; then
     CS_BACKUP=1
@@ -128,21 +147,32 @@ Options:
   --no-restart        Do not install the daily idle-restart timer (CS_RESTART=0)
   --restart-only      Install or remove only that timer, for an existing user
   --dod               Also install Day of Defeat on 27016/udp (CS_DOD=1)
-  --harden-ssh        Disable root and password SSH, and nothing else
+  --harden-ssh        Password SSH off, root key login kept; nothing else
+  --nopasswd-sudo     Let the deploy user sudo without a password. With
+                      --harden-ssh, also turn root SSH login off
+  --regenerate-host-keys
+                      Replace SSH host keys (off by default). Clients see a
+                      new fingerprint. With --no-install the game is not
+                      restarted
   --dry-run           Print what would be done; change nothing
   --help              Show this help
 
 SSH logins are not changed unless you pass --harden-ssh. Before that, from a
-second terminal: ssh <user>@<host> and then sudo -v. Run --harden-ssh only
-after both succeed.
+second terminal, confirm a key login (ssh <user>@<host>, or ssh root@<host>
+when the deploy user's password is locked). --harden-ssh does not need sudo.
+Root key login stays the admin path unless you also pass --nopasswd-sudo.
 
 Environment (passed through to install.sh when set):
-  CS_SERVER_VERSION, CS_SERVER_IMAGE, CS_PORT, CS_FASTDL, CS_FASTDL_PORT,
-  CS_MODE, CS_BOTS, CS_PROFILE, SERVER_IP, CS_RCON, CS_GAME, CS_INSTANCE,
-  CS_BACKUP (default 1), CS_RESTART (default 1), CS_SSH_PORT, CS_DOD,
-  CS_DOD_PORT, CS_DOD_GSLT, CS_GSLT
+  CS_SERVER_VERSION, CS_SERVER_IMAGE, CS_PIN_DIGEST, CS_PORT, CS_FASTDL,
+  CS_FASTDL_PORT, CS_MODE, CS_BOTS, CS_PROFILE, SERVER_IP, CS_RCON, CS_GAME,
+  CS_INSTANCE, CS_BACKUP (default 1), CS_RESTART (default 1), CS_SSH_PORT,
+  CS_DOD, CS_DOD_PORT, CS_DOD_GSLT, CS_GSLT, CS_REBOOT_PORTS
   CS_DOD_MODE (pub or match) and CS_DOD_PASSWORD are Day of Defeat only.
   They are removed from the Counter-Strike install.
+  CS_PIN_DIGEST=0 leaves the Quadlet image on a tag. The default resolves
+  the pulled image's digest and writes Image=name:tag@sha256:...
+  CS_REBOOT_PORTS replaces the idle-reboot port list (default: the game
+  ports this install knows, plus 27015 and 27016).
 EOF
     return 0
 }
@@ -253,6 +283,8 @@ parse_args() {
             --restart-only) RESTART_ONLY=1; shift ;;
             --dod) DOD=1; shift ;;
             --harden-ssh) HARDEN_SSH=1; shift ;;
+            --nopasswd-sudo) NOPASSWD_SUDO=1; shift ;;
+            --regenerate-host-keys) REGEN_HOST_KEYS=1; shift ;;
             --user)
                 [[ $# -ge 2 ]] || error "--user needs a name"
                 DEPLOY_USER="$2"
@@ -307,6 +339,20 @@ validate() {
     fi
     if [[ "${RESTART_ONLY}" == "1" && "${HARDEN_SSH}" == "1" ]]; then
         error "--restart-only and --harden-ssh are separate commands"
+    fi
+    if [[ "${RESTART_ONLY}" == "1" && "${REGEN_HOST_KEYS}" == "1" ]]; then
+        error "--restart-only and --regenerate-host-keys are separate commands"
+    fi
+    if [[ "${RESTART_ONLY}" == "1" && "${NOPASSWD_SUDO}" == "1" ]]; then
+        error "--restart-only and --nopasswd-sudo are separate commands"
+    fi
+    if [[ -n "${CS_REBOOT_PORTS:-}" ]]; then
+        local reboot_port
+        local -a reboot_ports=()
+        read -r -a reboot_ports <<< "${CS_REBOOT_PORTS}"
+        for reboot_port in "${reboot_ports[@]}"; do
+            valid_port CS_REBOOT_PORTS "${reboot_port}" 1
+        done
     fi
     if [[ "${FASTDL}" != "0" && "${FASTDL}" != "1" ]]; then
         error "Invalid CS_FASTDL: ${FASTDL} (expected 0 or 1)"
@@ -408,6 +454,11 @@ detect_ssh_port() {
 
 deploy_home() {
     local home=""
+    # Tests point this at a scratch directory. A real run leaves it unset.
+    if [[ -n "${CS_DEPLOY_HOME:-}" ]]; then
+        printf '%s\n' "${CS_DEPLOY_HOME}"
+        return 0
+    fi
     if command -v getent >/dev/null 2>&1; then
         home=$(getent passwd "${DEPLOY_USER}" | cut -d: -f6 || true)
     fi
@@ -425,16 +476,20 @@ authorized_keys_ok() {
     ssh-keygen -l -f "${auth}" >/dev/null 2>&1
 }
 
-# sudo -l -U reports whether the account is allowed to run sudo. It does not
-# need the account's password. The human check before --harden-ssh is sudo -v
-# in a real session, which does.
-deploy_can_sudo() {
+# True when the deploy user can run sudo with no password and no tty.
+deploy_has_nopasswd() {
+    local bin=""
     command -v sudo >/dev/null 2>&1 || return 1
-    sudo -n -l -U "${DEPLOY_USER}" >/dev/null 2>&1
+    bin=$(command -v runuser 2>/dev/null || true)
+    if [[ -z "${bin}" && -x /usr/sbin/runuser ]]; then
+        bin=/usr/sbin/runuser
+    fi
+    [[ -n "${bin}" ]] || return 1
+    "${bin}" -u "${DEPLOY_USER}" -- sudo -n true >/dev/null 2>&1
 }
 
 fill_packages() {
-    PACKAGES=(ca-certificates curl nftables fail2ban unattended-upgrades dbus-user-session sudo)
+    PACKAGES=(ca-certificates curl nftables fail2ban unattended-upgrades dbus-user-session sudo python3 rclone iproute2)
     if [[ "${ENGINE}" == "podman" ]]; then
         PACKAGES+=(podman uidmap)
     else
@@ -504,7 +559,7 @@ build_install_env() {
         "CS_RUNTIME=${ENGINE}"
     )
     for name in CS_SERVER_VERSION CS_SERVER_IMAGE CS_FASTDL CS_FASTDL_PORT CS_FASTDL_HOST \
-        CS_PORT CS_MODE CS_BOTS CS_PROFILE SERVER_IP CS_RCON CS_AUTO_UPDATE \
+        CS_PORT CS_MODE CS_BOTS CS_PROFILE SERVER_IP CS_RCON CS_AUTO_UPDATE CS_PIN_DIGEST \
         CS_METRICS_PORT CS_METRICS_BIND CS_GAME CS_INSTANCE CS_LAN_KIT FASTDL_URL \
         CS_BACKUP_KEEP CS_GSLT CS_INSECURE; do
         if [[ -n "${!name:-}" ]]; then
@@ -530,7 +585,7 @@ build_dod_install_env() {
         "CS_PORT=${DOD_PORT}"
         "CS_DOD_MODE=${CS_DOD_MODE:-pub}"
     )
-    for name in CS_SERVER_VERSION CS_SERVER_IMAGE CS_RCON CS_AUTO_UPDATE CS_BACKUP_KEEP SERVER_IP; do
+    for name in CS_SERVER_VERSION CS_SERVER_IMAGE CS_PIN_DIGEST CS_RCON CS_AUTO_UPDATE CS_BACKUP_KEEP SERVER_IP; do
         if [[ -n "${!name:-}" ]]; then
             DOD_INSTALL_ENV+=("${name}=${!name}")
         fi
@@ -568,8 +623,9 @@ print_plan() {
     info "Engine: ${ENGINE} (${ENGINE_WHY})"
     info "Packages: ${PACKAGES[*]}"
     info "Downloads: install ca-certificates and curl before anything is fetched"
-    info "SSH: authentication unchanged (run --harden-ssh after key login and sudo -v work)"
-    info "Hardening: unattended-upgrades, fail2ban sshd jail"
+    info "SSH: authentication unchanged (run --harden-ssh after a key login works; root key login stays unless --nopasswd-sudo)"
+    info "Hardening: unattended-upgrades (no automatic reboot), fail2ban sshd jail, sysctl 61-cs-hardening.conf"
+    info "Idle reboot: cs-reboot-if-idle.timer, 04:05 to 07:45 America/Los_Angeles every 20 min, only when a reboot is pending, no human is playing, and no SSH session is open"
     info "Firewall: $(firewall_words)"
     if [[ "${FIREWALL}" == "nftables" ]]; then
         info "Firewall reload: systemctl reload cs-server-input cs-server-firewall"
@@ -582,8 +638,17 @@ print_plan() {
     fi
     if [[ "${CS_BACKUP}" == "1" ]]; then
         info "Backups: on, daily, keep ${CS_BACKUP_KEEP:-14}, ~${DEPLOY_USER}/cs-server-backups"
+        info "Off-site backups: hook enabled only when ~${DEPLOY_USER}/.config/cs-server/offsite.env is mode 600"
     else
         info "Backups: off (CS_BACKUP=0)"
+    fi
+    if [[ "${REGEN_HOST_KEYS}" == "1" ]]; then
+        warn "SSH host keys: this run generates new keys. Clients will see a changed fingerprint and must forget the old one (ssh-keygen -R <host>)."
+    else
+        info "SSH host keys: left as they are (pass --regenerate-host-keys once for a template image)"
+    fi
+    if [[ "${NOPASSWD_SUDO}" == "1" ]]; then
+        info "Sudo: NOPASSWD for ${DEPLOY_USER}"
     fi
     if [[ "${CS_RESTART}" == "1" ]]; then
         info "Daily restart: on, 05:00 America/Los_Angeles, every 20 min until 08:00, only with no human players"
@@ -665,55 +730,248 @@ sshd_bin() {
     printf '%s\n' "${bin}"
 }
 
+# Reload the running daemon. Never restart: a restart drops the session that
+# is applying the change.
+reload_sshd() {
+    if systemctl cat ssh.service >/dev/null 2>&1; then
+        systemctl reload ssh || return 1
+        return 0
+    fi
+    if systemctl cat sshd.service >/dev/null 2>&1; then
+        systemctl reload sshd || return 1
+        return 0
+    fi
+    return 1
+}
+
+# sshd -T prints the first value it kept. prohibit-password is reported as
+# without-password. A provider file that sorts later must not win.
+sshd_effective_ok() {
+    local bin="$1" root_login="$2" effective="" expect_root="without-password"
+    effective=$("${bin}" -T 2>/dev/null) || return 1
+    if [[ "${root_login}" == "no" ]]; then
+        expect_root="no"
+    fi
+    grep -qi "^permitrootlogin ${expect_root}$" <<< "${effective}" || return 1
+    grep -qi "^passwordauthentication no$" <<< "${effective}" || return 1
+    grep -qi "^kbdinteractiveauthentication no$" <<< "${effective}" || return 1
+    grep -qi "^x11forwarding no$" <<< "${effective}" || return 1
+    grep -qi "^allowagentforwarding no$" <<< "${effective}" || return 1
+    grep -qi "^maxauthtries 3$" <<< "${effective}" || return 1
+    grep -qi "^logingracetime 30$" <<< "${effective}" || return 1
+    grep -qi "^permitemptypasswords no$" <<< "${effective}" || return 1
+    grep -qi "^pubkeyauthentication yes$" <<< "${effective}" || return 1
+}
+
+# Active directives only. A commented line is left alone. The same values go
+# into the main file so a setting that sits above Include cannot beat the
+# drop-in (sshd keeps the first value it reads).
+rewrite_sshd_main() {
+    local file="$1" root_login="$2" tmp=""
+    [[ -f "${file}" ]] || return 0
+    tmp=$(mktemp)
+    awk -v root="${root_login}" '
+        /^[[:space:]]*#/ || /^[[:space:]]*$/ { print; next }
+        /^[[:space:]]*PermitRootLogin[[:space:]]+/ { print "PermitRootLogin " root; next }
+        /^[[:space:]]*PasswordAuthentication[[:space:]]+/ { print "PasswordAuthentication no"; next }
+        /^[[:space:]]*KbdInteractiveAuthentication[[:space:]]+/ { print "KbdInteractiveAuthentication no"; next }
+        /^[[:space:]]*ChallengeResponseAuthentication[[:space:]]+/ { print "ChallengeResponseAuthentication no"; next }
+        /^[[:space:]]*X11Forwarding[[:space:]]+/ { print "X11Forwarding no"; next }
+        /^[[:space:]]*AllowAgentForwarding[[:space:]]+/ { print "AllowAgentForwarding no"; next }
+        /^[[:space:]]*PermitEmptyPasswords[[:space:]]+/ { print "PermitEmptyPasswords no"; next }
+        /^[[:space:]]*PubkeyAuthentication[[:space:]]+/ { print "PubkeyAuthentication yes"; next }
+        /^[[:space:]]*MaxAuthTries[[:space:]]+/ { print "MaxAuthTries 3"; next }
+        /^[[:space:]]*LoginGraceTime[[:space:]]+/ { print "LoginGraceTime 30"; next }
+        { print }
+    ' "${file}" > "${tmp}"
+    cat "${tmp}" > "${file}"
+    rm -f "${tmp}"
+}
+
+backup_ssh_dir() {
+    local stamp="" dir=""
+    stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    dir="/root/cs-server-ssh-${stamp}"
+    mkdir -p "${dir}/sshd_config.d"
+    chmod 700 "${dir}"
+    if [[ -f /etc/ssh/sshd_config ]]; then
+        cp -a /etc/ssh/sshd_config "${dir}/sshd_config"
+    fi
+    if [[ -d /etc/ssh/sshd_config.d ]]; then
+        cp -a /etc/ssh/sshd_config.d/. "${dir}/sshd_config.d/"
+    fi
+    printf '%s\n' "${dir}"
+}
+
+restore_ssh_backup() {
+    local dir="$1"
+    if [[ -f "${dir}/sshd_config" ]]; then
+        cp -a "${dir}/sshd_config" /etc/ssh/sshd_config
+    fi
+    rm -rf /etc/ssh/sshd_config.d
+    mkdir -p /etc/ssh/sshd_config.d
+    chmod 755 /etc/ssh/sshd_config.d
+    if [[ -d "${dir}/sshd_config.d" ]]; then
+        cp -a "${dir}/sshd_config.d/." /etc/ssh/sshd_config.d/
+    fi
+}
+
+install_nopasswd_sudo() {
+    local file="/etc/sudoers.d/cs-server" tmp=""
+    command -v visudo >/dev/null 2>&1 || error "visudo is required to install NOPASSWD sudo (package sudo)"
+    tmp=$(mktemp)
+    cat > "${tmp}" <<EOF
+# Managed by ops/bootstrap-vps.sh --nopasswd-sudo.
+# ${DEPLOY_USER} can administer this host without a password. That is what
+# lets --harden-ssh turn root SSH login off. Without this flag, root key
+# login stays the admin path.
+${DEPLOY_USER} ALL=(ALL) NOPASSWD:ALL
+Defaults:${DEPLOY_USER} !requiretty
+EOF
+    chmod 440 "${tmp}"
+    if ! visudo -cf "${tmp}" >/dev/null; then
+        rm -f "${tmp}"
+        error "The NOPASSWD sudoers drop-in was rejected by visudo. Nothing was installed."
+    fi
+    install -m 440 -o root -g root "${tmp}" "${file}"
+    rm -f "${tmp}"
+    ok "NOPASSWD sudo installed for ${DEPLOY_USER} (${file})"
+}
+
 # --harden-ssh only. The ordinary bootstrap never calls this.
+# Password login is turned off only after a key is confirmed, and sshd is
+# reloaded, not restarted. Root key login stays unless --nopasswd-sudo was
+# passed and that sudo actually works.
 harden_ssh() {
-    local home auth drop bin
+    local home="" auth="" root_login="prohibit-password" src="" drop="" bin="" backup=""
+    if [[ "${NOPASSWD_SUDO}" == "1" ]]; then
+        root_login="no"
+    fi
     if [[ ${#SSH_KEYS[@]} -gt 0 && "${DRY_RUN}" != "1" ]]; then
         install_ssh_keys
     fi
     home=$(deploy_home)
     auth="${home}/.ssh/authorized_keys"
-    if ! authorized_keys_ok "${auth}"; then
-        error "${DEPLOY_USER} has no valid authorized key at ${auth}. From a second terminal, confirm 'ssh ${DEPLOY_USER}@<this-host>' works, then run --harden-ssh."
+    if [[ "${root_login}" == "no" ]]; then
+        if ! authorized_keys_ok "${auth}"; then
+            error "${DEPLOY_USER} has no valid authorized key at ${auth}. --nopasswd-sudo turns root SSH off, so this key has to work first. Nothing was changed."
+        fi
+    elif ! authorized_keys_ok "${auth}" && ! authorized_keys_ok /root/.ssh/authorized_keys; then
+        error "No valid authorized key for ${DEPLOY_USER} (${auth}) or for root. Password login was not changed."
     fi
-    if ! deploy_can_sudo; then
-        error "${DEPLOY_USER} cannot use sudo. From a second terminal, as that user, confirm 'sudo -v' succeeds, then run --harden-ssh."
-    fi
-    bin=$(sshd_bin)
-    [[ -n "${bin}" ]] || error "sshd is not installed; nothing was changed"
     if [[ "${DRY_RUN}" == "1" ]]; then
-        info "SSH: would disable root login and password authentication after sshd -t"
+        if [[ "${root_login}" == "no" ]]; then
+            info "SSH: would install NOPASSWD sudo for ${DEPLOY_USER} and write 00-cs-server.conf with PermitRootLogin no"
+        else
+            info "SSH: would write /etc/ssh/sshd_config.d/00-cs-server.conf (passwords off, root login by key only)"
+        fi
+        info "SSH: would run sshd -t and reload sshd, not restart it"
         info "Dry run: nothing was changed"
         exit 0
     fi
-    drop=/etc/ssh/sshd_config.d/99-cs-server.conf
+    bin=$(sshd_bin)
+    [[ -n "${bin}" ]] || error "sshd is not installed; nothing was changed"
+    if [[ "${NOPASSWD_SUDO}" == "1" ]]; then
+        install_nopasswd_sudo
+        if ! deploy_has_nopasswd; then
+            error "NOPASSWD sudo for ${DEPLOY_USER} did not work. Root SSH login was left unchanged."
+        fi
+    fi
+    backup=$(backup_ssh_dir)
+    src=$(ops_file ssh/00-cs-server.conf)
+    drop=/etc/ssh/sshd_config.d/00-cs-server.conf
     mkdir -p /etc/ssh/sshd_config.d
-    cat > "${drop}" <<'EOF'
-# Managed by ops/bootstrap-vps.sh --harden-ssh.
-# Root login and passwords are off because the deploy user has an SSH key.
-PermitRootLogin no
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-EOF
+    chmod 755 /etc/ssh/sshd_config.d
+    if [[ -f /etc/ssh/sshd_config ]]; then
+        rewrite_sshd_main /etc/ssh/sshd_config "${root_login}"
+    fi
+    awk -v root="${root_login}" '
+        /^PermitRootLogin[[:space:]]/ { print "PermitRootLogin " root; next }
+        { print }
+    ' "${src}" > "${drop}"
     chmod 644 "${drop}"
+    # 99-cs-server.conf sorts with provider files such as 99-ctrl.conf, and
+    # sshd keeps the first value, so that older name never applied. Drop it
+    # when it is the file this script used to write.
+    if [[ -f /etc/ssh/sshd_config.d/99-cs-server.conf ]] &&
+        grep -q 'Managed by ops/bootstrap-vps.sh' /etc/ssh/sshd_config.d/99-cs-server.conf; then
+        rm -f /etc/ssh/sshd_config.d/99-cs-server.conf
+    fi
     if ! "${bin}" -t; then
-        rm -f "${drop}"
-        error "sshd -t rejected the drop-in. It was removed and sshd was not reloaded."
+        restore_ssh_backup "${backup}"
+        error "sshd -t rejected the drop-in. The previous sshd config was restored and sshd was not reloaded."
     fi
-    if ! "${bin}" -T | grep -qi '^permitrootlogin no$'; then
-        rm -f "${drop}"
-        error "sshd still permits root login (sshd_config.d is not included, or an earlier setting wins). The drop-in was removed and sshd was not reloaded."
+    if ! sshd_effective_ok "${bin}" "${root_login}"; then
+        restore_ssh_backup "${backup}"
+        error "sshd -T does not show the hardened settings (a directive before Include wins, or sshd_config.d is not included). The previous config was restored and sshd was not reloaded."
     fi
-    if ! "${bin}" -T | grep -qi '^passwordauthentication no$'; then
-        rm -f "${drop}"
-        error "sshd still allows password authentication. The drop-in was removed and sshd was not reloaded."
+    if ! reload_sshd; then
+        restore_ssh_backup "${backup}"
+        error "sshd reload failed. The previous config was restored and sshd was not restarted."
     fi
-    if systemctl cat ssh.service >/dev/null 2>&1; then
-        systemctl reload ssh
+    if [[ "${root_login}" == "no" ]]; then
+        ok "sshd: password login off, root login off (${DEPLOY_USER} has NOPASSWD sudo)"
     else
-        systemctl reload sshd
+        ok "sshd: password login off, root login by key only"
     fi
-    ok "sshd: root login off, password authentication off"
+    info "Rollback copy: ${backup}"
+}
+
+restore_host_keys() {
+    local dir="$1" f=""
+    for f in /etc/ssh/ssh_host_*; do
+        [[ -e "${f}" ]] || continue
+        rm -f "${f}"
+    done
+    for f in "${dir}"/ssh_host_*; do
+        [[ -e "${f}" ]] || continue
+        mv "${f}" /etc/ssh/
+    done
+}
+
+# Off unless --regenerate-host-keys is passed. A later bootstrap without the
+# flag does not touch host keys. Passing the flag again rotates them again.
+regenerate_host_keys() {
+    local stamp="" dir="" bin="" f="" pub="" old_umask=""
+    warn "Regenerating SSH host keys. Every client that has connected here will see a changed fingerprint and refuse to log in until the old key is removed (ssh-keygen -R <host>). This session stays up: sshd is reloaded, not restarted. Running this again changes the fingerprint again."
+    if [[ "${DRY_RUN}" == "1" ]]; then
+        info "SSH host keys: would back up /etc/ssh/ssh_host_* , drop any DSA key, generate new keys, and reload sshd"
+        return 0
+    fi
+    command -v ssh-keygen >/dev/null 2>&1 || error "ssh-keygen is required to regenerate host keys"
+    bin=$(sshd_bin)
+    [[ -n "${bin}" ]] || error "sshd is not installed; host keys were not changed"
+    stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    dir="/root/cs-server-hostkeys-${stamp}"
+    mkdir -p "${dir}"
+    chmod 700 "${dir}"
+    for f in /etc/ssh/ssh_host_*; do
+        [[ -e "${f}" ]] || continue
+        mv "${f}" "${dir}/"
+    done
+    old_umask=$(umask)
+    umask 077
+    if ! ssh-keygen -A; then
+        umask "${old_umask}"
+        restore_host_keys "${dir}"
+        error "ssh-keygen -A failed. The previous host keys were restored and sshd was not reloaded."
+    fi
+    umask "${old_umask}"
+    rm -f /etc/ssh/ssh_host_dsa_key /etc/ssh/ssh_host_dsa_key.pub
+    if ! "${bin}" -t; then
+        restore_host_keys "${dir}"
+        error "sshd -t rejected the new host keys. The previous keys were restored and sshd was not reloaded."
+    fi
+    if ! reload_sshd; then
+        restore_host_keys "${dir}"
+        error "sshd reload failed after host key regeneration. The previous keys were restored and sshd was not restarted."
+    fi
+    ok "SSH host keys regenerated. Previous keys: ${dir}"
+    warn "Clients must accept the new fingerprint before they can log in again."
+    for pub in /etc/ssh/ssh_host_*.pub; do
+        [[ -f "${pub}" ]] || continue
+        ssh-keygen -lf "${pub}"
+    done
 }
 
 # RackNerd's Debian 13 image ships apt and not curl. curl fetches install.sh
@@ -810,14 +1068,121 @@ relax_userns() {
 }
 
 configure_upgrades() {
+    local src=""
     cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 EOF
+    # unattended-upgrades cannot see game players, so it must not reboot.
+    # cs-reboot-if-idle does that when the host is idle.
+    src=$(ops_file apt/52unattended-upgrades-local)
+    install -Dm644 "${src}" /etc/apt/apt.conf.d/52unattended-upgrades-local
     if systemctl cat unattended-upgrades.service >/dev/null 2>&1; then
         systemctl enable --now unattended-upgrades.service
     fi
-    ok "Unattended upgrades are on"
+    ok "Unattended upgrades install packages and do not reboot on their own"
+}
+
+install_sysctl() {
+    local src=""
+    src=$(ops_file sysctl/61-cs-hardening.conf)
+    install -Dm644 "${src}" /etc/sysctl.d/61-cs-hardening.conf
+    if sysctl -p /etc/sysctl.d/61-cs-hardening.conf >/dev/null; then
+        ok "Sysctl hardening applied (/etc/sysctl.d/61-cs-hardening.conf)"
+    else
+        warn "Could not apply every sysctl now. /etc/sysctl.d/61-cs-hardening.conf is installed for the next boot."
+    fi
+}
+
+# Ports the idle reboot asks about. An explicit CS_REBOOT_PORTS replaces the
+# list. Otherwise the game ports this install knows are included, and so are
+# 27015 and 27016: a second server on the usual extra port must block a
+# reboot even when this bootstrap did not create it. A port nobody listens
+# on is ignored by the script.
+idle_reboot_ports() {
+    local ports="" p=""
+    if [[ -n "${CS_REBOOT_PORTS:-}" ]]; then
+        printf '%s\n' "${CS_REBOOT_PORTS}"
+        return 0
+    fi
+    ports="${GAME_PORT}"
+    if [[ "${DOD}" == "1" && "${DOD_PORT}" != "${GAME_PORT}" ]]; then
+        ports="${ports} ${DOD_PORT}"
+    fi
+    for p in 27015 27016; do
+        case " ${ports} " in
+            *" ${p} "*) ;;
+            *) ports="${ports} ${p}" ;;
+        esac
+    done
+    printf '%s\n' "${ports}"
+}
+
+install_idle_reboot() {
+    local players="" reboot="" svc="" timer="" ports=""
+    players=$(ops_file cs-players)
+    reboot=$(ops_file cs-reboot-if-idle)
+    svc=$(ops_file systemd/cs-reboot-if-idle.service)
+    timer=$(ops_file systemd/cs-reboot-if-idle.timer)
+    install -d -m 755 /usr/local/sbin /etc/cs-server
+    install -m 755 "${players}" /usr/local/sbin/cs-players
+    install -m 755 "${reboot}" /usr/local/sbin/cs-reboot-if-idle
+    install -m 644 "${svc}" /etc/systemd/system/cs-reboot-if-idle.service
+    install -m 644 "${timer}" /etc/systemd/system/cs-reboot-if-idle.timer
+    ports=$(idle_reboot_ports)
+    printf 'CS_REBOOT_PORTS="%s"\n' "${ports}" > /etc/cs-server/reboot.env
+    chmod 644 /etc/cs-server/reboot.env
+    systemctl daemon-reload
+    systemctl enable --now cs-reboot-if-idle.timer
+    ok "Idle reboot timer enabled (pending update, no human players, no SSH session)"
+}
+
+# The upload script is always installed with backups. The ExecStartPost hook
+# is installed only when offsite.env exists and is mode 600, and removed when
+# that file is gone, so a re-run turns the hook off again. The env file is
+# never created here: it holds credentials and does not belong in git.
+install_offsite() {
+    local home="" script="" drop_src="" drop_dir="" drop="" env_file="" perm=""
+    home=$(deploy_home)
+    drop_dir="${home}/.config/systemd/user/cs-server-backup.service.d"
+    drop="${drop_dir}/offsite.conf"
+    if [[ "${CS_BACKUP}" != "1" ]]; then
+        if [[ -f "${drop}" ]]; then
+            rm -f "${drop}"
+            user_systemctl daemon-reload || true
+        fi
+        info "Off-site backups: off (CS_BACKUP=0)"
+        return 0
+    fi
+    script=$(ops_file cs-server-offsite)
+    drop_src=$(ops_file systemd/offsite.conf)
+    install -d -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${home}/.local/bin"
+    install -m 755 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" \
+        "${script}" "${home}/.local/bin/cs-server-offsite"
+    env_file="${home}/.config/cs-server/offsite.env"
+    if [[ -f "${env_file}" ]]; then
+        perm=$(stat -c %a "${env_file}")
+        if [[ "${perm}" != "600" ]]; then
+            if [[ -f "${drop}" ]]; then
+                rm -f "${drop}"
+                user_systemctl daemon-reload || true
+            fi
+            warn "Off-site backups: ${env_file} is mode ${perm}, not 600. The upload hook was not enabled."
+            return 0
+        fi
+        install -d -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${drop_dir}"
+        install -m 644 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${drop_src}" "${drop}"
+        user_systemctl daemon-reload
+        ok "Off-site backups run after each daily backup"
+        return 0
+    fi
+    if [[ -f "${drop}" ]]; then
+        rm -f "${drop}"
+        user_systemctl daemon-reload || true
+        ok "Off-site backups: hook removed (${env_file} is not present)"
+        return 0
+    fi
+    info "Off-site backups: disabled until ${env_file} exists (mode 600)"
 }
 
 configure_fail2ban() {
@@ -1116,6 +1481,7 @@ run_installer() {
             INSTALL_ENV=("${DOD_INSTALL_ENV[@]}")
             print_install_command "${installer}"
         fi
+        install_offsite
         return 0
     fi
     info "Running install.sh as ${DEPLOY_USER}"
@@ -1133,6 +1499,7 @@ run_installer() {
         info "Installing Day of Defeat on ${DOD_PORT}/udp"
         "${runuser_bin}" -u "${DEPLOY_USER}" -- env "${unset_args[@]}" "${DOD_INSTALL_ENV[@]}" bash "${installer}"
     fi
+    install_offsite
 }
 
 parse_args "$@"
@@ -1159,6 +1526,9 @@ if [[ "${HARDEN_SSH}" == "1" ]]; then
     if [[ "${DRY_RUN}" != "1" ]]; then
         require_root
     fi
+    if [[ "${REGEN_HOST_KEYS}" == "1" ]]; then
+        regenerate_host_keys
+    fi
     harden_ssh
     exit 0
 fi
@@ -1175,19 +1545,28 @@ if [[ "${DRY_RUN}" == "1" ]]; then
 fi
 
 require_root
+if [[ "${REGEN_HOST_KEYS}" == "1" ]]; then
+    regenerate_host_keys
+fi
 ensure_curl
 create_user
 install_ssh_keys
 info "SSH authentication was not changed."
-info "From a second terminal: ssh ${DEPLOY_USER}@<this-host>"
-info "Then, as ${DEPLOY_USER}: sudo -v"
-info "After both succeed: sudo bash ops/bootstrap-vps.sh --harden-ssh"
+info "From a second terminal, confirm a key login: ssh ${DEPLOY_USER}@<this-host>"
+info "Root key login is the admin path when ${DEPLOY_USER}'s password is locked."
+info "After that login works: sudo bash ops/bootstrap-vps.sh --harden-ssh"
+info "That turns password login off and leaves root key login on. Add --nopasswd-sudo only if ${DEPLOY_USER} should be the admin and root SSH should be turned off."
 install_packages
 recheck_engine_version
 configure_access
+if [[ "${NOPASSWD_SUDO}" == "1" ]]; then
+    install_nopasswd_sudo
+fi
 add_swap_if_small
 relax_userns
 configure_upgrades
+install_sysctl
+install_idle_reboot
 configure_fail2ban
 apply_firewall
 enable_linger_user

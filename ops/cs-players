@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+# Print the number of human players on a Source/GoldSrc server via A2S_INFO.
+#   cs-players [host] [port]      -> "humans=N players=P bots=B"   exit 0
+# Exit 2 when the server does not answer or the reply cannot be read, so callers
+# must treat 2 as "unknown, do not reboot/restart".
+import socket
+import sys
+
+host = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
+port = int(sys.argv[2]) if len(sys.argv) > 2 else 27015
+Q = b"\xff\xff\xff\xffTSource Engine Query\x00"
+
+
+def cstr(b, i):
+    j = b.index(b"\x00", i)
+    return b[i:j], j + 1
+
+
+def ask():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(5)
+    try:
+        s.sendto(Q, (host, port))
+        d, _ = s.recvfrom(4096)
+        if d[4:5] == b"A":  # challenge: repeat the query with the 4 bytes appended
+            s.sendto(Q + d[5:9], (host, port))
+            d, _ = s.recvfrom(4096)
+        return d
+    finally:
+        s.close()
+
+
+try:
+    d = ask()
+    if d[:4] != b"\xff\xff\xff\xff":
+        raise ValueError("bad header")
+    t = d[4:5]
+    if t == b"I":  # Source format
+        i = 6
+        for _ in range(4):
+            _, i = cstr(d, i)
+        i += 2  # app id
+        players, _max, bots = d[i], d[i + 1], d[i + 2]
+    elif t == b"m":  # GoldSrc legacy format
+        i = 5
+        for _ in range(5):
+            _, i = cstr(d, i)
+        players, _max = d[i], d[i + 1]
+        i += 2 + 1 + 1 + 1 + 1 + 1  # protocol, type, os, password, mod
+        mod = d[i - 1]
+        if mod:
+            for _ in range(2):
+                _, i = cstr(d, i)
+            i += 4 + 4 + 1 + 1  # version, size, type, dll
+        bots = d[i + 1] if i + 1 < len(d) else 0
+        # byte at i is "secure"; the one after is the bot count
+    else:
+        raise ValueError("unknown reply type %r" % t)
+    print("humans=%d players=%d bots=%d" % (max(players - bots, 0), players, bots))
+except Exception as e:
+    print("unknown (%s)" % e, file=sys.stderr)
+    sys.exit(2)

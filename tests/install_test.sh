@@ -77,6 +77,13 @@ case "$1" in
                 echo "${FAKE_DIGEST}"
                 exit 0
                 ;;
+            *".Digest"*)
+                if [ -n "${FAKE_IMAGE_DIGEST:-}" ]; then
+                    printf '%s\n' "${FAKE_IMAGE_DIGEST}"
+                    exit 0
+                fi
+                exit 1
+                ;;
         esac
         [ "${FAKE_IMAGE:-0}" = 1 ]
         ;;
@@ -374,6 +381,40 @@ install CS_SERVER_VERSION=1.2.3 CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server
 expect_ok "rollback to a digest"
 unit=$(cat "${UNIT}")
 assert_contains "unit runs the digest" "${unit}" "Image=ghcr.io/kevintcoughlin/cs-server@sha256:abc123"
+
+# A resolved 64-character digest is written into the unit as tag@sha256.
+# .Digest wins over a different RepoDigests entry (the multi-arch index).
+PIN_SHA=sha256:ee8369ef1622fad1c7f66dd25594702d49fa913728e8ac7f611f86048700f5de
+INDEX_SHA=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+install CS_SERVER_VERSION=1.2.3 \
+    FAKE_IMAGE_DIGEST="${PIN_SHA}" \
+    FAKE_DIGEST="ghcr.io/kevintcoughlin/cs-server@${INDEX_SHA}"
+expect_ok "digest pin"
+unit=$(cat "${UNIT}")
+assert_contains "unit pins the arch digest on the tag" "${unit}" \
+    "Image=ghcr.io/kevintcoughlin/cs-server:1.2.3@${PIN_SHA}"
+assert_not_contains "unit does not pin the index digest" "${unit}" "${INDEX_SHA}"
+assert_contains "prints the arch digest to roll back to" "${output}" \
+    "CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@${PIN_SHA}"
+assert_contains "says the quadlet image is pinned" "${output}" "Quadlet image pinned"
+
+# Daily tag rollout keeps the tag so podman-auto-update can move it.
+install CS_SERVER_VERSION=1 CS_AUTO_UPDATE=1 FAKE_IMAGE_DIGEST="${PIN_SHA}"
+expect_ok "auto-update leaves the tag"
+unit=$(cat "${UNIT}")
+assert_contains "auto-update unit stays on the tag" "${unit}" "Image=ghcr.io/kevintcoughlin/cs-server:1"
+assert_not_contains "auto-update unit is not digest pinned" "${unit}" "@${PIN_SHA}"
+assert_contains "auto-update still opts in" "${unit}" "AutoUpdate=registry"
+assert_contains "auto-update explains the unpinned tag" "${output}" "follows that tag"
+
+install CS_PIN_DIGEST=0 CS_SERVER_VERSION=1.2.3 FAKE_IMAGE_DIGEST="${PIN_SHA}"
+expect_ok "pin opt-out"
+unit=$(cat "${UNIT}")
+assert_contains "opt-out stays on the tag" "${unit}" "Image=ghcr.io/kevintcoughlin/cs-server:1.2.3"
+assert_not_contains "opt-out does not append the digest" "${unit}" "@${PIN_SHA}"
+assert_contains "opt-out is announced" "${output}" "CS_PIN_DIGEST=0"
+install CS_PIN_DIGEST=2
+expect_die "bad CS_PIN_DIGEST" "Invalid CS_PIN_DIGEST"
 
 # Auto-update: a label on the unit plus Podman's timer; needs a tag.
 install CS_SERVER_VERSION=1 CS_AUTO_UPDATE=1

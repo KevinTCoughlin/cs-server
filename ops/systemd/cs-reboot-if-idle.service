@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Reboot for pending package updates when no human is on a game port and no
+# SSH session is open. Installed by ops/bootstrap-vps.sh. CS_REBOOT_PORTS in
+# /etc/cs-server/reboot.env overrides the script's default port list. The
+# leading "-" keeps a missing file from failing the unit.
+
+[Unit]
+Description=Reboot for pending updates when no game players are online
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/cs-server/reboot.env
+ExecStart=/usr/local/sbin/cs-reboot-if-idle

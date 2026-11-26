@@ -24,7 +24,12 @@
 #   CS_BACKUP=1        daily archive of the state volume (ops/backup-state.sh)
 #   CS_AUTO_UPDATE=1   Podman only: let podman-auto-update pull new images for
 #                      the tag (use with CS_SERVER_VERSION=1 or 1.0). Rollback
-#                      of a bad image needs Podman 5 (Notify=healthy)
+#                      of a bad image needs Podman 5 (Notify=healthy). The
+#                      Quadlet keeps the tag, because a digest never moves
+#   CS_PIN_DIGEST=0    leave Image= on the tag. The default (1) resolves the
+#                      digest of the image just pulled and writes
+#                      Image=name:tag@sha256:<digest>. Re-run the installer to
+#                      roll onto a new release; that resolves the new digest
 #   CS_RCON=1          generate an rcon_password for network rcon (off by
 #                      default; the local console needs none)
 #   FASTDL_URL         http(s) URL that serves your cstrike/ content
@@ -106,6 +111,9 @@ if [[ "${GAME}" != "cstrike" ]]; then
 fi
 IMAGE="${CS_SERVER_IMAGE:-${IMAGE}}"
 AUTO_UPDATE="${CS_AUTO_UPDATE:-0}"
+# 1: write Image=name:tag@sha256:<digest of the pulled image>. 0: keep the tag.
+# Auto-update follows a tag, so it forces this off.
+PIN_DIGEST="${CS_PIN_DIGEST:-1}"
 # Podman 5 emits Notify=healthy. check_podman_quadlet clears this on 4.4–4.9.
 # --print-unit does not detect a version, so the unit in the repository
 # (just quadlet) is the Podman 5 unit.
@@ -300,6 +308,10 @@ if [[ "${AUTO_UPDATE}" == "1" && "${IMAGE}" == *@sha256:* ]]; then
     printf '[error] CS_AUTO_UPDATE=1 needs a tag, not a digest: %s\n' "${IMAGE}" >&2
     exit 1
 fi
+if [[ "${PIN_DIGEST}" != "0" && "${PIN_DIGEST}" != "1" ]]; then
+    printf '[error] Invalid CS_PIN_DIGEST: %s (expected 0 or 1)\n' "${PIN_DIGEST}" >&2
+    exit 1
+fi
 
 # Same rule as entrypoint.sh: the URL reaches the HLDS console.
 PROFILE="${CS_PROFILE:-}"
@@ -358,6 +370,7 @@ Environment:
   CS_RUNTIME=<engine>      podman or docker (default: podman if it is installed)
   CS_BACKUP=1              Daily archive of the state volume, 14 copies
   CS_AUTO_UPDATE=1         Podman: pull new images for the tag automatically
+  CS_PIN_DIGEST=0          Leave Image= on the tag (default pins tag@sha256)
   CS_RCON=1                Generate an rcon_password (network rcon is off by default)
   FASTDL_URL=<url>         http(s) URL that serves your cstrike/ content
   CS_PROFILE=lan           LAN party server: host networking, sv_lan 1
@@ -582,12 +595,51 @@ do_install() {
         error "Could not pull ${IMAGE} and no local copy exists. Offline? Load one first: ${RUNTIME} load -i cs-server.tar"
     fi
 
-    # The digest names exactly this build: keep it to come back to.
-    local digest
-    digest=$(${RUNTIME} image inspect --format '{{index .RepoDigests 0}}' "${IMAGE}" 2>/dev/null) || digest=""
-    if [[ "${digest}" == *@sha256:* ]]; then
-        info "This build: ${digest}"
-        info "To return to it later: CS_SERVER_IMAGE=${digest}"
+    # The digest names exactly this build. Podman's .Digest is the manifest
+    # this engine stored, which is what `podman images --digests` shows and
+    # what a later pull of the same tag resolves to locally. A multi-arch tag
+    # can list a second RepoDigest (the index); that one is not used when
+    # .Digest is present. The Quadlet then gets name:tag@sha256:<digest> so
+    # the unit cannot drift if the tag moves. Re-running this installer pulls
+    # the tag again and writes the new digest: that is the release rollout.
+    # CS_AUTO_UPDATE follows the tag on a timer, so it leaves Image= unpinned.
+    local digest="" repo_digest="" chosen="" rollback="" name=""
+    digest=$(${RUNTIME} image inspect --format '{{.Digest}}' "${IMAGE}" 2>/dev/null || true)
+    digest="${digest##*@}"
+    if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+        digest=""
+    fi
+    repo_digest=$(${RUNTIME} image inspect --format '{{index .RepoDigests 0}}' "${IMAGE}" 2>/dev/null || true)
+    if [[ -z "${digest}" && "${repo_digest}" =~ ^.+@sha256:[0-9a-f]{64}$ ]]; then
+        digest="${repo_digest##*@}"
+    fi
+    if [[ -n "${digest}" ]]; then
+        chosen="${digest}"
+        if [[ "${repo_digest}" == *@${chosen} ]]; then
+            rollback="${repo_digest}"
+        else
+            # Drop a trailing :tag. A colon before a slash is a registry port.
+            name="${IMAGE%@sha256:*}"
+            if [[ "${name}" == *:* && "${name##*:}" != */* ]]; then
+                name="${name%:*}"
+            fi
+            rollback="${name}@${chosen}"
+        fi
+        info "This build: ${rollback}"
+        info "To return to it later: CS_SERVER_IMAGE=${rollback}"
+        if [[ "${AUTO_UPDATE}" == "1" ]]; then
+            info "Image left on ${IMAGE}: CS_AUTO_UPDATE follows that tag. A digest pin would not move."
+        elif [[ "${PIN_DIGEST}" == "0" ]]; then
+            info "Image left on ${IMAGE} (CS_PIN_DIGEST=0)."
+        elif [[ "${IMAGE}" != *@sha256:* ]]; then
+            IMAGE="${IMAGE}@${chosen}"
+            info "Quadlet image pinned: ${IMAGE}"
+        fi
+    elif [[ "${repo_digest}" == *@sha256:* ]]; then
+        # Not a 64-character digest (a test stub, or an engine that prints a
+        # short id). Report it, and do not write it into the unit.
+        info "This build: ${repo_digest}"
+        info "To return to it later: CS_SERVER_IMAGE=${repo_digest}"
     fi
 
     if [[ "${AUTO_UPDATE}" == "1" && "${RUNTIME}" != "podman" ]]; then

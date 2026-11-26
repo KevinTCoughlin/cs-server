@@ -33,7 +33,7 @@ jobs:
         with:
           version: v0.11.0
           scandir: .
-          additional_files: entrypoint.sh install.sh ops/cs-server
+          additional_files: entrypoint.sh install.sh ops/cs-server ops/cs-reboot-if-idle ops/cs-server-offsite
 
       - name: Run script tests
         run: |
@@ -49,6 +49,7 @@ jobs:
           bash tests/firewall_test.sh
           bash tests/ops_test.sh
           bash tests/bootstrap_test.sh
+          bash tests/vps_hardening_test.sh
           bash tests/restart_idle_test.sh
           bash tests/backup_test.sh
           bash tests/backup_docker_test.sh
