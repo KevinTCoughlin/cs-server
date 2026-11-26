@@ -15,6 +15,7 @@
 #                             mapcycle-dust2.txt
 #   mode.sh <engine> climb    KZ maps with a timer and checkpoints,
 #                             mapcycle-climb.txt
+#   mode.sh <engine> surf     surf maps with timer zones, mapcycle-surf.txt
 #   mode.sh <engine> auto     nipper from Fri 17:00 to Sat 04:00 local time,
 #                             scoutz otherwise; what the Friday schedule runs
 #
@@ -34,7 +35,7 @@ END_HOUR="${NIPPER_END_HOUR:-4}"
 SEASON="${NIPPER_SEASON:-}"
 
 usage() {
-    echo "usage: ${0##*/} <container|podman|docker> <nipper|scoutz|vanilla|match|climb|auto>" >&2
+    echo "usage: ${0##*/} <container|podman|docker> <nipper|scoutz|vanilla|match|climb|surf|auto>" >&2
     exit 2
 }
 
@@ -94,6 +95,7 @@ case "${MODE}" in
     vanilla) COMMAND="sk_switchmode vanilla mapcycle-dust2.txt" ;;
     match) COMMAND="sk_switchmode match mapcycle-dust2.txt" ;;
     climb) COMMAND="sk_switchmode climb mapcycle-climb.txt" ;;
+    surf) COMMAND="sk_switchmode surf mapcycle-surf.txt" ;;
     *) usage ;;
 esac
 

@@ -42,8 +42,8 @@
 #                      directory and state volume; needs CS_PORT
 #   CS_PORT            UDP port (default 27015). Each instance needs its own
 #   CS_MODE            Counter-Strike game mode at startup: scoutz (default),
-#                      knife, vanilla, match or climb
-#   CS_BOTS=0          no bots (default 1; 0 in climb mode)
+#                      knife, vanilla, match, climb or surf
+#   CS_BOTS=0          no bots (default 1; 0 in climb and surf mode)
 #   CS_FASTDL=1        also run a FastDL sidecar: a small web server from the
 #                      same image that serves the maps to clients over HTTP
 #                      (CS_FASTDL_PORT, default 27080/tcp; CS_FASTDL_HOST is the
@@ -196,9 +196,9 @@ if [[ -z "${MODE}" ]]; then
     [[ -z "${LAN_KIT}" ]] || MODE="match"
 fi
 case "${MODE}" in
-    scoutz | knife | vanilla | match | climb) ;;
+    scoutz | knife | vanilla | match | climb | surf) ;;
     *)
-        printf '[error] Invalid CS_MODE: %s (expected scoutz, knife, vanilla, match or climb)\n' "${MODE}" >&2
+        printf '[error] Invalid CS_MODE: %s (expected scoutz, knife, vanilla, match, climb or surf)\n' "${MODE}" >&2
         exit 1
         ;;
 esac
@@ -242,7 +242,7 @@ fi
 BOTS="${CS_BOTS:-}"
 if [[ -z "${BOTS}" ]]; then
     BOTS=1
-    [[ -z "${LAN_KIT}" && "${MODE}" != "climb" ]] || BOTS=0
+    [[ -z "${LAN_KIT}" && "${MODE}" != "climb" && "${MODE}" != "surf" ]] || BOTS=0
 fi
 if [[ "${BOTS}" != "0" && "${BOTS}" != "1" ]]; then
     printf '[error] Invalid CS_BOTS: %s (expected 0 or 1)\n' "${BOTS}" >&2
@@ -382,7 +382,7 @@ Environment:
   CS_DOD_PASSWORD=<pass>   Day of Defeat sv_password (optional)
   CS_GSLT=<token>          32-hex Steam token (app 10 for CS, app 30 for DoD)
   CS_INSECURE=1            -insecure, without hiding the server (-nomaster)
-  CS_MODE=<mode>           Start in scoutz (default), knife, vanilla, match or climb
+  CS_MODE=<mode>           Start in scoutz (default), knife, vanilla, match, climb or surf
   CS_BOTS=0                No bots
   CS_FASTDL=1              Also serve the maps to clients over HTTP (port 27080/tcp)
   CS_LAN_KIT=<n>           LAN event: n match servers (lan1..lan<n>) and FastDL
@@ -683,7 +683,7 @@ do_install() {
 
 # Files bind-mounted into the container. Keep in sync with compose.yml and
 # quadlet/scoutzknivez.container (tests/mounts_test.sh checks all of them).
-CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt mapcycle-nipper-xmas.txt mapcycle-climb.txt)
+CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt mapcycle-nipper-xmas.txt mapcycle-climb.txt mapcycle-surf.txt)
 CONFIG_DIRS=(modes)
 # Another game has its stock settings and one map cycle, and no modes.
 # Day of Defeat mounts the pub and match files so an admin can edit them.
@@ -754,11 +754,11 @@ start_map() {
     if [[ "${GAME}" == "cstrike" && ( "${MODE}" == "vanilla" || "${MODE}" == "match" ) ]]; then
         START_MAP="de_dust2"
         START_CYCLE="mapcycle-dust2.txt"
-    elif [[ "${GAME}" == "cstrike" && "${MODE}" == "climb" ]]; then
+    elif [[ "${GAME}" == "cstrike" && ( "${MODE}" == "climb" || "${MODE}" == "surf" ) ]]; then
         # No MAP: the server starts on the first map of the rotation, so an
         # edited rotation needs no second change here.
         START_MAP=""
-        START_CYCLE="mapcycle-climb.txt"
+        START_CYCLE="mapcycle-${MODE}.txt"
     elif [[ "${GAME}" == "dod" ]]; then
         START_MAP="dod_anzio"
         if [[ "${DOD_MODE}" == "match" ]]; then

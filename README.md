@@ -415,7 +415,8 @@ Edit files in `config/` — they're bind-mounted into the container:
 | `config/mapcycle-nipper.txt` | Nipper Friday (knife mode) rotation |
 | `config/mapcycle-nipper-xmas.txt` | Nipper Friday Christmas rotation (Dec 1 to Jan 6) |
 | `config/mapcycle-climb.txt` | Climb mode (KZ) rotation |
-| `config/modes/*.cfg` | Per-mode gameplay (gravity, round time, money), run after `server.cfg`: `scoutz.cfg`, `knife.cfg` (Nipper Friday; `knife_he.cfg` for grenade maps), `vanilla.cfg`, `match.cfg`, `climb.cfg` |
+| `config/mapcycle-surf.txt` | Surf mode rotation |
+| `config/modes/*.cfg` | Per-mode gameplay (gravity, round time, money), run after `server.cfg`: `scoutz.cfg`, `knife.cfg` (Nipper Friday; `knife_he.cfg` for grenade maps), `vanilla.cfg`, `match.cfg`, `climb.cfg`, `surf.cfg` |
 | `config/autoexec.cfg` | Runs on server start |
 
 Changes to `server.cfg` take effect on the next map or via `just rcon "exec server.cfg"`.
@@ -544,6 +545,36 @@ server itself, which is slow for a map of 2 to 6 MB. The mode starts on the
 rotation's first map, and a map changes after `mp_timelimit` minutes (30) or
 by `rtv`. Leaving the mode with `just mode scoutz` takes up to three minutes,
 because no round ends here.
+
+### Surf
+
+`MODE=surf` is for surf maps: air acceleration 100, no fall damage, bunny hop,
+no rounds and no bots. The chat commands, the two top lists and the local
+build with fetched maps are the same as in [climb mode](#climb-kz).
+
+```bash
+just mode surf            # surf maps on mapcycle-surf.txt
+```
+
+Surf maps have no timer buttons, so a run is timed between two zones:
+
+- **Start zone.** The box around the map's spawn points, unless one is saved.
+  Leaving it starts the clock. Going back in cancels the run.
+- **End zone.** An admin marks it once per map; until then the map plays
+  without a timer. Stand on one corner of the finish and run `mv_zone end` in
+  the client console, then on the opposite corner and run it again.
+  `mv_zone start` replaces the start zone the same way, `mv_zone show` draws
+  both boxes, and `mv_zone clear` forgets them. These need the AMX Mod X
+  admin flag `h`.
+
+Zones are kept in the state volume (`amxmodx/zones/<map>.txt`). The server
+console can also save one from numbers: `mv_zone_set end x1 y1 z1 x2 y2 z2`.
+
+The rotation is `surf_ski_5`, `surf_nice_fly_4`, `surf_srventer`,
+`surf_nice_fly` and `surf_colorama_beta`. A rotation can mix surf and climb
+maps: the map's prefix picks the physics, so a `kz_` or `bkz_` map in a surf
+rotation gets climb settings and a `surf_` map in a climb rotation gets surf
+settings.
 
 ### Match (5v5)
 
@@ -721,7 +752,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `DOD_PASSWORD` | empty | Day of Defeat `sv_password`. Ignored by every other game. Installer: `CS_DOD_PASSWORD` |
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
-| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike), `match` (5v5: warmup, knife round, pause) or `climb` (KZ maps: timer, checkpoints, top lists; no bots unless `BOTS=1`) |
+| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike), `match` (5v5: warmup, knife round, pause), `climb` (KZ maps: timer, checkpoints, top lists) or `surf` (surf maps: timer zones); the last two have no bots unless `BOTS=1` |
 | `METRICS_PORT` | empty | Serve Prometheus metrics on this port inside the container; see [Metrics](#metrics). `METRICS_BIND` (default `0.0.0.0`) is the address it listens on |
 | `FASTDL_URL` | empty | http(s) URL serving your `cstrike/` content (`sv_downloadurl`); see [FastDL](#fastdl-fast-downloads) |
 | `LOGS` | `1` | Write server log files (1=on, 0=off); see [Saved state and logs](#saved-state-and-logs) |
