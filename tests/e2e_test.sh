@@ -667,6 +667,62 @@ else
     step "switched from climb to scoutz"
 fi
 
+# --- MODE=surf from a cold start -----------------------------------------------
+# Surf maps have no timer buttons: the start zone is the box around the spawn
+# points and the end zone is marked by an admin, here through the console. A
+# climb map in the surf rotation gets climb physics from its prefix.
+surf_map=$(awk '!/^[[:space:]]*($|;|\/)/ { print $1; exit }' "${ROOT}/config/mapcycle-surf.txt")
+if ! map_in_image "${surf_map}"; then
+    step "surf mode skipped: ${surf_map} is not in this image"
+else
+    surf_listed=$(grep -cE '^[A-Za-z0-9_]+\.amxx' "${ROOT}/plugins/amxmodx/modes/surf.ini" || true)
+    "${ENGINE}" rm -f "${NAME}" >/dev/null
+    BOOT_MODE=surf boot -e MODE=surf
+    surf_plugins=$(all_running "amxx plugins" "${surf_listed}")
+    assert_eq "MODE=surf starts with its own plugin list" "${surf_listed}" "${surf_plugins}"
+    map=$(current_map)
+    assert_eq "MODE=surf starts on the rotation's first map" "${surf_map}" "${map}"
+    expect_cvar mapcyclefile mapcycle-surf.txt "MODE=surf uses the surf rotation"
+    expect_cvar sv_airaccelerate 100 "surf air acceleration"
+    expect_cvar mp_falldamage 0 "no fall damage in surf mode"
+    expect_cvar autobhop_enabled 1 "bunny hop in surf mode"
+    expect_cvar bot_quota 0 "no bots in surf mode"
+    tr -d '\r' < "${LOG}" | grep -aqF "[MV] ${surf_map}: spawn start zone, no end zone" ||
+        fail "movement.amxx did not make a start zone from the spawn points on ${surf_map}"
+    line=$(ask "mv_zone_set end 0 0 0 64 64 64" '\[MV\] end zone saved')
+    assert_contains "an end zone completes the timer" "${line}" "spawn start zone, end zone"
+    "${ENGINE}" exec "${NAME}" grep -q '^end 0 0 0 64 64 128$' "/hlds/state/amxmodx/zones/${surf_map}.txt" ||
+        fail "the end zone is not in the state volume (raised to the minimum height)"
+    mark
+    send "changelevel ${surf_map}"
+    wait_log "\[MV\] ${surf_map}: spawn start zone, end zone" 90 >/dev/null ||
+        fail "the end zone did not survive a map change"
+    wait_log '\[SK\] mode: surf' 90 >/dev/null || fail "the server did not reload ${surf_map}"
+    if [[ "${CS_E2E_SKIP_MAPS:-0}" != "1" ]]; then
+        surfs=0
+        while read -r name _; do
+            [[ -n "${name}" && "${name}" != \;* && "${name}" != /* ]] || continue
+            map_in_image "${name}" || fail "${name} (mapcycle-surf.txt) is not in the image"
+            mark
+            send "changelevel ${name}"
+            wait_log "\[MV\] ${name}: spawn start zone" 90 >/dev/null ||
+                fail "changelevel ${name}: the map did not load with a start zone"
+            wait_log '\[SK\] mode: surf' 90 >/dev/null || fail "changelevel ${name}: the mode did not come back"
+            surfs=$((surfs + 1))
+        done < "${ROOT}/config/mapcycle-surf.txt"
+        step "loaded ${surfs} surf maps, each with a start zone"
+    fi
+    if map_in_image "${climb_map}"; then
+        mark
+        send "changelevel ${climb_map}"
+        wait_log '\[SK\] mode: surf' 90 >/dev/null || fail "changelevel ${climb_map} in surf mode"
+        expect_cvar sv_airaccelerate 10 "a climb map in the surf rotation gets climb physics"
+        expect_cvar autobhop_enabled 0 "and no bunny hop"
+        expect_cvar mp_falldamage 1 "and fall damage"
+    fi
+    step "MODE=surf on ${surf_map}: ${surf_plugins} plugins, zones kept"
+fi
+
 # --- FastDL sidecar -----------------------------------------------------------
 # The same image under another entrypoint serves maps and assets over HTTP,
 # and nothing else: no settings, no admin files, no directory listings.

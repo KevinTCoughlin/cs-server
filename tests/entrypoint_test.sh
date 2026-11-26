@@ -40,8 +40,8 @@ expect_invalid "METRICS_BIND must be an IPv4 address" METRICS_PORT=9137 METRICS_
 expect_invalid "PORT must be an integer from 1 to 65535" PORT=18446744073709551616
 expect_invalid "MAP must be a filename" "MAP=scoutzknivez;quit"
 expect_invalid "MAPCYCLE must be a filename" MAPCYCLE=../server.cfg
-expect_invalid "MODE must be scoutz, knife, vanilla, match or climb" MODE=nipper
-expect_invalid "MODE must be scoutz, knife, vanilla, match or climb" "MODE=knife;quit"
+expect_invalid "MODE must be scoutz, knife, vanilla, match, climb or surf" MODE=nipper
+expect_invalid "MODE must be scoutz, knife, vanilla, match, climb or surf" "MODE=knife;quit"
 expect_invalid "FASTDL_URL must be an http(s) URL" FASTDL_URL=ftp://example.com/cstrike/
 expect_invalid "FASTDL_URL must be an http(s) URL" FASTDL_URL=example.com/cstrike/
 expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.com/;quit"
@@ -311,6 +311,15 @@ case "${args}" in
     *"+map kz_second "*"+bot_quota 10"*) ;;
     *) printf 'Expected MAP and BOTS to override the climb defaults, got: %s\n' "${args}" >&2; exit 1 ;;
 esac
+printf 'surf_one\n' > "${WORK_DIR}/cstrike/mapcycle-surf.txt"
+: > "${WORK_DIR}/cstrike/maps/surf_one.bsp"
+run_stub MODE=surf
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"+map surf_one "*"+mapcyclefile mapcycle-surf.txt "*"+localinfo sk_mode surf"*) ;;
+    *) printf 'Expected the surf defaults, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+[[ -d "${WORK_DIR}/state/amxmodx/zones" ]] || { printf 'No zones directory in the state volume\n' >&2; exit 1; }
 [[ -d "${WORK_DIR}/state/amxmodx/records" ]] || { printf 'No records directory in the state volume\n' >&2; exit 1; }
 rm -rf "${WORK_DIR}/cstrike/addons"
 case "${args}" in

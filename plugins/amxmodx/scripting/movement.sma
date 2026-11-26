@@ -2,12 +2,32 @@
 // SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
 //
 // Movement modes: a run timer, checkpoints and a top list. Loaded only from a
-// movement mode's plugin list (plugins/amxmodx/modes/climb.ini).
+// movement mode's plugin list (plugins/amxmodx/modes/climb.ini, surf.ini).
 //
-// Timer. A climb (KZ) map has a start and a stop button: a func_button whose
-// target is one of the names the mapping community settled on (START_TARGETS,
-// STOP_TARGETS below). Pressing start begins a run, pressing stop ends it.
-// A map without those buttons still plays; it has no timer.
+// Timer, buttons. A climb (KZ) map has a start and a stop button: a
+// func_button whose target is one of the names the mapping community settled
+// on (START_TARGETS, STOP_TARGETS below). Pressing start begins a run,
+// pressing stop ends it.
+//
+// Timer, zones. Surf maps have no such buttons, so a run there goes from a
+// start zone to an end zone, two boxes kept per map in
+// addons/amxmodx/data/zones/<map>.txt (linked into the state volume):
+//
+//   start  x1 y1 z1  x2 y2 z2
+//   end    x1 y1 z1  x2 y2 z2
+//
+// Leaving the start zone begins a run; touching the end zone ends it; going
+// back into the start zone cancels it. On a surf_ map with no start zone
+// saved, the box around the spawn points is the start zone, so an admin only
+// has to mark the end. An admin (flag "h", ADMIN_CFG) marks zones in game
+// from the client console, standing on two opposite corners in turn:
+//
+//   mv_zone start     first call: one corner; second call: the other, saved
+//   mv_zone end       the same for the end zone
+//   mv_zone show      draw both boxes for a few seconds
+//   mv_zone clear     forget this map's zones
+//
+// A map with neither buttons nor zones still plays; it has no timer.
 //
 // Checkpoints (say, or say_team):
 //   /cp       save the spot you stand on (on the ground only)
@@ -31,6 +51,8 @@
 // Players never block or hurt each other (mv_semiclip 0 turns the first off).
 //
 // Server console (FIFO) only:
+//   mv_zone_set <start|end> <x1> <y1> <z1> <x2> <y2> <z2>
+//                                 save a zone from numbers
 //   mv_top                        print this map's lists
 //   mv_record <player> <name> <centiseconds> <checkpoints> <teleports>
 //                                 enter a time, e.g. one carried over from
@@ -75,6 +97,22 @@ new const STOP_TARGETS[][] = {
 };
 
 new const RECORDS_DIR[] = "addons/amxmodx/data/records";
+new const ZONES_DIR[] = "addons/amxmodx/data/zones";
+new const BEAM_SPRITE[] = "sprites/laserbeam.spr";
+
+enum {
+    ZONE_START,
+    ZONE_END,
+    ZONE_COUNT
+};
+
+new const ZONE_NAME[ZONE_COUNT][] = { "start", "end" };
+
+// How far past the outermost spawn point the automatic start zone reaches.
+const Float:SPAWN_MARGIN = 96.0;
+// A zone marked from two spots on one floor still has to be tall enough to
+// catch a player crossing it in the air.
+const Float:ZONE_MIN_HEIGHT = 128.0;
 
 // --- Per-player run state ---------------------------------------------------
 
@@ -105,7 +143,21 @@ new g_szTopName[CAT_COUNT][MAX_TOP][NAME_LEN];
 
 new g_szMap[64];
 new g_szRecordsFile[128];
+new g_szZonesFile[128];
 new bool:g_bHasTimer;
+new bool:g_bSurf;
+new g_szTag[8];
+
+// --- Zones ------------------------------------------------------------------
+
+new bool:g_bZone[ZONE_COUNT];
+new bool:g_bZoneAuto;
+new Float:g_fZoneMin[ZONE_COUNT][3];
+new Float:g_fZoneMax[ZONE_COUNT][3];
+new bool:g_bInStart[33];
+new bool:g_bCorner[33][ZONE_COUNT];
+new Float:g_fCorner[33][ZONE_COUNT][3];
+new g_iBeam;
 
 // --- Semiclip ---------------------------------------------------------------
 
@@ -128,6 +180,8 @@ public plugin_init() {
     register_chat("/restart", "cmd_start");
     register_chat("/top", "cmd_top");
 
+    register_clcmd("mv_zone", "cmd_zone", ADMIN_CFG, "<start|end|show|clear> - mark this map's timer zones");
+    register_srvcmd("mv_zone_set", "srv_zone_set");
     register_srvcmd("mv_top", "srv_top");
     register_srvcmd("mv_record", "srv_record");
 
@@ -147,14 +201,43 @@ public plugin_init() {
     get_mapname(g_szMap, charsmax(g_szMap));
     strtolower(g_szMap);
     formatex(g_szRecordsFile, charsmax(g_szRecordsFile), "%s/%s.tsv", RECORDS_DIR, g_szMap);
+    formatex(g_szZonesFile, charsmax(g_szZonesFile), "%s/%s.txt", ZONES_DIR, g_szMap);
     load_records();
 
+    g_bSurf = bool:equal(g_szMap, "surf_", 5);
+    copy(g_szTag, charsmax(g_szTag), g_bSurf ? "SURF" : "CLIMB");
+
     g_bHasTimer = map_has_timer();
-    log_amx("[MV] %s: %s, %d pro and %d cp times", g_szMap,
-        g_bHasTimer ? "timer buttons found" : "no timer buttons",
+    load_zones();
+    if (!g_bHasTimer && !g_bZone[ZONE_START] && g_bSurf) {
+        g_bZoneAuto = spawn_zone();
+    }
+    log_amx("[MV] %s: %s, %d pro and %d cp times", g_szMap, timer_kind(),
         g_iTopCount[CAT_PRO], g_iTopCount[CAT_CP]);
 
     set_task(1.0, "show_timers", TASK_HUD, _, _, "b");
+}
+
+public plugin_precache() {
+    g_iBeam = precache_model(BEAM_SPRITE);
+}
+
+timer_kind() {
+    new szKind[48];
+    if (g_bHasTimer) {
+        copy(szKind, charsmax(szKind), "timer buttons found");
+    } else if (g_bZone[ZONE_START] && g_bZone[ZONE_END]) {
+        copy(szKind, charsmax(szKind), g_bZoneAuto ? "spawn start zone, end zone" : "start and end zones");
+    } else if (g_bZone[ZONE_START]) {
+        copy(szKind, charsmax(szKind), g_bZoneAuto ? "spawn start zone, no end zone" : "start zone, no end zone");
+    } else {
+        copy(szKind, charsmax(szKind), "no timer buttons");
+    }
+    return szKind;
+}
+
+bool:timed() {
+    return bool:(g_bHasTimer || (g_bZone[ZONE_START] && g_bZone[ZONE_END]));
 }
 
 public plugin_end() {
@@ -214,15 +297,18 @@ reset_player(id) {
     g_iTeleports[id] = 0;
     g_bSolid[id] = false;
     g_bRestore[id] = false;
+    g_bInStart[id] = false;
+    g_bCorner[id][ZONE_START] = false;
+    g_bCorner[id][ZONE_END] = false;
 }
 
 public welcome(id) {
     if (!is_user_connected(id)) {
         return;
     }
-    client_print(id, print_chat, "[CLIMB] say /cp to save a checkpoint, /tp to return to it, /start to go back, /top for the best times.");
-    if (!g_bHasTimer) {
-        client_print(id, print_chat, "[CLIMB] This map has no timer buttons, so runs are not timed here.");
+    client_print(id, print_chat, "[%s] say /cp to save a checkpoint, /tp to return to it, /start to go back, /top for the best times.", g_szTag);
+    if (!timed()) {
+        client_print(id, print_chat, "[%s] This map has no timer yet, so runs are not timed here.", g_szTag);
     }
 }
 
@@ -234,7 +320,7 @@ public on_spawn(id) {
     if (g_iSaved[id] > 0) {
         g_iTeleports[id]++;
         go_to_checkpoint(id, 0);
-        client_print(id, print_chat, "[CLIMB] Back on your checkpoint. This is a cp run now.");
+        client_print(id, print_chat, "[%s] Back on your checkpoint. This is a cp run now.", g_szTag);
     }
     return HAM_IGNORED;
 }
@@ -242,7 +328,7 @@ public on_spawn(id) {
 public on_killed(id) {
     if (g_bRunning[id] && g_iSaved[id] == 0) {
         g_bRunning[id] = false;
-        client_print(id, print_chat, "[CLIMB] Run over. Press the start button to go again.");
+        client_print(id, print_chat, "[%s] Run over. Head back to the start to go again.", g_szTag);
     }
     return HAM_IGNORED;
 }
@@ -271,16 +357,20 @@ public on_button_use(ent, caller) {
     return HAM_IGNORED;
 }
 
-start_run(id) {
+// A button run restarts from the button; a zone run restarts from spawn,
+// because the spot where a player left the start zone is in mid-air.
+start_run(id, bool:fromButton = true) {
     g_bRunning[id] = true;
     g_fStarted[id] = get_gametime();
     g_iCheckpoints[id] = 0;
     g_iTeleports[id] = 0;
     g_iSaved[id] = 0;
 
-    g_bHasStart[id] = true;
-    pev(id, pev_origin, g_fStartOrigin[id]);
-    pev(id, pev_v_angle, g_fStartAngles[id]);
+    g_bHasStart[id] = fromButton;
+    if (fromButton) {
+        pev(id, pev_origin, g_fStartOrigin[id]);
+        pev(id, pev_v_angle, g_fStartAngles[id]);
+    }
 
     client_print(id, print_center, "Go!");
 }
@@ -302,15 +392,15 @@ finish_run(id) {
     bump("mv_runs");
 
     if (iCat == CAT_PRO) {
-        client_print(0, print_chat, "[CLIMB] %s finished %s in %s (pro, no teleports).", szName, g_szMap, szTime);
+        client_print(0, print_chat, "[%s] %s finished %s in %s (pro, no teleports).", g_szTag, szName, g_szMap, szTime);
     } else {
-        client_print(0, print_chat, "[CLIMB] %s finished %s in %s (%d checkpoints, %d teleports).",
-            szName, g_szMap, szTime, g_iCheckpoints[id], g_iTeleports[id]);
+        client_print(0, print_chat, "[%s] %s finished %s in %s (%d checkpoints, %d teleports).",
+            g_szTag, szName, g_szMap, szTime, g_iCheckpoints[id], g_iTeleports[id]);
     }
     if (iRank == 1) {
-        client_print(0, print_chat, "[CLIMB] New %s record on %s!", CAT_NAME[iCat], g_szMap);
+        client_print(0, print_chat, "[%s] New %s record on %s!", g_szTag, CAT_NAME[iCat], g_szMap);
     } else if (iRank > 0) {
-        client_print(id, print_chat, "[CLIMB] That is #%d on the %s list.", iRank, CAT_NAME[iCat]);
+        client_print(id, print_chat, "[%s] That is #%d on the %s list.", g_szTag, iRank, CAT_NAME[iCat]);
     }
 }
 
@@ -641,6 +731,9 @@ public on_frame() {
 }
 
 public on_prethink(id) {
+    if (g_bZone[ZONE_START] && is_user_alive(id)) {
+        check_zones(id);
+    }
     if (!g_bSolid[id]) {
         return FMRES_IGNORED;
     }
@@ -668,4 +761,252 @@ public on_fullpack(es, e, ent, host, hostflags, player, pSet) {
         set_es(es, ES_Solid, SOLID_NOT);
     }
     return FMRES_IGNORED;
+}
+
+// --- Zones ------------------------------------------------------------------
+
+check_zones(id) {
+    static Float:fOrigin[3];
+    pev(id, pev_origin, fOrigin);
+    if (in_zone(ZONE_START, fOrigin)) {
+        // Back at the start: whatever run there was is off.
+        g_bRunning[id] = false;
+        g_bInStart[id] = true;
+        return;
+    }
+    if (g_bInStart[id]) {
+        g_bInStart[id] = false;
+        if (g_bZone[ZONE_END]) {
+            start_run(id, false);
+        }
+        return;
+    }
+    if (g_bRunning[id] && g_bZone[ZONE_END] && in_zone(ZONE_END, fOrigin)) {
+        finish_run(id);
+    }
+}
+
+bool:in_zone(zone, const Float:origin[3]) {
+    for (new i = 0; i < 3; i++) {
+        if (origin[i] < g_fZoneMin[zone][i] || origin[i] > g_fZoneMax[zone][i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Stores a zone from two opposite corners, in any order.
+set_zone(zone, const Float:a[3], const Float:b[3]) {
+    for (new i = 0; i < 3; i++) {
+        g_fZoneMin[zone][i] = floatmin(a[i], b[i]);
+        g_fZoneMax[zone][i] = floatmax(a[i], b[i]);
+    }
+    if (g_fZoneMax[zone][2] - g_fZoneMin[zone][2] < ZONE_MIN_HEIGHT) {
+        g_fZoneMax[zone][2] = g_fZoneMin[zone][2] + ZONE_MIN_HEIGHT;
+    }
+    g_bZone[zone] = true;
+    if (zone == ZONE_START) {
+        g_bZoneAuto = false;
+    }
+}
+
+// The box around every spawn point. False on a map without any.
+bool:spawn_zone() {
+    new const SPAWNS[][] = { "info_player_start", "info_player_deathmatch" };
+    new Float:fMin[3], Float:fMax[3], Float:fOrigin[3], bool:bFound;
+    for (new c = 0; c < sizeof(SPAWNS); c++) {
+        new ent = -1;
+        while ((ent = engfunc(EngFunc_FindEntityByString, ent, "classname", SPAWNS[c])) > 0) {
+            pev(ent, pev_origin, fOrigin);
+            for (new i = 0; i < 3; i++) {
+                if (!bFound || fOrigin[i] < fMin[i]) {
+                    fMin[i] = fOrigin[i];
+                }
+                if (!bFound || fOrigin[i] > fMax[i]) {
+                    fMax[i] = fOrigin[i];
+                }
+            }
+            bFound = true;
+        }
+    }
+    if (!bFound) {
+        return false;
+    }
+    for (new i = 0; i < 3; i++) {
+        fMin[i] -= SPAWN_MARGIN;
+        fMax[i] += SPAWN_MARGIN;
+    }
+    set_zone(ZONE_START, fMin, fMax);
+    return true;
+}
+
+load_zones() {
+    new f = fopen(g_szZonesFile, "rt");
+    if (!f) {
+        return;
+    }
+    new szLine[160], szField[7][24], Float:a[3], Float:b[3];
+    while (fgets(f, szLine, charsmax(szLine))) {
+        trim(szLine);
+        if (parse(szLine, szField[0], charsmax(szField[]), szField[1], charsmax(szField[]),
+                szField[2], charsmax(szField[]), szField[3], charsmax(szField[]),
+                szField[4], charsmax(szField[]), szField[5], charsmax(szField[]),
+                szField[6], charsmax(szField[])) < 7) {
+            continue;
+        }
+        new iZone = zone_by_name(szField[0]);
+        if (iZone < 0) {
+            continue;
+        }
+        for (new i = 0; i < 3; i++) {
+            a[i] = str_to_float(szField[1 + i]);
+            b[i] = str_to_float(szField[4 + i]);
+        }
+        set_zone(iZone, a, b);
+    }
+    fclose(f);
+}
+
+save_zones() {
+    if (!dir_exists(ZONES_DIR)) {
+        mkdir(ZONES_DIR);
+    }
+    new f = fopen(g_szZonesFile, "wt");
+    if (!f) {
+        log_amx("[MV] cannot write %s", g_szZonesFile);
+        return;
+    }
+    for (new z = 0; z < ZONE_COUNT; z++) {
+        // The automatic start zone is worked out again on every map load.
+        if (!g_bZone[z] || (z == ZONE_START && g_bZoneAuto)) {
+            continue;
+        }
+        // Whole units: a box a player crosses needs no more, and the
+        // float formatter here writes 64 as 63.9.
+        fprintf(f, "%s %d %d %d %d %d %d^n", ZONE_NAME[z],
+            floatround(g_fZoneMin[z][0]), floatround(g_fZoneMin[z][1]), floatround(g_fZoneMin[z][2]),
+            floatround(g_fZoneMax[z][0]), floatround(g_fZoneMax[z][1]), floatround(g_fZoneMax[z][2]));
+    }
+    fclose(f);
+}
+
+zone_by_name(const name[]) {
+    for (new z = 0; z < ZONE_COUNT; z++) {
+        if (equali(name, ZONE_NAME[z])) {
+            return z;
+        }
+    }
+    return -1;
+}
+
+public cmd_zone(id, level, cid) {
+    if (!cmd_access(id, level, cid, 2)) {
+        return PLUGIN_HANDLED;
+    }
+    new szArg[16];
+    read_argv(1, szArg, charsmax(szArg));
+
+    if (equali(szArg, "show")) {
+        show_zones(id);
+        return PLUGIN_HANDLED;
+    }
+    if (equali(szArg, "clear")) {
+        g_bZone[ZONE_START] = false;
+        g_bZone[ZONE_END] = false;
+        g_bZoneAuto = false;
+        delete_file(g_szZonesFile);
+        if (g_bSurf) {
+            g_bZoneAuto = spawn_zone();
+        }
+        console_print(id, "[MV] zones cleared: %s", timer_kind());
+        return PLUGIN_HANDLED;
+    }
+    new iZone = zone_by_name(szArg);
+    if (iZone < 0 || !is_user_alive(id)) {
+        console_print(id, "usage: mv_zone <start|end|show|clear> (alive, standing on a corner)");
+        return PLUGIN_HANDLED;
+    }
+
+    new Float:fSpot[3];
+    pev(id, pev_origin, fSpot);
+    // The origin is 36 units above a standing player's feet.
+    fSpot[2] -= 36.0;
+    if (!g_bCorner[id][iZone]) {
+        g_bCorner[id][iZone] = true;
+        g_fCorner[id][iZone] = fSpot;
+        console_print(id, "[MV] %s zone: first corner marked. Go to the opposite corner and run mv_zone %s again.",
+            ZONE_NAME[iZone], ZONE_NAME[iZone]);
+        return PLUGIN_HANDLED;
+    }
+    g_bCorner[id][iZone] = false;
+    set_zone(iZone, g_fCorner[id][iZone], fSpot);
+    save_zones();
+    show_zones(id);
+    new szAdmin[NAME_LEN];
+    get_user_name(id, szAdmin, charsmax(szAdmin));
+    log_amx("[MV] %s zone on %s set by %s: %s", ZONE_NAME[iZone], g_szMap, szAdmin, timer_kind());
+    console_print(id, "[MV] %s zone saved: %s", ZONE_NAME[iZone], timer_kind());
+    return PLUGIN_HANDLED;
+}
+
+public srv_zone_set() {
+    new szArg[24];
+    read_argv(1, szArg, charsmax(szArg));
+    new iZone = zone_by_name(szArg);
+    if (read_argc() != 8 || iZone < 0) {
+        server_print("usage: mv_zone_set <start|end> <x1> <y1> <z1> <x2> <y2> <z2>");
+        return PLUGIN_HANDLED;
+    }
+    new Float:a[3], Float:b[3];
+    for (new i = 0; i < 3; i++) {
+        read_argv(2 + i, szArg, charsmax(szArg));
+        a[i] = str_to_float(szArg);
+        read_argv(5 + i, szArg, charsmax(szArg));
+        b[i] = str_to_float(szArg);
+    }
+    set_zone(iZone, a, b);
+    save_zones();
+    server_print("[MV] %s zone saved: %s", ZONE_NAME[iZone], timer_kind());
+    return PLUGIN_HANDLED;
+}
+
+// The twelve edges of each box, as beams only this player sees.
+show_zones(id) {
+    static const EDGES[12][2] = {
+        { 0, 1 }, { 0, 2 }, { 1, 3 }, { 2, 3 }, { 4, 5 }, { 4, 6 },
+        { 5, 7 }, { 6, 7 }, { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 }
+    };
+    new Float:fCorner[8][3];
+    for (new z = 0; z < ZONE_COUNT; z++) {
+        if (!g_bZone[z]) {
+            continue;
+        }
+        for (new c = 0; c < 8; c++) {
+            fCorner[c][0] = (c & 1) ? g_fZoneMax[z][0] : g_fZoneMin[z][0];
+            fCorner[c][1] = (c & 2) ? g_fZoneMax[z][1] : g_fZoneMin[z][1];
+            fCorner[c][2] = (c & 4) ? g_fZoneMax[z][2] : g_fZoneMin[z][2];
+        }
+        for (new e = 0; e < sizeof(EDGES); e++) {
+            message_begin(MSG_ONE_UNRELIABLE, SVC_TEMPENTITY, _, id);
+            write_byte(TE_BEAMPOINTS);
+            engfunc(EngFunc_WriteCoord, fCorner[EDGES[e][0]][0]);
+            engfunc(EngFunc_WriteCoord, fCorner[EDGES[e][0]][1]);
+            engfunc(EngFunc_WriteCoord, fCorner[EDGES[e][0]][2]);
+            engfunc(EngFunc_WriteCoord, fCorner[EDGES[e][1]][0]);
+            engfunc(EngFunc_WriteCoord, fCorner[EDGES[e][1]][1]);
+            engfunc(EngFunc_WriteCoord, fCorner[EDGES[e][1]][2]);
+            write_short(g_iBeam);
+            write_byte(0);
+            write_byte(0);
+            write_byte(80);
+            write_byte(8);
+            write_byte(0);
+            write_byte(z == ZONE_START ? 0 : 255);
+            write_byte(z == ZONE_START ? 255 : 0);
+            write_byte(0);
+            write_byte(200);
+            write_byte(0);
+            message_end();
+        }
+    }
 }

@@ -687,6 +687,9 @@ for line in "Environment=MODE=climb" "Environment=MAPCYCLE=mapcycle-climb.txt" "
     assert_contains "climb mode unit" "${unit}" "${line}"
 done
 assert_not_contains "climb mode sets no MAP" "${unit}" "Environment=MAP="
+install CS_MODE=surf
+assert_contains "surf mode uses its own rotation" "$(cat "${UNIT}")" "Environment=MAPCYCLE=mapcycle-surf.txt"
+assert_contains "surf mode has no bots" "$(cat "${UNIT}")" "Environment=BOTS=0"
 install CS_MODE=climb CS_BOTS=1
 assert_contains "CS_BOTS=1 still wins in climb mode" "$(cat "${UNIT}")" "Environment=BOTS=1"
 install CS_MODE=match CS_GAME=dod

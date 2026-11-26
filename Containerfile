@@ -414,6 +414,7 @@ RUN . /usr/local/share/cs-server/game.env && \
     ln -s /hlds/state/amxmodx/vault.ini     "${amx}/data/vault.ini" && \
     ln -s /hlds/state/amxmodx/vault         "${amx}/data/vault" && \
     ln -s /hlds/state/amxmodx/records       "${amx}/data/records" && \
+    ln -s /hlds/state/amxmodx/zones         "${amx}/data/zones" && \
     ln -s /tmp/hlds-runtime                 /hlds/.runtime && \
     ln -s /hlds/.runtime/metrics.prom       "${amx}/data/metrics.prom" && \
     if [ "${GAME_BOTS}" = 1 ]; then \
