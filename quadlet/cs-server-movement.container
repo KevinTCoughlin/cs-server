@@ -1,4 +1,4 @@
-# Movement / climb server. Image= must be the same string as in
+# Movement server: surf or climb from the map name (MODE=auto). Image= must be the same string as in
 # quadlet/cs-fastdl-movement.container, including a digest pin. Repoint both
 # together: the sidecar serves the maps baked into its image, and a different
 # image than the game server is running hands clients the wrong files.
@@ -24,14 +24,15 @@ Volume=%h/.config/cs-server-movement/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-
 Volume=%h/.config/cs-server-movement/mapcycle-nipper-xmas.txt:/hlds/cstrike/mapcycle-nipper-xmas.txt:ro,Z
 Volume=%h/.config/cs-server-movement/mapcycle-climb.txt:/hlds/cstrike/mapcycle-climb.txt:ro,Z
 Volume=%h/.config/cs-server-movement/mapcycle-surf.txt:/hlds/cstrike/mapcycle-surf.txt:ro,Z
+Volume=%h/.config/cs-server-movement/mapcycle-movement.txt:/hlds/cstrike/mapcycle-movement.txt:ro,Z
 Volume=%h/.config/cs-server-movement/modes:/hlds/cstrike/modes:ro,Z
 Volume=cs-server-state-movement:/hlds/state
 Environment=MAXPLAYERS=20
 Environment=PORT=27016
 Environment=BOTS=0
-Environment=MAPCYCLE=mapcycle-climb.txt
+Environment=MAPCYCLE=mapcycle-movement.txt
 Environment=LAN_MODE=0
-Environment=MODE=climb
+Environment=MODE=auto
 Environment=LOGS=1
 Environment=LOG_RETENTION_DAYS=30
 Environment=FASTDL_URL=http://HOST:27080/cstrike/

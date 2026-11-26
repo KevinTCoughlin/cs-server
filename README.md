@@ -574,7 +574,32 @@ The rotation is `surf_ski_5`, `surf_nice_fly_4`, `surf_srventer`,
 `surf_nice_fly` and `surf_colorama_beta`. A rotation can mix surf and climb
 maps: the map's prefix picks the physics, so a `kz_` or `bkz_` map in a surf
 rotation gets climb settings and a `surf_` map in a climb rotation gets surf
-settings.
+settings. That overlay stays in place for `MODE=surf` and `MODE=climb`.
+
+### Surf and climb on one server
+
+`MODE=auto` (the same as `MODE=movement`) picks the mode from the map name
+each time a map loads, then execs that mode's cfg after `server.cfg`, so a
+later map does not keep the previous air acceleration. `surf_` maps get surf
+settings (air acceleration 100, no fall damage, bunny hop, timer zones).
+`kz_`, `bkz_`, `kz??_` (kz, two characters, then `_`), `hb_` and `bhop_` maps
+get climb settings (air acceleration 10, timer buttons). Anything else is
+climb. `config/modes/map-modes.ini` is that table: an `exact` line wins, then
+the longest `prefix`, then `default`.
+
+```bash
+just mode movement        # mapcycle-movement.txt, at the next round end
+MODE=auto                 # or MODE=movement, on a server of its own
+```
+
+`mapcycle-movement.txt` lists the climb maps and the surf maps. `rtv` follows
+`mapcyclefile`, so votes cover both. `plugins/amxmodx/modes/auto.ini` is the
+plugin list for both modes (they already load the same plugins). Bunny hop
+stays loaded and the mode cfg turns it on or off. `movement.amxx` uses zones
+or buttons according to the resolved mode.
+
+`just mode auto` is still the Friday schedule (knife mode on Friday evening,
+ScoutzKnivez otherwise). It does not turn on per-map surf and climb.
 
 ### Match (5v5)
 
@@ -766,7 +791,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `DOD_PASSWORD` | empty | Day of Defeat `sv_password`. Ignored by every other game. Installer: `CS_DOD_PASSWORD` |
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
-| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike), `match` (5v5: warmup, knife round, pause), `climb` (KZ maps: timer, checkpoints, top lists) or `surf` (surf maps: timer zones); the last two have no bots unless `BOTS=1` |
+| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike), `match` (5v5: warmup, knife round, pause), `climb` (KZ maps: timer, checkpoints, top lists), `surf` (surf maps: timer zones) or `auto` (surf or climb from the map name; `movement` is the same). Climb, surf and auto have no bots unless `BOTS=1` |
 | `METRICS_PORT` | empty | Serve Prometheus metrics on this port inside the container; see [Metrics](#metrics). `METRICS_BIND` (default `0.0.0.0`) is the address it listens on |
 | `FASTDL_URL` | empty | http(s) URL serving your `cstrike/` content (`sv_downloadurl`); see [FastDL](#fastdl-fast-downloads) |
 | `LOGS` | `1` | Write server log files (1=on, 0=off); see [Saved state and logs](#saved-state-and-logs) |

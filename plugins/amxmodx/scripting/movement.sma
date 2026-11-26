@@ -65,6 +65,12 @@
 //
 // The mode's cfg turns on respawning and endless rounds. Those cvars are not
 // in server.cfg, so plugin_end puts them back for the next mode.
+//
+// Which timer a map uses. A name starting with surf_ is zones. Under
+// MODE=auto, scoutzknivez.amxx has already set localinfo sk_mapmode to surf
+// or climb (it is loaded first), and that wins, so an override in
+// modes/map-modes.ini changes the timer as well as the physics. MODE=climb
+// and MODE=surf leave this decision on the map name.
 
 #pragma semicolon 1
 
@@ -204,7 +210,14 @@ public plugin_init() {
     formatex(g_szZonesFile, charsmax(g_szZonesFile), "%s/%s.txt", ZONES_DIR, g_szMap);
     load_records();
 
-    g_bSurf = bool:equal(g_szMap, "surf_", 5);
+    new szSkMode[16], szMapMode[16];
+    get_localinfo("sk_mode", szSkMode, charsmax(szSkMode));
+    get_localinfo("sk_mapmode", szMapMode, charsmax(szMapMode));
+    if (equal(szSkMode, "auto") && (equal(szMapMode, "surf") || equal(szMapMode, "climb"))) {
+        g_bSurf = bool:equal(szMapMode, "surf");
+    } else {
+        g_bSurf = bool:equal(g_szMap, "surf_", 5);
+    }
     copy(g_szTag, charsmax(g_szTag), g_bSurf ? "SURF" : "CLIMB");
 
     g_bHasTimer = map_has_timer();
