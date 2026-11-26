@@ -1,0 +1,55 @@
+{
+  "sample": true,
+  "note": "SAMPLE DATA. Not live server records. The exporter writes this shape without sample or note.",
+  "updated_at": "2026-01-01T00:00:00Z",
+  "server": {
+    "name": "Slopes & Ladders | Surf + Climb",
+    "addr": "23.95.254.87:27016",
+    "connect": "connect 23.95.254.87:27016",
+    "fastdl": "http://23.95.254.87:27080/cstrike/"
+  },
+  "disclaimer": "Times from this server only. Not official Kreedz or KZ-Rush records.",
+  "maps": {
+    "kz_sample": {
+      "pro": [
+        {
+          "rank": 1,
+          "time_cs": 9050,
+          "time": "01:30.50",
+          "checkpoints": 2,
+          "teleports": 0,
+          "at": "2026-01-01T00:00:00Z",
+          "player": "STEAM_0:1:12345",
+          "name": "Sample Pro"
+        }
+      ],
+      "cp": [
+        {
+          "rank": 1,
+          "time_cs": 15000,
+          "time": "02:30.00",
+          "checkpoints": 4,
+          "teleports": 3,
+          "at": "2026-01-01T00:05:00Z",
+          "player": "name:LAN",
+          "name": "LAN Player"
+        }
+      ]
+    },
+    "surf_sample": {
+      "pro": [],
+      "cp": [
+        {
+          "rank": 1,
+          "time_cs": 4520,
+          "time": "00:45.20",
+          "checkpoints": 1,
+          "teleports": 1,
+          "at": "2026-01-01T00:10:00Z",
+          "player": "STEAM_0:0:42",
+          "name": "Sample Surf"
+        }
+      ]
+    }
+  }
+}

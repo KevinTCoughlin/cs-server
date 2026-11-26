@@ -1,0 +1,11 @@
+; Climb and surf on one server. MODE=auto picks the settings from the map name
+; (config/modes/map-modes.ini). rtv follows this file.
+kz_man_everest
+bkz_goldbhop
+bkz_toonworld
+kz_climbers_b01
+surf_ski_5
+surf_nice_fly_4
+surf_srventer
+surf_nice_fly
+surf_colorama_beta

@@ -15,12 +15,20 @@
 //            plugin list) runs the timer, checkpoints and top lists.
 //   surf     surf maps: air acceleration 100, no fall damage, no rounds;
 //            movement.amxx times runs between zones.
+//   auto     per map: modes/map-modes.ini picks surf or climb from the map
+//            name (exact, then the longest prefix, then default). The chosen
+//            mode's cfg is exec'd after server.cfg. MODE=climb and MODE=surf
+//            do not use this table; they stay one mode for every map.
+//            `movement` is accepted as a name for auto.
 //
 // The mode lives in `localinfo sk_mode`, which survives map changes. On each
-// map the plugin execs server.cfg, modes/<mode>.cfg and, if present,
+// map the plugin execs server.cfg, then modes/<mode>.cfg (for auto, the cfg
+// of the mode the map resolved to) and, if present and the mode is not auto,
 // modes/<mode>_<prefix>.cfg (prefix = map name up to the first `_`, e.g.
 // modes/knife_he.cfg). The engine does not re-run server.cfg on changelevel
 // here, so without the first exec mode settings would leak across switches.
+// auto also sets `localinfo sk_mapmode` to surf or climb before movement.amxx
+// starts, which is why scoutzknivez.amxx is listed above it.
 //
 // A mode can have its own plugin list, addons/amxmodx/configs/modes/<mode>.ini.
 // AMX Mod X reads the list named by `localinfo amxx_plugins` on every map
@@ -30,7 +38,7 @@
 // `localinfo sk_bots 0` (set by BOTS=0) keeps bots off: server.cfg sets
 // bot_quota, and re-running it would otherwise bring them back on every map.
 //
-// sk_switchmode <scoutz|knife|vanilla|match|climb|surf> <mapcyclefile> [map]
+// sk_switchmode <scoutz|knife|vanilla|match|climb|surf|auto> <mapcyclefile> [map]
 //   Server command (console/FIFO only). Announces the switch and changes level
 //   at the next round end, never mid-round. Without a map, the first map of
 //   the mapcycle that exists on disk is used. A no-op if already in that mode
@@ -51,6 +59,8 @@
 const Float:SWITCH_DEADLINE = 180.0;
 
 new g_szMode[MODE_LEN];
+new g_szMapMode[8];
+new g_szMapName[64];
 new bool:g_bKnifeOnly;
 new bool:g_bLoadout;
 new g_szMapPrefix[32];
@@ -110,26 +120,149 @@ load_mode() {
     g_bKnifeOnly = bool:equal(g_szMode, "knife");
     g_bLoadout = bool:(g_bKnifeOnly || equal(g_szMode, "scoutz"));
 
-    new szMap[64];
-    get_mapname(szMap, charsmax(szMap));
-    new iSep = contain(szMap, "_");
+    get_mapname(g_szMapName, charsmax(g_szMapName));
+    strtolower(g_szMapName);
+    g_szMapPrefix[0] = 0;
+    new iSep = contain(g_szMapName, "_");
     if (iSep > 0) {
-        copy(g_szMapPrefix, min(iSep, charsmax(g_szMapPrefix)), szMap);
+        copy(g_szMapPrefix, min(iSep, charsmax(g_szMapPrefix)), g_szMapName);
     }
     g_bGrenadeMap = g_bKnifeOnly && bool:equal(g_szMapPrefix, "he");
+
+    if (equal(g_szMode, "auto")) {
+        resolve_map_mode();
+    } else {
+        g_szMapMode[0] = 0;
+        set_localinfo("sk_mapmode", "");
+    }
 }
 
 bool:is_valid_mode(const mode[]) {
     return bool:(equal(mode, "scoutz") || equal(mode, "knife") || equal(mode, "vanilla") || equal(mode, "match") ||
-        equal(mode, "climb") || equal(mode, "surf"));
+        equal(mode, "climb") || equal(mode, "surf") || equal(mode, "auto"));
+}
+
+bool:is_map_mode(const mode[]) {
+    return bool:(equal(mode, "climb") || equal(mode, "surf"));
+}
+
+// Copy the next word of line, starting at pos, into out. pos moves past it.
+stock bool:next_token(const line[], &pos, out[], len) {
+    while (line[pos] == ' ' || line[pos] == 9) {
+        pos++;
+    }
+    if (!line[pos]) {
+        return false;
+    }
+    new i;
+    while (line[pos] && line[pos] != ' ' && line[pos] != 9) {
+        if (i < len) {
+            out[i] = line[pos];
+        }
+        i++;
+        pos++;
+    }
+    if (i > len) {
+        i = len;
+    }
+    out[i] = 0;
+    return true;
+}
+
+// pattern is matched against the start of map. '?' is one character.
+stock bool:prefix_match(const map[], const pattern[]) {
+    new i;
+    for (i = 0; pattern[i]; i++) {
+        if (!map[i]) {
+            return false;
+        }
+        if (pattern[i] != '?' && pattern[i] != map[i]) {
+            return false;
+        }
+    }
+    return bool:(i > 0);
+}
+
+// modes/map-modes.ini: exact <map> <mode>, prefix <pattern> <mode>, default <mode>.
+// exact wins. Otherwise the longest matching prefix wins. Otherwise default.
+resolve_map_mode() {
+    new fallback[8];
+    copy(fallback, charsmax(fallback), "climb");
+    copy(g_szMapMode, charsmax(g_szMapMode), fallback);
+
+    new f = fopen("modes/map-modes.ini", "rt");
+    if (!f) {
+        log_amx("[SK] modes/map-modes.ini is missing; this map uses climb");
+        set_localinfo("sk_mapmode", g_szMapMode);
+        return;
+    }
+
+    new line[128], kind[16], name[64], mode[8], bestMode[8];
+    new pos, bestLen, n;
+    new bool:exact;
+    while (fgets(f, line, charsmax(line))) {
+        trim(line);
+        if (!line[0] || line[0] == ';' || (line[0] == '/' && line[1] == '/')) {
+            continue;
+        }
+        strtolower(line);
+        pos = 0;
+        if (!next_token(line, pos, kind, charsmax(kind))) {
+            continue;
+        }
+        if (equal(kind, "default")) {
+            if (next_token(line, pos, mode, charsmax(mode)) && is_map_mode(mode)) {
+                copy(fallback, charsmax(fallback), mode);
+            }
+            continue;
+        }
+        if (!next_token(line, pos, name, charsmax(name))) {
+            continue;
+        }
+        if (!next_token(line, pos, mode, charsmax(mode)) || !is_map_mode(mode)) {
+            continue;
+        }
+        if (!exact && equal(kind, "exact") && equal(name, g_szMapName)) {
+            copy(g_szMapMode, charsmax(g_szMapMode), mode);
+            exact = true;
+        } else if (!exact && equal(kind, "prefix") && prefix_match(g_szMapName, name)) {
+            n = strlen(name);
+            if (n > bestLen) {
+                bestLen = n;
+                copy(bestMode, charsmax(bestMode), mode);
+            }
+        }
+    }
+    fclose(f);
+
+    if (!exact) {
+        if (bestLen > 0) {
+            copy(g_szMapMode, charsmax(g_szMapMode), bestMode);
+        } else {
+            copy(g_szMapMode, charsmax(g_szMapMode), fallback);
+        }
+    }
+    set_localinfo("sk_mapmode", g_szMapMode);
 }
 
 public exec_mode_cfg() {
     new szCfg[64];
-    formatex(szCfg, charsmax(szCfg), "modes/%s.cfg", g_szMode);
     // Base settings first, then the mode's overrides (same command buffer,
-    // so they run in this order).
+    // so they run in this order). server.cfg is re-exec'd here because the
+    // engine does not run it again on changelevel.
     server_cmd("exec server.cfg");
+    if (equal(g_szMode, "auto")) {
+        formatex(szCfg, charsmax(szCfg), "modes/%s.cfg", g_szMapMode);
+        if (file_exists(szCfg)) {
+            server_cmd("exec %s", szCfg);
+        }
+        if (bots_off()) {
+            server_cmd("bot_quota 0");
+        }
+        log_amx("[SK] mode: auto -> %s (%s)", g_szMapMode, g_szMapName);
+        return;
+    }
+    formatex(szCfg, charsmax(szCfg), "modes/%s.cfg", g_szMode);
     if (file_exists(szCfg)) {
         server_cmd("exec %s", szCfg);
     }
@@ -193,7 +326,7 @@ public CS_OnBuyAttempt(id, item) {
 
 public cmd_switchmode() {
     if (read_argc() < 3) {
-        server_print("usage: sk_switchmode <scoutz|knife|vanilla|match|climb|surf> <mapcyclefile> [map]");
+        server_print("usage: sk_switchmode <scoutz|knife|vanilla|match|climb|surf|auto> <mapcyclefile> [map]");
         return PLUGIN_HANDLED;
     }
 
@@ -201,9 +334,12 @@ public cmd_switchmode() {
     read_argv(1, szMode, charsmax(szMode));
     read_argv(2, szCycle, charsmax(szCycle));
     read_argv(3, szMap, charsmax(szMap));
+    if (equal(szMode, "movement")) {
+        copy(szMode, charsmax(szMode), "auto");
+    }
 
     if (!is_valid_mode(szMode)) {
-        server_print("[SK] unknown mode '%s' (scoutz|knife|vanilla|match|climb|surf)", szMode);
+        server_print("[SK] unknown mode '%s' (scoutz|knife|vanilla|match|climb|surf|auto)", szMode);
         return PLUGIN_HANDLED;
     }
     if (!is_safe_name(szCycle) || !file_exists(szCycle)) {
@@ -241,6 +377,8 @@ public cmd_switchmode() {
         client_print(0, print_chat, "[SERVER] Match mode on %s from the end of this round: warmup, then say .ready", szMap);
     } else if (equal(szMode, "surf")) {
         client_print(0, print_chat, "[SERVER] Surfing on %s shortly: say /top for times, /start to go again.", szMap);
+    } else if (equal(szMode, "auto")) {
+        client_print(0, print_chat, "[SERVER] Surf and climb on %s shortly: the map name picks which.", szMap);
     } else if (equal(szMode, "climb")) {
         client_print(0, print_chat, "[SERVER] Climbing on %s shortly: say /cp and /tp for checkpoints, /top for times.", szMap);
     } else if (equal(szMode, "vanilla")) {

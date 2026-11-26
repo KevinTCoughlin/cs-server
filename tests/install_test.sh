@@ -690,6 +690,12 @@ assert_not_contains "climb mode sets no MAP" "${unit}" "Environment=MAP="
 install CS_MODE=surf
 assert_contains "surf mode uses its own rotation" "$(cat "${UNIT}")" "Environment=MAPCYCLE=mapcycle-surf.txt"
 assert_contains "surf mode has no bots" "$(cat "${UNIT}")" "Environment=BOTS=0"
+install CS_MODE=auto
+assert_contains "auto mode uses the combined rotation" "$(cat "${UNIT}")" "Environment=MAPCYCLE=mapcycle-movement.txt"
+assert_contains "auto mode has no bots" "$(cat "${UNIT}")" "Environment=BOTS=0"
+assert_contains "auto mode is named auto" "$(cat "${UNIT}")" "Environment=MODE=auto"
+install CS_MODE=movement
+assert_contains "movement is another name for auto" "$(cat "${UNIT}")" "Environment=MODE=auto"
 install CS_MODE=climb CS_BOTS=1
 assert_contains "CS_BOTS=1 still wins in climb mode" "$(cat "${UNIT}")" "Environment=BOTS=1"
 install CS_MODE=match CS_GAME=dod

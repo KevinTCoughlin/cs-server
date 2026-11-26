@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Read the movement server's record TSVs and write records.json.
+# Installed for user cs (see the records page section of the README).
+# Does not start, stop, reload or restart the game server.
+
+[Unit]
+Description=Export movement-server records to records.json
+Documentation=https://github.com/KevinTCoughlin/cs-server#records-page
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cs-records-export
+Environment=CS_RECORDS_DIR=%h/.local/share/containers/storage/volumes/cs-server-state-movement/_data/amxmodx/records
+Environment=CS_RECORDS_OUT=%h/.local/share/cs-server/records.json
+Nice=10
+SyslogIdentifier=cs-records-export

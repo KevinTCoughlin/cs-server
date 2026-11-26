@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+"""Export the movement server's top lists to records.json.
+
+Reads <map>.tsv the way movement.sma load_records() does (blank lines and
+lines starting with '#' are skipped, a row with fewer than 7 tab fields is
+skipped, a non-positive time is skipped, a time out of order is skipped, and
+each category stops at 15). The records directory is only opened for reading.
+
+The JSON file is replaced by writing a temporary file in the same directory
+and renaming it. When the lists, the server block and the disclaimer are
+unchanged, the existing file is left in place, including its updated_at.
+
+This program does not start, stop, reload or restart the game server.
+"""
+
+import argparse
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+MAX_TOP = 15
+
+SERVER_NAME = "Slopes & Ladders | Surf + Climb"
+SERVER_ADDR = "23.95.254.87:27016"
+SERVER_CONNECT = "connect 23.95.254.87:27016"
+SERVER_FASTDL = "http://23.95.254.87:27080/cstrike/"
+DISCLAIMER = (
+    "Times from this server only. Not official Kreedz or KZ-Rush records."
+)
+
+# Compared when deciding whether the output is already current. updated_at
+# and any extra keys (a sample flag, a note) are ignored on purpose.
+CONTENT_KEYS = ("server", "disclaimer", "maps")
+
+
+def str_to_num(text):
+    """Pawn str_to_num: optional sign, then leading digits. The rest is ignored."""
+    text = text.strip()
+    if not text:
+        return 0
+    sign = 1
+    i = 0
+    if text[0] in "+-":
+        if text[0] == "-":
+            sign = -1
+        i = 1
+    n = 0
+    saw = False
+    while i < len(text) and text[i].isdigit():
+        n = n * 10 + int(text[i])
+        saw = True
+        i += 1
+    if not saw:
+        return 0
+    return sign * n
+
+
+def format_time(centis):
+    """mm:ss.cc, matching movement.sma format_time_centis. Minutes may exceed 99."""
+    minutes = centis // 6000
+    seconds = (centis // 100) % 60
+    hundredths = centis % 100
+    return f"{minutes:02d}:{seconds:02d}.{hundredths:02d}"
+
+
+def format_at(unix):
+    """UTC timestamp. A value the clock cannot format is left as a decimal string."""
+    try:
+        dt = datetime.fromtimestamp(int(unix), timezone.utc)
+    except (OverflowError, ValueError, OSError):
+        return str(int(unix))
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def read_text(path):
+    raw = path.read_bytes()
+    if raw.startswith(b"\xef\xbb\xbf"):
+        raw = raw[3:]
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
+
+
+def parse_file(text):
+    buckets = {"pro": [], "cp": []}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line[0] == "#":
+            continue
+        parts = line.split("\t")
+        if len(parts) < 7:
+            continue
+        centis = str_to_num(parts[1])
+        # Anything other than the exact category "cp" is a pro row.
+        cat = "cp" if parts[0] == "cp" else "pro"
+        bucket = buckets[cat]
+        if (
+            len(bucket) >= MAX_TOP
+            or centis <= 0
+            or (bucket and bucket[-1]["time_cs"] > centis)
+        ):
+            continue
+        bucket.append(
+            {
+                "rank": len(bucket) + 1,
+                "time_cs": centis,
+                "time": format_time(centis),
+                "checkpoints": str_to_num(parts[2]),
+                "teleports": str_to_num(parts[3]),
+                "at": format_at(str_to_num(parts[4])),
+                "player": parts[5],
+                "name": parts[6],
+            }
+        )
+    return buckets["pro"], buckets["cp"]
+
+
+def load_maps(records):
+    maps = {}
+    paths = sorted(records.iterdir(), key=lambda item: item.name)
+    for path in paths:
+        if not path.is_file() or path.name.startswith("."):
+            continue
+        if not path.name.endswith(".tsv"):
+            continue
+        stem = path.stem
+        if not stem or stem in {".", ".."}:
+            continue
+        pro, cp = parse_file(read_text(path))
+        if not pro and not cp:
+            continue
+        maps[stem] = {"pro": pro, "cp": cp}
+    return maps
+
+
+def build_doc(maps, updated_at):
+    return {
+        "updated_at": updated_at,
+        "server": {
+            "name": SERVER_NAME,
+            "addr": SERVER_ADDR,
+            "connect": SERVER_CONNECT,
+            "fastdl": SERVER_FASTDL,
+        },
+        "disclaimer": DISCLAIMER,
+        "maps": maps,
+    }
+
+
+def same_lists(old, new):
+    if not isinstance(old, dict):
+        return False
+    for key in CONTENT_KEYS:
+        if old.get(key) != new.get(key):
+            return False
+    return True
+
+
+def read_json(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+
+
+def is_inside(path, parent):
+    path = path.resolve()
+    parent = parent.resolve()
+    if path == parent:
+        return True
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def atomic_write(path, text):
+    """Write text via a temp file in the same directory, then rename over path."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+        try:
+            os.chmod(path, 0o644)
+        except OSError:
+            pass
+        dir_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            try:
+                os.fsync(dir_fd)
+            except OSError:
+                pass
+        finally:
+            os.close(dir_fd)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
+def env_path(name):
+    value = os.environ.get(name, "").strip()
+    return value or None
+
+
+def resolve_paths(args):
+    home = Path.home()
+    records = args.records or env_path("CS_RECORDS_DIR")
+    output = args.output or env_path("CS_RECORDS_OUT")
+    if not records:
+        records = (
+            home
+            / ".local/share/containers/storage/volumes"
+            / "cs-server-state-movement/_data/amxmodx/records"
+        )
+    if not output:
+        output = home / ".local/share/cs-server/records.json"
+    return Path(records), Path(output)
+
+
+def export(records, output):
+    if not records.is_dir():
+        print(f"error: records directory not found: {records}", file=sys.stderr)
+        return 1
+    if is_inside(output, records):
+        print(
+            f"error: refusing to write inside the records directory: {output}",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        maps = load_maps(records)
+    except OSError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    doc = build_doc(maps, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    current = read_json(output)
+    if current is not None and same_lists(current, doc):
+        print(f"unchanged {output}")
+        return 0
+    try:
+        atomic_write(output, json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"wrote {output}")
+    return 0
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--records",
+        help="Directory of <map>.tsv files, opened read-only. "
+        "Defaults to CS_RECORDS_DIR, then the movement state volume.",
+    )
+    parser.add_argument(
+        "--output",
+        help="Where to write records.json. "
+        "Defaults to CS_RECORDS_OUT, then ~/.local/share/cs-server/records.json.",
+    )
+    args = parser.parse_args(argv)
+    records, output = resolve_paths(args)
+    return export(records, output)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

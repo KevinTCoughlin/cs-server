@@ -534,7 +534,8 @@ checkpoints, teleports, Unix time, Steam id, name). `mv_top` prints the lists
 on the server console, and `mv_record "<player>" "<name>" <centiseconds>
 <checkpoints> <teleports>` enters a time by hand (quote the Steam id: the
 console splits on `:`). The times are this server's
-own and are not records of any climbing community.
+own and are not records of any climbing community. The movement server
+publishes its lists on the [records page](#records-page).
 
 The published image has none of these maps, because the project does not
 redistribute them. Build an image that does (`just fetch-maps && just build`);
@@ -580,7 +581,71 @@ The rotation is `surf_ski_5`, `surf_nice_fly_4`, `surf_srventer`,
 `surf_nice_fly` and `surf_colorama_beta`. A rotation can mix surf and climb
 maps: the map's prefix picks the physics, so a `kz_` or `bkz_` map in a surf
 rotation gets climb settings and a `surf_` map in a climb rotation gets surf
-settings.
+settings. That overlay stays in place for `MODE=surf` and `MODE=climb`.
+
+### Surf and climb on one server
+
+`MODE=auto` (the same as `MODE=movement`) picks the mode from the map name
+each time a map loads, then execs that mode's cfg after `server.cfg`, so a
+later map does not keep the previous air acceleration. `surf_` maps get surf
+settings (air acceleration 100, no fall damage, bunny hop, timer zones).
+`kz_`, `bkz_`, `kz??_` (kz, two characters, then `_`), `hb_` and `bhop_` maps
+get climb settings (air acceleration 10, timer buttons). Anything else is
+climb. `config/modes/map-modes.ini` is that table: an `exact` line wins, then
+the longest `prefix`, then `default`.
+
+```bash
+just mode movement        # mapcycle-movement.txt, at the next round end
+MODE=auto                 # or MODE=movement, on a server of its own
+```
+
+`mapcycle-movement.txt` lists the climb maps and the surf maps. `rtv` follows
+`mapcyclefile`, so votes cover both. `plugins/amxmodx/modes/auto.ini` is the
+plugin list for both modes (they already load the same plugins). Bunny hop
+stays loaded and the mode cfg turns it on or off. `movement.amxx` uses zones
+or buttons according to the resolved mode.
+
+`just mode auto` is still the Friday schedule (knife mode on Friday evening,
+ScoutzKnivez otherwise). It does not turn on per-map surf and climb.
+
+### Records page
+
+The movement server (port 27016, state volume `cs-server-state-movement`)
+keeps each map's top 15 pro times and top 15 checkpoint times in that volume
+at `amxmodx/records/<map>.tsv`. A static page lists them:
+
+https://kevintcoughlin.com/cs-server/records/
+
+`ops/scripts/cs-records-export` reads that directory and writes `records.json`.
+It opens the TSVs read-only, writes the JSON by renaming a temporary file in
+the output directory, and leaves the file alone when the lists have not
+changed. A missing records directory exits without replacing an existing JSON
+file. Rows are kept the way `load_records()` keeps them: a blank line or a
+`#` comment is skipped, a short row is skipped, a time out of order is
+skipped, and each category stops at 15. The document has `updated_at`, the
+server (name, address, connect command, FastDL URL), a disclaimer, and each
+map's `pro` and `cp` rows (rank, centiseconds, `mm:ss.cc`, checkpoints,
+teleports, UTC time, player, name). A player key of `name:…` is a LAN name;
+a `STEAM_` id is the account the page links.
+
+On the VPS, as user `cs`, from a checkout of this repo (one line):
+
+```bash
+install -Dm755 ops/scripts/cs-records-export ~/.local/bin/cs-records-export && install -Dm644 ops/systemd/cs-records-export.service ops/systemd/cs-records-export.timer -t ~/.config/systemd/user && systemctl --user daemon-reload && systemctl --user enable --now cs-records-export.timer
+```
+
+The timer runs every 10 minutes. It does not start, stop, reload or restart
+the game server. `daemon-reload` reloads the user service manager so it sees
+the new timer; it does not reload the game server. The JSON is written to
+`~/.local/share/cs-server/records.json`. `CS_RECORDS_DIR` and `CS_RECORDS_OUT`
+override the two paths. Turn the timer off with
+`systemctl --user disable --now cs-records-export.timer`.
+
+The page is `docs/records/index.html`. It only fetches `./records.json`. The
+JSON committed next to it is sample data, marked `"sample": true`, so the
+site has something to render. It is not under `docs/cstrike/`, which is the
+FastDL tree. Enabling the timer writes the file on the VPS; it does not
+publish that file to the site.
 
 ### Match (5v5)
 
@@ -772,7 +837,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `DOD_PASSWORD` | empty | Day of Defeat `sv_password`. Ignored by every other game. Installer: `CS_DOD_PASSWORD` |
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
-| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike), `match` (5v5: warmup, knife round, pause), `climb` (KZ maps: timer, checkpoints, top lists) or `surf` (surf maps: timer zones); the last two have no bots unless `BOTS=1` |
+| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike), `match` (5v5: warmup, knife round, pause), `climb` (KZ maps: timer, checkpoints, top lists), `surf` (surf maps: timer zones) or `auto` (surf or climb from the map name; `movement` is the same). Climb, surf and auto have no bots unless `BOTS=1` |
 | `METRICS_PORT` | empty | Serve Prometheus metrics on this port inside the container; see [Metrics](#metrics). `METRICS_BIND` (default `0.0.0.0`) is the address it listens on |
 | `FASTDL_URL` | empty | http(s) URL serving your `cstrike/` content (`sv_downloadurl`); see [FastDL](#fastdl-fast-downloads) |
 | `LOGS` | `1` | Write server log files (1=on, 0=off); see [Saved state and logs](#saved-state-and-logs) |

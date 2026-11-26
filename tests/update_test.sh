@@ -338,7 +338,7 @@ assert_contains "bootstrap documents the movement image line" \
     "cs-server-movement 27016 ghcr.io/kevintcoughlin/cs-server-movement cs-fastdl-movement"
 
 maps=$(bash "${ROOT}/scripts/movement-maps.sh")
-for cycle in mapcycle-climb.txt mapcycle-surf.txt; do
+for cycle in mapcycle-climb.txt mapcycle-surf.txt mapcycle-movement.txt; do
     while IFS= read -r name; do
         [[ -z "${name}" || "${name}" == \;* || "${name}" == /* ]] && continue
         name=${name%%[[:space:]]*}

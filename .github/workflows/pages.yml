@@ -37,6 +37,18 @@ jobs:
           source: ./docs
           destination: ./_site
 
+      # docs/records is static (no front matter). Confirm Jekyll copied it,
+      # and that the records JSON never lands in the FastDL tree.
+      - name: Records page is in the site
+        run: |
+          test -s _site/records/index.html
+          test -s _site/records/records.json
+          grep -q 'fetch("./records.json")' _site/records/index.html
+          if [ -d _site/cstrike ] && find _site/cstrike -name records.json -print -quit | grep -q .; then
+            echo "records.json must not be published under cstrike/" >&2
+            exit 1
+          fi
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
 

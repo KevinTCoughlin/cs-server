@@ -154,9 +154,9 @@ assert_contains "sidecar health check" \
     "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" "HealthCmd=/fastdl.sh check"
 assert_contains "sidecar has a writable tmpfs" \
     "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" "Tmpfs=/tmp"
-assert_contains "movement runs climb" \
-    "$(cat "${ROOT}/quadlet/cs-server-movement.container")" "Environment=MODE=climb"
-assert_contains "movement uses the climb rotation" \
-    "$(cat "${ROOT}/quadlet/cs-server-movement.container")" "Environment=MAPCYCLE=mapcycle-climb.txt"
+assert_contains "movement runs per-map mode" \
+    "$(cat "${ROOT}/quadlet/cs-server-movement.container")" "Environment=MODE=auto"
+assert_contains "movement uses the combined rotation" \
+    "$(cat "${ROOT}/quadlet/cs-server-movement.container")" "Environment=MAPCYCLE=mapcycle-movement.txt"
 
 printf 'qol tests passed\n'
