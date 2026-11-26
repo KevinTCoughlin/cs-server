@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **Movement physics, free look, and surf checkpoints.** `modes/climb.cfg` pins the Kreedz legal settings from <https://kreedz.com/rules> (Settings, checked 2026-11-26): `sv_gravity 800`, `sv_airaccelerate 10`, `sv_accelerate 5`, `sv_friction 4`, `edgefriction 2`, `sv_stopspeed 75`, `sv_maxvelocity 2000`, `sv_maxspeed 320`, `sv_stepsize 18`, `sv_wateraccelerate 10`. `modes/surf.cfg` sets that same list with `sv_airaccelerate 100`, `sv_maxvelocity 3500` and `mp_falldamage 0`. Both files set every value, so a map change does not keep the previous cap. The other mode files set `sv_maxvelocity 2000` so surf's 3500 does not leak. `mp_forcechasecam 0` is in both movement cfgs. There is no separate movement `server.cfg`; the shared one still sets 2 and a 30 minute clock, and the mode file runs after it. Climb maps last 60 minutes (a first attempt on `kz_man_everest` was running into the old 30). Surf maps last 40, inside the 30 to 45 range, so a checkpoint run fits and the five-map rotation still turns. On surf, `/cp` saves in the air, five checkpoints are kept, and `/tp` restores the saved speed and view angles. The run is still a cp run. Climb stays ground-only, two slots, and `/tp` stops you. `/spec` toggles spectator and stops the timer
+
 ### Fixed
 - **The records page never reached GitHub Pages.** The Pages check looked for `fetch("./records.json")`, but the page calls `fetch("./records.json", ...)`. With `bash -e` that failed the build before the site was uploaded, so `cs-server-update` would not roll `main`. The check now matches the call. Pull requests build the site and run the check, and do not deploy
 

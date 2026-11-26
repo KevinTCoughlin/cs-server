@@ -506,10 +506,13 @@ minute or two) and it is kept in the state volume.
 ### Climb (KZ)
 
 `MODE=climb` is for climb maps: get from the start button to the stop button
-at the top. Physics are stock (gravity 800, air acceleration 10), because the
-maps are built around them. There are no rounds, a fall puts you straight back
-in, there are no bots, and players pass through each other and cannot hurt
-each other.
+at the top. Physics are the Kreedz legal settings
+(<https://kreedz.com/rules>, Settings): gravity 800, air acceleration 10,
+accelerate 5, friction 4, edge friction 2, stop speed 75, max speed 320,
+step size 18, water accelerate 10, speed cap 2000. There are no rounds, a
+fall puts you straight back in, there are no bots, and players pass through
+each other and cannot hurt each other. While you are dead or spectating the
+camera is free (`mp_forcechasecam 0`).
 
 ```bash
 just mode climb           # climb maps on mapcycle-climb.txt
@@ -520,10 +523,11 @@ CS_MODE=climb CS_INSTANCE=climb CS_PORT=27016 bash install.sh   # or a server of
 
 | Say | What it does |
 |-----|--------------|
-| `/cp` | Save a checkpoint where you stand (on the ground only) |
-| `/tp` (or `/gc`) | Go back to the last checkpoint |
+| `/cp` | Save a checkpoint where you stand (on the ground only). Two are kept |
+| `/tp` (or `/gc`) | Go back to the last checkpoint. You arrive stopped |
 | `/stuck` | Go back to the checkpoint before that |
 | `/start` (or `/restart`) | Go back to the start button and stop the timer |
+| `/spec` | Toggle spectator. Going to spec stops and clears the timer |
 | `/top` | This map's best times |
 
 A run with no teleport is a **pro** run. A run that used `/tp` or `/stuck`, or
@@ -549,15 +553,28 @@ and one that targets `counter_off`, or the other names listed in
 `movement.sma`); on a map without them everything but the timer works. None of
 these maps is cleared for FastDL, so players download them from the game
 server itself, which is slow for a map of 2 to 6 MB. The mode starts on the
-rotation's first map, and a map changes after `mp_timelimit` minutes (30) or
-by `rtv`. Leaving the mode with `just mode scoutz` takes up to three minutes,
-because no round ends here.
+rotation's first map, and a map changes after `mp_timelimit` minutes (60) or
+by `rtv`. 60 minutes is one long attempt on `kz_man_everest` plus retries. A
+30 minute clock was changing the map under a run that was still going. `0`
+would leave an empty server on one map. The clock still ends a run that is
+in progress when it hits zero. Leaving the mode with `just mode scoutz` takes
+up to three minutes, because no round ends here.
 
 ### Surf
 
-`MODE=surf` is for surf maps: air acceleration 100, no fall damage, bunny hop,
-no rounds and no bots. The chat commands, the two top lists and the local
-build with fetched maps are the same as in [climb mode](#climb-kz).
+`MODE=surf` is for surf maps. Physics are the same Kreedz list as climb, with
+two changes a ramp needs: air acceleration 100 and a speed cap of 3500 (the
+Kreedz cap of 2000 cuts speed on a long ramp). No fall damage, bunny hop, no
+rounds and no bots. Free look is on here too. A map changes after 40 minutes
+or by `rtv`. 40 is long enough for a checkpoint run and short enough that the
+five-map rotation still turns over.
+
+`/cp` saves in the air as well as on the ground, and five checkpoints are
+kept. `/tp` (or `/gc`) puts you back with the saved speed and view angles, and
+the run counts as a cp run from then on. `/stuck` walks one checkpoint further
+back each time you say it. `/spec` toggles spectator and stops the timer.
+The other chat commands, the two top lists and the local build with fetched
+maps are the same as in [climb mode](#climb-kz).
 
 ```bash
 just mode surf            # surf maps on mapcycle-surf.txt
@@ -587,12 +604,18 @@ settings. That overlay stays in place for `MODE=surf` and `MODE=climb`.
 
 `MODE=auto` (the same as `MODE=movement`) picks the mode from the map name
 each time a map loads, then execs that mode's cfg after `server.cfg`, so a
-later map does not keep the previous air acceleration. `surf_` maps get surf
-settings (air acceleration 100, no fall damage, bunny hop, timer zones).
-`kz_`, `bkz_`, `kz??_` (kz, two characters, then `_`), `hb_` and `bhop_` maps
-get climb settings (air acceleration 10, timer buttons). Anything else is
-climb. `config/modes/map-modes.ini` is that table: an `exact` line wins, then
-the longest `prefix`, then `default`.
+later map does not keep the previous air acceleration, speed cap or map
+clock. Both cfgs set every one of those values. `surf_` maps get surf
+settings (air acceleration 100, speed cap 3500, no fall damage, bunny hop, a
+40 minute clock, timer zones, air checkpoints). `kz_`, `bkz_`, `kz??_` (kz,
+two characters, then `_`), `hb_` and `bhop_` maps get climb settings (the
+Kreedz list, a 60 minute clock, timer buttons, ground checkpoints). Anything
+else is climb. `config/modes/map-modes.ini` is that table: an `exact` line
+wins, then the longest `prefix`, then `default`.
+
+There is no separate movement `server.cfg`. The movement server uses the
+shared file, which still sets a first-person deathcam and a 30 minute clock.
+`climb.cfg` or `surf.cfg` runs after it and overrides both.
 
 ```bash
 just mode movement        # mapcycle-movement.txt, at the next round end
@@ -603,7 +626,7 @@ MODE=auto                 # or MODE=movement, on a server of its own
 `mapcyclefile`, so votes cover both. `plugins/amxmodx/modes/auto.ini` is the
 plugin list for both modes (they already load the same plugins). Bunny hop
 stays loaded and the mode cfg turns it on or off. `movement.amxx` uses zones
-or buttons according to the resolved mode.
+or buttons, and the checkpoint rules, according to the resolved mode.
 
 `just mode auto` is still the Friday schedule (knife mode on Friday evening,
 ScoutzKnivez otherwise). It does not turn on per-map surf and climb.

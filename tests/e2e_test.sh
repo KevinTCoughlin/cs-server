@@ -301,6 +301,8 @@ knife_gravity=$(sed -n 's/^sv_gravity[[:space:]]*"\{0,1\}\([0-9]*\).*/\1/p' "${R
     fail "expected different sv_gravity values in config/modes/scoutz.cfg and config/modes/knife.cfg"
 
 expect_cvar sv_gravity "${gravity}" "scoutz gravity from modes/scoutz.cfg"
+expect_cvar sv_maxvelocity 2000 "scoutz keeps the stock speed cap"
+expect_cvar mp_forcechasecam 2 "scoutz keeps the first-person deathcam"
 expect_cvar mapcyclefile mapcycle.txt "default mapcycle"
 expect_cvar sv_downloadurl "${FASTDL}" "FASTDL_URL sets the download URL"
 map=$(current_map)
@@ -614,10 +616,23 @@ else
     expect_cvar mapcyclefile mapcycle-climb.txt "MODE=climb uses the climb rotation"
     expect_cvar sv_gravity 800 "climb gravity"
     expect_cvar sv_airaccelerate 10 "climb air acceleration"
+    expect_cvar sv_accelerate 5 "climb accelerate"
+    expect_cvar sv_friction 4 "climb friction"
+    expect_cvar edgefriction 2 "climb edge friction"
+    expect_cvar sv_stopspeed 75 "climb stop speed"
+    expect_cvar sv_maxvelocity 2000 "climb speed cap"
+    expect_cvar sv_maxspeed 320 "climb max speed"
+    expect_cvar sv_stepsize 18 "climb step size"
+    expect_cvar sv_wateraccelerate 10 "climb water accelerate"
+    expect_cvar mp_forcechasecam 0 "free look in climb mode"
+    expect_cvar mp_timelimit 60 "climb map clock"
+    expect_cvar mp_falldamage 1 "fall damage in climb mode"
     expect_cvar mp_round_infinite 1 "no rounds in climb mode"
     expect_cvar bot_quota 0 "no bots in climb mode"
     tr -d '\r' < "${LOG}" | grep -aqF "[MV] ${climb_map}: timer buttons found" ||
         fail "movement.amxx found no timer buttons on ${climb_map}"
+    tr -d '\r' < "${LOG}" | grep -aqF "[MV] ${climb_map}: checkpoints ground, velocity cleared" ||
+        fail "climb checkpoints did not stay ground-only"
 
     line=$(ask 'mv_record "STEAM_0:0:1" "Ada" 12345 0 0' '\[MV\] (not )?recorded')
     assert_contains "a first time tops the pro list" "${line}" "recorded: pro #1"
@@ -662,6 +677,9 @@ else
     expect_cvar mp_round_infinite 0 "climb's endless round does not leak into scoutz"
     expect_cvar mp_forcerespawn 0 "climb's respawn does not leak into scoutz"
     expect_cvar sv_gravity "${gravity}" "scoutz gravity after climb"
+    expect_cvar sv_maxvelocity 2000 "climb's speed cap does not leak into scoutz"
+    expect_cvar mp_forcechasecam 2 "free look does not leak into scoutz"
+    expect_cvar mp_timelimit 30 "climb's map clock does not leak into scoutz"
     plugins_after=$(all_running "amxx plugins" "${listed}")
     assert_eq "plugins.ini is back after climb" "${plugins}" "${plugins_after}"
     step "switched from climb to scoutz"
@@ -684,11 +702,23 @@ else
     assert_eq "MODE=surf starts on the rotation's first map" "${surf_map}" "${map}"
     expect_cvar mapcyclefile mapcycle-surf.txt "MODE=surf uses the surf rotation"
     expect_cvar sv_airaccelerate 100 "surf air acceleration"
+    expect_cvar sv_accelerate 5 "surf accelerate"
+    expect_cvar sv_friction 4 "surf friction"
+    expect_cvar edgefriction 2 "surf edge friction"
+    expect_cvar sv_stopspeed 75 "surf stop speed"
+    expect_cvar sv_maxvelocity 3500 "surf speed cap"
+    expect_cvar sv_maxspeed 320 "surf max speed"
+    expect_cvar sv_stepsize 18 "surf step size"
+    expect_cvar sv_wateraccelerate 10 "surf water accelerate"
+    expect_cvar mp_forcechasecam 0 "free look in surf mode"
+    expect_cvar mp_timelimit 40 "surf map clock"
     expect_cvar mp_falldamage 0 "no fall damage in surf mode"
     expect_cvar autobhop_enabled 1 "bunny hop in surf mode"
     expect_cvar bot_quota 0 "no bots in surf mode"
     tr -d '\r' < "${LOG}" | grep -aqF "[MV] ${surf_map}: spawn start zone, no end zone" ||
         fail "movement.amxx did not make a start zone from the spawn points on ${surf_map}"
+    tr -d '\r' < "${LOG}" | grep -aqF "[MV] ${surf_map}: checkpoints air, velocity restored" ||
+        fail "surf checkpoints did not allow an air save"
     line=$(ask "mv_zone_set end 0 0 0 64 64 64" '\[MV\] end zone saved')
     assert_contains "an end zone completes the timer" "${line}" "spawn start zone, end zone"
     "${ENGINE}" exec "${NAME}" grep -q '^end 0 0 0 64 64 128$' "/hlds/state/amxmodx/zones/${surf_map}.txt" ||
@@ -717,8 +747,14 @@ else
         send "changelevel ${climb_map}"
         wait_log '\[SK\] mode: surf' 90 >/dev/null || fail "changelevel ${climb_map} in surf mode"
         expect_cvar sv_airaccelerate 10 "a climb map in the surf rotation gets climb physics"
+        expect_cvar sv_maxvelocity 2000 "and the Kreedz speed cap"
+        expect_cvar mp_timelimit 60 "and the climb map clock"
         expect_cvar autobhop_enabled 0 "and no bunny hop"
         expect_cvar mp_falldamage 1 "and fall damage"
+        # The climb boot earlier in this log already printed the ground line.
+        # Only the lines since this changelevel count.
+        wait_log "\\[MV\\] ${climb_map}: checkpoints ground, velocity cleared" 20 >/dev/null ||
+            fail "a climb map in the surf rotation kept surf checkpoints"
     fi
     step "MODE=surf on ${surf_map}: ${surf_plugins} plugins, zones kept"
 fi
