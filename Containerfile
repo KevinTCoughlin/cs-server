@@ -240,7 +240,7 @@ WORKDIR /hlds/${GAME}/addons/amxmodx/scripting
 RUN chmod +x amxxpc && mkdir -p /out && \
     plugins="metrics.sma" && \
     if [ "${GAME}" = cstrike ]; then \
-        plugins="scoutzknivez.sma match.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma metrics.sma"; \
+        plugins="scoutzknivez.sma match.sma movement.sma autobhop.sma AQS.sma rtv.sma websitebot.sma afkkicker.sma highpingkicker.sma advertisements.sma metrics.sma"; \
     elif [ "${GAME}" = dod ]; then \
         plugins="metrics.sma dodmode.sma"; \
     fi && \
@@ -413,6 +413,7 @@ RUN . /usr/local/share/cs-server/game.env && \
     { [ -z "${GAME_STATS}" ] || ln -s "/hlds/state/amxmodx/${GAME_STATS}" "${amx}/data/${GAME_STATS}"; } && \
     ln -s /hlds/state/amxmodx/vault.ini     "${amx}/data/vault.ini" && \
     ln -s /hlds/state/amxmodx/vault         "${amx}/data/vault" && \
+    ln -s /hlds/state/amxmodx/records       "${amx}/data/records" && \
     ln -s /tmp/hlds-runtime                 /hlds/.runtime && \
     ln -s /hlds/.runtime/metrics.prom       "${amx}/data/metrics.prom" && \
     if [ "${GAME_BOTS}" = 1 ]; then \

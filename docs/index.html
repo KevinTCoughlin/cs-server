@@ -659,7 +659,7 @@ footer p{max-width:60em}
               <tr><td><code>BOTS</code></td><td><code>1</code></td><td>Enable bots (1=on, 0=off)</td></tr>
               <tr><td><code>LAN_MODE</code></td><td><code>0</code></td><td>LAN-only server (1) or public (0)</td></tr>
               <tr><td><code>MAPCYCLE</code></td><td><code>mapcycle.txt</code></td><td>Map rotation file, e.g. <code>mapcycle-dust2.txt</code></td></tr>
-              <tr><td><code>MODE</code></td><td><code>scoutz</code></td><td>Startup game mode: <code>scoutz</code>, <code>knife</code> (Nipper Friday), <code>vanilla</code> or <code>match</code>. See <a href="#modes">Game modes</a></td></tr>
+              <tr><td><code>MODE</code></td><td><code>scoutz</code></td><td>Startup game mode: <code>scoutz</code>, <code>knife</code> (Nipper Friday), <code>vanilla</code>, <code>match</code> or <code>climb</code>. See <a href="#modes">Game modes</a></td></tr>
               <tr><td><code>NOMASTER</code></td><td><code>0</code></td><td>Skip the master server (1=on). For Docker Desktop on Windows</td></tr>
               <tr><td><code>LOGS</code></td><td><code>1</code></td><td>Write server log files to the state volume (1=on, 0=off)</td></tr>
               <tr><td><code>LOG_RETENTION_DAYS</code></td><td><code>7</code></td><td>Delete log files older than this many days (0 keeps them all)</td></tr>
@@ -669,9 +669,9 @@ footer p{max-width:60em}
       </details>
 
       <details id="modes">
-        <summary>Game modes <small>ScoutzKnivez, knife, vanilla, 5v5 match</small></summary>
+        <summary>Game modes <small>ScoutzKnivez, knife, vanilla, 5v5 match, climb</small></summary>
         <div class="d-body">
-          <p>One server, four modes. <code>just mode &lt;name&gt;</code> switches at the end of the round with no restart; <code>MODE</code> picks the one it starts in.</p>
+          <p>One server, five modes. <code>just mode &lt;name&gt;</code> switches at the end of the round with no restart; <code>MODE</code> picks the one it starts in.</p>
           <div class="tbl"><table class="kv">
             <thead><tr><th>Mode</th><th>What it is</th></tr></thead>
             <tbody>
@@ -679,6 +679,7 @@ footer p{max-width:60em}
               <tr><td><code>nipper</code></td><td>Knives only on NIPPER's maps (<code>MODE=knife</code>). See <a href="#nipper">Nipper Friday</a>.</td></tr>
               <tr><td><code>vanilla</code></td><td>Stock Counter-Strike: normal gravity, buying, bombs and hostages, $800.</td></tr>
               <tr><td><code>match</code></td><td>A 5v5 match, first to 16 of 30 rounds, sides swapped after 15.</td></tr>
+              <tr><td><code>climb</code></td><td>KZ maps with a run timer, checkpoints (<code>/cp</code>, <code>/tp</code>) and a top 15 per map (<code>/top</code>). Stock physics, no rounds, no bots.</td></tr>
             </tbody>
           </table></div>
           <p>A match goes through four steps on every map:</p>

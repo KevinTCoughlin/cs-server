@@ -40,8 +40,8 @@ expect_invalid "METRICS_BIND must be an IPv4 address" METRICS_PORT=9137 METRICS_
 expect_invalid "PORT must be an integer from 1 to 65535" PORT=18446744073709551616
 expect_invalid "MAP must be a filename" "MAP=scoutzknivez;quit"
 expect_invalid "MAPCYCLE must be a filename" MAPCYCLE=../server.cfg
-expect_invalid "MODE must be scoutz, knife, vanilla or match" MODE=nipper
-expect_invalid "MODE must be scoutz, knife, vanilla or match" "MODE=knife;quit"
+expect_invalid "MODE must be scoutz, knife, vanilla, match or climb" MODE=nipper
+expect_invalid "MODE must be scoutz, knife, vanilla, match or climb" "MODE=knife;quit"
 expect_invalid "FASTDL_URL must be an http(s) URL" FASTDL_URL=ftp://example.com/cstrike/
 expect_invalid "FASTDL_URL must be an http(s) URL" FASTDL_URL=example.com/cstrike/
 expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.com/;quit"
@@ -283,6 +283,35 @@ args=$(cat "${WORK_DIR}/args")
 case "${args}" in
     *amxx_plugins*) printf 'A mode without its own list uses plugins.ini, got: %s\n' "${args}" >&2; exit 1 ;;
 esac
+
+# Climb: its own rotation, the rotation's first map, and no bots unless asked.
+printf '; a comment\n\n// another\nkz_absent\nkz_first extra\nkz_second\n' > "${WORK_DIR}/cstrike/mapcycle-climb.txt"
+run_stub MODE=climb
+if [[ "${status}" -eq 0 ]] || ! grep -q "has none of the maps in mapcycle-climb.txt" "${WORK_DIR}/output"; then
+    printf 'Expected MODE=climb to stop without a climb map, got %d:\n' "${status}" >&2
+    cat "${WORK_DIR}/output" >&2
+    exit 1
+fi
+mkdir -p "${WORK_DIR}/cstrike/maps"
+: > "${WORK_DIR}/cstrike/maps/kz_first.bsp"
+: > "${WORK_DIR}/cstrike/maps/kz_second.bsp"
+run_stub MODE=climb
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"+map kz_first "*"+mapcyclefile mapcycle-climb.txt "*"+localinfo sk_mode climb"*) ;;
+    *) printf 'Expected the climb defaults, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+case "${args}" in
+    *"+bot_quota 0 +localinfo sk_bots 0"*) ;;
+    *) printf 'Expected no bots in climb mode, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+run_stub MODE=climb MAP=kz_second BOTS=1
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"+map kz_second "*"+bot_quota 10"*) ;;
+    *) printf 'Expected MAP and BOTS to override the climb defaults, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+[[ -d "${WORK_DIR}/state/amxmodx/records" ]] || { printf 'No records directory in the state volume\n' >&2; exit 1; }
 rm -rf "${WORK_DIR}/cstrike/addons"
 case "${args}" in
     *"+exec server.cfg +exec banned.cfg +exec listip.cfg "*" +log on") ;;

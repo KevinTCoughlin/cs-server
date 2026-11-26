@@ -20,6 +20,10 @@
 //   hlds_server_fps                    frames per second over the interval
 //                                      (metrics_fps 0 turns the frame hook off)
 //   hlds_updated_timestamp_seconds     when this file was written
+//   hlds_movement_runs_total           finished timed runs, and
+//   hlds_movement_bests_total          top-list entries, since the server
+//                                      started (movement modes only; counted
+//                                      by movement.amxx in localinfo)
 
 #pragma semicolon 1
 
@@ -35,7 +39,7 @@ new g_iStarted;
 new bool:g_bCountFrames;
 
 public plugin_init() {
-    register_plugin("Metrics", "1.0", "cs-server");
+    register_plugin("Metrics", "1.1", "cs-server");
 
     g_pcvarInterval = register_cvar("metrics_interval", "5");
     new pcvarFps = register_cvar("metrics_fps", "1");
@@ -104,6 +108,13 @@ write_metrics() {
     fprintf(f, "# HELP hlds_uptime_seconds Time since the server's first map.^n# TYPE hlds_uptime_seconds gauge^nhlds_uptime_seconds %d^n", iSystime - g_iStarted);
     if (g_bCountFrames) {
         fprintf(f, "# HELP hlds_server_fps Server frames per second.^n# TYPE hlds_server_fps gauge^nhlds_server_fps %.1f^n", fFps);
+    }
+    new szRuns[16], szBests[16];
+    get_localinfo("mv_runs", szRuns, charsmax(szRuns));
+    get_localinfo("mv_bests", szBests, charsmax(szBests));
+    if (szRuns[0] || szBests[0]) {
+        fprintf(f, "# HELP hlds_movement_runs_total Finished timed runs.^n# TYPE hlds_movement_runs_total counter^nhlds_movement_runs_total %d^n", str_to_num(szRuns));
+        fprintf(f, "# HELP hlds_movement_bests_total Top-list entries made.^n# TYPE hlds_movement_bests_total counter^nhlds_movement_bests_total %d^n", str_to_num(szBests));
     }
     fprintf(f, "# HELP hlds_updated_timestamp_seconds When these values were written.^n# TYPE hlds_updated_timestamp_seconds gauge^nhlds_updated_timestamp_seconds %d^n", iSystime);
     fclose(f);

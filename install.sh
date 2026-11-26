@@ -42,8 +42,8 @@
 #                      directory and state volume; needs CS_PORT
 #   CS_PORT            UDP port (default 27015). Each instance needs its own
 #   CS_MODE            Counter-Strike game mode at startup: scoutz (default),
-#                      knife, vanilla or match
-#   CS_BOTS=0          no bots (default 1)
+#                      knife, vanilla, match or climb
+#   CS_BOTS=0          no bots (default 1; 0 in climb mode)
 #   CS_FASTDL=1        also run a FastDL sidecar: a small web server from the
 #                      same image that serves the maps to clients over HTTP
 #                      (CS_FASTDL_PORT, default 27080/tcp; CS_FASTDL_HOST is the
@@ -196,9 +196,9 @@ if [[ -z "${MODE}" ]]; then
     [[ -z "${LAN_KIT}" ]] || MODE="match"
 fi
 case "${MODE}" in
-    scoutz | knife | vanilla | match) ;;
+    scoutz | knife | vanilla | match | climb) ;;
     *)
-        printf '[error] Invalid CS_MODE: %s (expected scoutz, knife, vanilla or match)\n' "${MODE}" >&2
+        printf '[error] Invalid CS_MODE: %s (expected scoutz, knife, vanilla, match or climb)\n' "${MODE}" >&2
         exit 1
         ;;
 esac
@@ -242,7 +242,7 @@ fi
 BOTS="${CS_BOTS:-}"
 if [[ -z "${BOTS}" ]]; then
     BOTS=1
-    [[ -z "${LAN_KIT}" ]] || BOTS=0
+    [[ -z "${LAN_KIT}" && "${MODE}" != "climb" ]] || BOTS=0
 fi
 if [[ "${BOTS}" != "0" && "${BOTS}" != "1" ]]; then
     printf '[error] Invalid CS_BOTS: %s (expected 0 or 1)\n' "${BOTS}" >&2
@@ -382,7 +382,7 @@ Environment:
   CS_DOD_PASSWORD=<pass>   Day of Defeat sv_password (optional)
   CS_GSLT=<token>          32-hex Steam token (app 10 for CS, app 30 for DoD)
   CS_INSECURE=1            -insecure, without hiding the server (-nomaster)
-  CS_MODE=<mode>           Start in scoutz (default), knife, vanilla or match
+  CS_MODE=<mode>           Start in scoutz (default), knife, vanilla, match or climb
   CS_BOTS=0                No bots
   CS_FASTDL=1              Also serve the maps to clients over HTTP (port 27080/tcp)
   CS_LAN_KIT=<n>           LAN event: n match servers (lan1..lan<n>) and FastDL
@@ -683,7 +683,7 @@ do_install() {
 
 # Files bind-mounted into the container. Keep in sync with compose.yml and
 # quadlet/scoutzknivez.container (tests/mounts_test.sh checks all of them).
-CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt mapcycle-nipper-xmas.txt)
+CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt mapcycle-nipper-xmas.txt mapcycle-climb.txt)
 CONFIG_DIRS=(modes)
 # Another game has its stock settings and one map cycle, and no modes.
 # Day of Defeat mounts the pub and match files so an admin can edit them.
@@ -754,6 +754,11 @@ start_map() {
     if [[ "${GAME}" == "cstrike" && ( "${MODE}" == "vanilla" || "${MODE}" == "match" ) ]]; then
         START_MAP="de_dust2"
         START_CYCLE="mapcycle-dust2.txt"
+    elif [[ "${GAME}" == "cstrike" && "${MODE}" == "climb" ]]; then
+        # No MAP: the server starts on the first map of the rotation, so an
+        # edited rotation needs no second change here.
+        START_MAP=""
+        START_CYCLE="mapcycle-climb.txt"
     elif [[ "${GAME}" == "dod" ]]; then
         START_MAP="dod_anzio"
         if [[ "${DOD_MODE}" == "match" ]]; then
@@ -1042,7 +1047,7 @@ quadlet_unit() {
     local map_env="" mode_env="" dod_env="" insecure_env=""
     start_map
     if [[ "${GAME}" == "cstrike" ]]; then
-        map_env="Environment=MAP=${START_MAP}"$'\n'
+        [[ -z "${START_MAP}" ]] || map_env="Environment=MAP=${START_MAP}"$'\n'
         mode_env="Environment=MODE=${MODE}"$'\n'
     elif [[ "${GAME}" == "dod" ]]; then
         dod_env="Environment=DOD_MODE=${DOD_MODE}"$'\n'
@@ -1214,7 +1219,8 @@ install_docker() {
     local game_args=()
     start_map
     if [[ "${GAME}" == "cstrike" ]]; then
-        game_args=(-e "MAP=${START_MAP}" -e "MODE=${MODE}")
+        game_args=(-e "MODE=${MODE}")
+        [[ -z "${START_MAP}" ]] || game_args+=(-e "MAP=${START_MAP}")
     elif [[ "${GAME}" == "dod" ]]; then
         game_args=(-e "DOD_MODE=${DOD_MODE}")
         if [[ -n "${DOD_PASSWORD}" ]]; then

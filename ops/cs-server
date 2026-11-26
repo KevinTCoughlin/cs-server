@@ -54,7 +54,7 @@ LA_DIR="${HOME}/Library/LaunchAgents"
 LABEL="com.kevintcoughlin.cs-server"
 FRIDAY_LABEL="${LABEL}.friday"
 GUI="gui/$(id -u)"
-CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt mapcycle-nipper-xmas.txt)
+CONFIG_FILES=(server.cfg mapcycle.txt mapcycle-dust2.txt mapcycle-nipper.txt mapcycle-nipper-xmas.txt mapcycle-climb.txt)
 
 log() {
     local ts
