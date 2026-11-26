@@ -398,7 +398,7 @@ printf '"admin" "" "abcdefghijklmnopqrstu" "ce"\n' > "${state}/amxmodx/users.ini
 : > "${state}/logs/new.log"
 : > "${state}/amxmodx/logs/old.log"
 : > "${state}/logs/old.txt"
-touch -d '30 days ago' "${state}/logs/old.log" "${state}/amxmodx/logs/old.log" "${state}/logs/old.txt"
+touch -d '40 days ago' "${state}/logs/old.log" "${state}/amxmodx/logs/old.log" "${state}/logs/old.txt"
 run_stub
 if [[ "$(cat "${state}/listip.cfg")" != "addip 0 192.0.2.7" ]] || ! grep -q '^"admin"' "${state}/amxmodx/users.ini"; then
     printf 'The entrypoint must not overwrite existing state files\n' >&2
@@ -414,7 +414,7 @@ if [[ ! -e "${state}/logs/new.log" || ! -e "${state}/logs/old.txt" ]]; then
 fi
 
 : > "${state}/logs/old.log"
-touch -d '30 days ago' "${state}/logs/old.log"
+touch -d '40 days ago' "${state}/logs/old.log"
 run_stub LOG_RETENTION_DAYS=0
 if [[ ! -e "${state}/logs/old.log" ]]; then
     printf 'LOG_RETENTION_DAYS=0 must keep every log\n' >&2
