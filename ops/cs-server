@@ -97,7 +97,9 @@ build_image() {
     local slim status=0
     slim=$(mktemp "${TMPDIR:-/tmp}/cs-server-Containerfile.XXXXXX")
     grep -vE '^[[:space:]]*#([^!]|$)' "${REPO}/Containerfile" > "${slim}"
-    (cd "${REPO}" && container build --platform linux/arm64 -t "${IMAGE}" -f "${slim}" .) || status=$?
+    # MAP_POLICY=local keeps maps the operator fetched. Published CI builds
+    # stay on the Containerfile default, cleared.
+    (cd "${REPO}" && container build --platform linux/arm64 -t "${IMAGE}" --build-arg "MAP_POLICY=${MAP_POLICY:-local}" -f "${slim}" .) || status=$?
     rm -f "${slim}"
     if [[ "${stop_builder}" == "1" ]]; then
         log "stopping the image builder VM"

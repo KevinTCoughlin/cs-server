@@ -9,9 +9,13 @@
 # extras (optional): comma-separated custom files from the same zip, under
 # sound/ only, that the map needs; `-` for none.
 #
-# fastdl: `yes` only once the author's terms allow re-hosting; anything else
-# (or a missing column) keeps the map out of `just fastdl`, and
-# tests/mapcycle_test.sh fails if its files are found under docs/cstrike/.
+# fastdl: `yes` only once the author's terms allow re-hosting. This column
+# is the redistribution allowlist. scripts/cleared-maps.sh is the only
+# reader: `just fastdl`, the published image build and the CI check all
+# use it. Anything other than `yes` (or a missing column) keeps the map out
+# of FastDL and out of a published image. A private build (MAP_POLICY=local)
+# can still include it. tests/mapcycle_test.sh fails if a map that is not
+# cleared is found under docs/cstrike/.
 #
 # NIPPER's maps: author-uploaded "NIPPER maps - Complete pack" (one 242 MB zip,
 # downloaded once and cached). CC BY-NC-ND 4.0: credit NIPPER, no commercial

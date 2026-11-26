@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
 #
-# Map names baked into the movement image and not into the default image.
-# The Containerfile is the same (GAME=cstrike). scripts/fetch-maps.sh
-# downloads these rows from maps/manifest.tsv before that build. The list is
-# the climb rotation, the surf rotation, and config/mapcycle-movement.txt
-# when that file exists. Nipper and stock maps are not included: nipper stays
-# out of the published image, and the stock maps are already in it.
+# Map names the movement rotations play. The published image bakes in only
+# the intersection with scripts/cleared-maps.sh (maps/manifest.tsv rows whose
+# fastdl column is yes). A private build (MAP_POLICY=local, `just build`)
+# copies whatever scripts/fetch-maps.sh put in maps/. Nipper and stock maps
+# are not included: nipper stays out of the published image, and the stock
+# maps are already in it.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

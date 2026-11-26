@@ -3,8 +3,9 @@
 # SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
 #
 # Fetch the third-party maps pinned in maps/manifest.tsv into maps/ (and their
-# custom sounds into sound/). Both overlays are gitignored and baked into the
-# image by the Containerfile.
+# custom sounds into sound/). Both overlays are gitignored. A private image
+# build (MAP_POLICY=local) bakes maps/ in. A published build copies only the
+# maps scripts/cleared-maps.sh lists.
 #
 #   scripts/fetch-maps.sh            fetch every row whose .bsp is missing
 #   scripts/fetch-maps.sh <name>...  (re)fetch only these maps

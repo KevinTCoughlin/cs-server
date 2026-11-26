@@ -290,9 +290,14 @@ COPY --from=builder --chown=hlds:hlds /hlds /hlds
 # ---------------------------------------------------------------------------
 FROM runtime-base AS game-cstrike
 
-# Bundled default maps, then any local custom maps overlaid on top.
+# Bundled default maps, then the maps/ overlay. MAP_POLICY=cleared (the
+# default, used by every published build) copies a pinned map only when
+# scripts/cleared-maps.sh lists it. The overlay is a bind mount, so a map
+# that is not cleared never enters a layer. MAP_POLICY=local is the private
+# server build and copies maps/ as it stands.
 COPY --chown=hlds:hlds docs/cstrike/maps/*.bsp docs/cstrike/maps/*.nav /hlds/cstrike/maps/
-COPY --chown=hlds:hlds maps/ /hlds/cstrike/maps/
+ARG MAP_POLICY=cleared
+RUN --mount=type=bind,source=scripts,target=/s,ro --mount=type=bind,source=maps,target=/m,ro MAP_POLICY="${MAP_POLICY}" MAPS_MANIFEST=/m/manifest.tsv bash /s/install-maps.sh /m /hlds/cstrike/maps
 COPY --chown=hlds:hlds sound/ /hlds/cstrike/sound/
 
 COPY --from=plugins --chown=hlds:hlds /out/ /hlds/cstrike/addons/amxmodx/plugins/
