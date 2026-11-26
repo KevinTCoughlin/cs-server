@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Roll Quadlets onto the image published for main (CHANNEL=release for tags).
+# The script is copied to ~/.local/bin/cs-server-update.
+
+[Unit]
+Description=Roll game servers onto the published image when nobody is playing
+Documentation=https://github.com/KevinTCoughlin/cs-server#deploy-on-a-fresh-vps
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cs-server-update
+EnvironmentFile=-%h/.config/cs-server/update.env
+Nice=10
+TimeoutStartSec=1800
+SyslogIdentifier=cs-server-update

@@ -22,11 +22,13 @@ Environment=MAPCYCLE=mapcycle.txt
 Environment=LAN_MODE=0
 Environment=MODE=scoutz
 Environment=LOGS=1
-Environment=LOG_RETENTION_DAYS=7
+Environment=LOG_RETENTION_DAYS=30
 ReadOnly=true
 Tmpfs=/tmp
 DropCapability=ALL
 NoNewPrivileges=true
+# Under memory pressure the kernel kills the game before sshd and system services.
+PodmanArgs=--oom-score-adj=500
 HealthCmd=/healthcheck.sh
 HealthInterval=30s
 HealthTimeout=5s

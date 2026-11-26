@@ -1,0 +1,87 @@
+# Rebuilding the CS VPS
+
+A fresh Debian 13 VPS, back to the public Counter-Strike server, from this
+repository. Addresses, image digests, and extra ports are variables. Nothing
+here is a specific host.
+
+## What one bootstrap recreates
+
+As root, with the operator's SSH public key:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/ops/bootstrap-vps.sh \
+  | sudo bash -s -- --ssh-key "ssh-ed25519 AAAA... you@host"
+```
+
+That creates the deploy user (`cs` unless `--user` says otherwise), installs
+Podman on Debian 13, fail2ban's sshd jail, unattended-upgrades that do not
+reboot on their own, sysctl (`vm.swappiness=10` and the hardening file),
+journald limits, an sshd OOM score of -900, the `cs` admin helper and the
+login banner, the player-aware reboot timer, the nftables rules, and then
+runs `install.sh` as that user. The Quadlet image is pinned to the digest of
+the image just pulled, with `LOG_RETENTION_DAYS=30` and
+`--oom-score-adj=500`. Daily state backups, a monthly restore test, and the
+on-box rollout timer (`cs-server-update`, `CHANNEL=main`) are installed.
+`CS_DOD=1` adds Day of Defeat on `27016/udp`.
+
+After a second terminal can log in with a key:
+
+```bash
+sudo bash ops/bootstrap-vps.sh --harden-ssh
+```
+
+Password login turns off. Root key login stays. Add `--nopasswd-sudo` only
+when the deploy user should be the admin and root SSH should turn off.
+
+If `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` shows a provider
+template comment (`nerdvm.com`), pass `--regenerate-host-keys` once. Clients
+see a new fingerprint. The bootstrap warns when it sees that comment.
+
+Set the repository variable `CS_HEALTH_HOST` to the new public IPv4 so the
+uptime workflow has somewhere to send A2S. `CS_HEALTH_PORT` defaults to
+27015. `CS_HEALTH_EXTRA_PORTS` is a space-separated list (for example
+`27016`).
+
+## What backups restore
+
+`cs-server-backup` archives Podman volumes `cs-server-state*`,
+`dod-server-state*`, and the matching config directories under
+`~/.config` (`config-<name>-<utc>.tar.gz`). `offsite.env` is not in those
+archives. Stop the server, then:
+
+```bash
+cs-server-backup --restore ~/cs-server-backups/cs-server-state-<utc>.tar.gz
+cs-server-backup --restore ~/cs-server-backups/config-cs-server-<utc>.tar.gz
+```
+
+Off-site copies run only after `~/.config/cs-server/offsite.env` exists and
+is mode 0600. The bucket and the token are created by hand.
+
+## On-box rollout
+
+`~cs/.config/cs-server/update.env` sets `CHANNEL=main`. The timer pulls
+`ghcr.io/kevintcoughlin/cs-server:main`, which the image workflow publishes
+on a push to `main` together with `:sha-<7 character commit>`. It pins
+`:sha-<7>@sha256:<digest>` only when that commit's GitHub checks are green,
+the commit message does not contain `[skip deploy]` or `[manual]`, and no
+human is on a listed port. `CHANNEL=release` follows the latest stable GitHub
+release instead. See the README section "On-box rollout".
+
+The image workflow is path-filtered, so a commit that does not change the
+server does not move `:main`. Podman auto-update is not used: a digest pin
+does not move, and this timer is what rolls a new digest on purpose.
+
+## Still done by hand
+
+| Thing | Why it is not in the bootstrap |
+| --- | --- |
+| Movement server image | `localhost/cs-server:movement-*` was built on one box. CI does not build or publish it (`docker.yml` publishes `ghcr.io/kevintcoughlin/cs-server` only). Its config directory is backed up once the directory exists (`config-cs-server-movement-*.tar.gz`). The image itself is not. To roll it later, publish an image that uses the same `:main` and `:sha-<7>` tags and uncomment the line in `update.units`. |
+| Movement Quadlet and its local edits | `install.sh` does not know that server. Copy `~cs/.config/containers/systemd/cs-server-movement.container` and `~cs/.config/cs-server-movement/` from a backup. |
+| Provider panel | Hostname, firewall in front of the VM, rDNS, and the console live in the provider panel. A new VPS has a new address. |
+| DNS and listings | Every place that names the public address: FastDL URL, the website, server-browser listings, `connect` strings, and `CS_HEALTH_HOST`. |
+| `authorized_keys` | Only the key passed to `--ssh-key` is installed. Extra keys, including a rollout key, are copied by hand. |
+| SSH host keys | Do not restore the old keys onto a new machine. Generate new ones (`--regenerate-host-keys` on a template image). |
+| Off-site credentials | The four `OFFSITE_*` values. The script and the drop-in ship; the secret does not. |
+| fail2ban incremental bans | Not part of this repository. The bootstrap enables the sshd jail only. |

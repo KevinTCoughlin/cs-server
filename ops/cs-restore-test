@@ -1,0 +1,164 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+# Monthly restore test for the state backups made by cs-server-backup.
+#
+# For every volume it takes the newest archive and checks it is a readable
+# gzip/tar with files in it (and not old). For the main CS volume it also:
+#   * checks the key files (bans, AMX admins/access) exist in the archive
+#   * imports it into a throwaway podman volume, starts a scratch copy of the
+#     running server image with NO network and no published ports, using the
+#     production config files, and waits until the engine log shows the server
+#     config executed and a round started on the map
+#   * removes the container, the volume and the temp files
+# The engine boot is skipped (file checks still run) while a human is playing.
+# Output goes to stdout, so the systemd user journal has the result.
+#   cs-restore-test            run
+#   CS_RESTORE_NO_ENGINE=1     file checks only
+#   CS_RESTORE_PORTS           ports to ask before the engine boot (default
+#                              "27015 27016"). A port that does not answer is
+#                              not treated as busy.
+# Exit status: 0 pass, 1 fail.
+set -uo pipefail
+
+BACKUP_DIR="${CS_BACKUP_DIR:-${HOME}/cs-server-backups}"
+MAIN_PREFIX="${CS_RESTORE_MAIN:-cs-server-state}"
+MAX_AGE_DAYS="${CS_RESTORE_MAX_AGE_DAYS:-3}"
+PORTS="${CS_RESTORE_PORTS:-27015 27016}"
+PLAYERS="${CS_PLAYERS:-/usr/local/sbin/cs-players}"
+NAME="cs-restore-test"
+VOL="cs-restore-test-state"
+QUADLET="${CS_RESTORE_QUADLET:-${HOME}/.config/containers/systemd/scoutzknivez.container}"
+CONTAINER="${CS_RESTORE_CONTAINER:-scoutzknivez}"
+SCRATCH=$(mktemp -d /tmp/cs-restore-test.XXXXXX)
+FAILED=0
+
+log() { printf 'restore-test: %s\n' "$*"; }
+bad() { log "FAIL: $*"; FAILED=1; }
+
+# shellcheck disable=SC2329 # invoked by the EXIT trap
+cleanup() {
+    podman rm -f "${NAME}" >/dev/null 2>&1 || true
+    podman volume rm -f "${VOL}" >/dev/null 2>&1 || true
+    rm -rf "${SCRATCH}"
+}
+trap cleanup EXIT
+podman rm -f "${NAME}" >/dev/null 2>&1 || true
+podman volume rm -f "${VOL}" >/dev/null 2>&1 || true
+
+mapfile -t volumes < <(
+    find "${BACKUP_DIR}" -maxdepth 1 -type f -name '*-[0-9]*T[0-9]*Z.tar.gz' -printf '%f\n' |
+        sed -E 's/-[0-9]{8}T[0-9]{6}Z\.tar\.gz$//' | sort -u
+)
+if [[ ${#volumes[@]} -eq 0 ]]; then
+    bad "no archives in ${BACKUP_DIR}"
+    log "RESULT: FAIL"
+    exit 1
+fi
+
+MAIN_ARCHIVE=""
+for v in "${volumes[@]}"; do
+    a=$(find "${BACKUP_DIR}" -maxdepth 1 -type f -name "${v}-[0-9]*T[0-9]*Z.tar.gz" | sort | tail -1)
+    age_days=$(( ( $(date +%s) - $(stat -c %Y "${a}") ) / 86400 ))
+    if ! gzip -t -- "${a}" 2>/dev/null; then
+        bad "${v}: gzip test failed (${a##*/})"
+        continue
+    fi
+    list="${SCRATCH}/${v}.list"
+    if ! gzip -dc -- "${a}" | tar -tf - > "${list}" 2>/dev/null; then
+        bad "${v}: tar listing failed"
+        continue
+    fi
+    n=$(wc -l < "${list}")
+    size=$(stat -c %s "${a}")
+    log "${v}: ${a##*/} ${size} bytes, ${n} entries, ${age_days} day(s) old"
+    [[ "${n}" -gt 0 ]] || bad "${v}: archive is empty"
+    if ((age_days > MAX_AGE_DAYS)); then
+        if [[ "${v}" == "${MAIN_PREFIX}" ]]; then
+            bad "${v}: newest archive is older than ${MAX_AGE_DAYS} days"
+        else
+            log "WARN: ${v}: newest archive is older than ${MAX_AGE_DAYS} days"
+        fi
+    fi
+    if [[ "${v}" == "${MAIN_PREFIX}" ]]; then
+        MAIN_ARCHIVE="${a}"
+        for f in banned.cfg listip.cfg amxmodx/users.ini amxmodx/cmdaccess.ini; do
+            grep -qE "^(\./)?${f}\$" "${list}" || bad "${v}: ${f} missing from archive"
+        done
+    fi
+done
+[[ -n "${MAIN_ARCHIVE}" ]] || bad "no ${MAIN_PREFIX} archive"
+
+if [[ -n "${MAIN_ARCHIVE}" && "${CS_RESTORE_NO_ENGINE:-0}" != "1" && "${FAILED}" == "0" ]]; then
+    busy=0
+    # shellcheck disable=SC2086
+    for port in ${PORTS}; do
+        out=$("${PLAYERS}" 127.0.0.1 "${port}" 2>/dev/null) || continue
+        h=${out#humans=}
+        h=${h%% *}
+        [[ "${h}" =~ ^[0-9]+$ && "${h}" -gt 0 ]] && busy=1
+    done
+    if [[ "${busy}" == "1" ]]; then
+        log "engine boot skipped: players are online (file checks passed)"
+    else
+        image=$(podman inspect "${CONTAINER}" --format '{{.ImageName}}' 2>/dev/null || true)
+        image="${image:-${CS_SERVER_IMAGE:-}}"
+        if [[ -z "${image}" ]]; then
+            bad "cannot find the server image"
+        else
+            podman volume create "${VOL}" >/dev/null
+            if ! gzip -dc -- "${MAIN_ARCHIVE}" | podman volume import "${VOL}" - 2>"${SCRATCH}/import.err"; then
+                bad "volume import failed: $(head -c 200 "${SCRATCH}/import.err")"
+            else
+                mp=$(podman volume inspect "${VOL}" --format '{{.Mountpoint}}')
+                podman unshare chown -R 10001:10001 "${mp}" || bad "could not set ownership on the scratch volume"
+                binds=()
+                if [[ -f "${QUADLET}" ]]; then
+                    while IFS= read -r line; do
+                        binds+=(-v "${line#Volume=}")
+                    done < <(grep '^Volume=/' "${QUADLET}" || true)
+                fi
+                if ! podman run -d --name "${NAME}" --network none --read-only --tmpfs /tmp \
+                    --cap-drop all --security-opt no-new-privileges \
+                    --memory 384m --cpus 0.5 --pids-limit 512 --oom-score-adj 900 \
+                    -e MAP=scoutzknivez -e MODE=scoutz -e MAXPLAYERS=4 -e BOTS=0 -e LAN_MODE=1 -e LOGS=1 \
+                    ${binds[@]+"${binds[@]}"} -v "${VOL}:/hlds/state" "${image}" >/dev/null 2>"${SCRATCH}/run.err"; then
+                    bad "scratch container did not start: $(head -c 200 "${SCRATCH}/run.err")"
+                fi
+                if podman container exists "${NAME}"; then
+                    ok=0
+                    i=0
+                    while ((i < 36)); do
+                        i=$((i + 1))
+                        sleep 5
+                        podman logs "${NAME}" > "${SCRATCH}/engine.log" 2>&1 || true
+                        if grep -q 'World triggered "Round_Start"' "${SCRATCH}/engine.log" &&
+                            [[ $(grep -c 'Server cvar' "${SCRATCH}/engine.log") -gt 10 ]]; then
+                            ok=1
+                            break
+                        fi
+                        [[ "$(podman inspect "${NAME}" --format '{{.State.Running}}' 2>/dev/null)" == "true" ]] || break
+                    done
+                    podman logs "${NAME}" > "${SCRATCH}/engine.log" 2>&1 || true
+                    if [[ "${ok}" == "1" ]]; then
+                        log "engine loaded the map and the server config from the restored state after about $((i * 5))s ($(grep -c 'Server cvar' "${SCRATCH}/engine.log") cvars set)"
+                    else
+                        bad "engine did not reach a running round; last log lines: $(tail -n 5 "${SCRATCH}/engine.log" | tr '\n' '|' | head -c 400)"
+                    fi
+                    if grep -qiE "not writable|couldn't exec|cannot open (server|banned|listip)" "${SCRATCH}/engine.log"; then
+                        bad "engine log has config/state errors: $(grep -iE 'not writable|couldn.t exec|cannot open' "${SCRATCH}/engine.log" | head -n 3 | tr '\n' '|')"
+                    fi
+                    podman exec "${NAME}" sh -c 'test -s /hlds/state/amxmodx/users.ini && test -f /hlds/state/banned.cfg' 2>/dev/null ||
+                        bad "restored state files are not readable inside the container"
+                fi
+            fi
+        fi
+    fi
+fi
+
+if [[ "${FAILED}" == "0" ]]; then
+    log "RESULT: PASS"
+    exit 0
+fi
+log "RESULT: FAIL"
+exit 1

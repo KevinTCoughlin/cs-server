@@ -155,27 +155,27 @@ start_peer "${WORK}/humans.pkt" info
 ask_players "$(cat "${WORK}/peer.port")"
 stop_peer
 [[ "${status}" -eq 0 ]] || fail "source info: ${output} $(cat "${WORK}/players.err")"
-assert_eq "source humans are players minus bots" "humans=2 players=6 bots=4" "${output}"
+assert_eq "source humans are players minus bots" "humans=2 players=6 bots=4 map=de_dust2" "${output}"
 
 source_info 8 8 > "${WORK}/bots.pkt"
 start_peer "${WORK}/bots.pkt" info
 ask_players "$(cat "${WORK}/peer.port")"
 stop_peer
-assert_eq "source bots only" "humans=0 players=8 bots=8" "${output}"
+assert_eq "source bots only" "humans=0 players=8 bots=8 map=de_dust2" "${output}"
 
 goldsrc_info 5 1 > "${WORK}/gold.pkt"
 start_peer "${WORK}/gold.pkt" info
 ask_players "$(cat "${WORK}/peer.port")"
 stop_peer
 [[ "${status}" -eq 0 ]] || fail "goldsrc info: ${output} $(cat "${WORK}/players.err")"
-assert_eq "goldsrc humans" "humans=4 players=5 bots=1" "${output}"
+assert_eq "goldsrc humans" "humans=4 players=5 bots=1 map=de_dust2" "${output}"
 
 source_info 3 1 > "${WORK}/challenge.pkt"
 start_peer "${WORK}/challenge.pkt" challenge
 ask_players "$(cat "${WORK}/peer.port")"
 stop_peer
 [[ "${status}" -eq 0 ]] || fail "challenge info: ${output} $(cat "${WORK}/players.err")"
-assert_eq "challenge then info" "humans=2 players=3 bots=1" "${output}"
+assert_eq "challenge then info" "humans=2 players=3 bots=1 map=de_dust2" "${output}"
 
 ask_players 1
 [[ "${status}" -eq 2 ]] || fail "closed port should be unknown, got ${status}: ${output}"

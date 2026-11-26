@@ -125,7 +125,7 @@ To turn the timer off: `sudo systemctl disable --now cs-reboot-if-idle.timer`. T
 
 `install.sh` resolves the digest of the image it just pulled and writes the Quadlet `Image=` line as `ghcr.io/kevintcoughlin/cs-server:<tag>@sha256:<digest>`. The digest is Podman's `.Digest` (what `podman images --digests` shows for this machine). A multi-arch tag can also list the index digest in `RepoDigests`; that one is not used when `.Digest` is present. Re-running the installer with a new `CS_SERVER_VERSION` pulls that tag and writes the new digest. That is how a release is rolled out, including a daily run of the installer against a moving tag such as `1`.
 
-`CS_AUTO_UPDATE=1` leaves `Image=` on the tag. `podman-auto-update.timer` can then follow the tag. A digest never moves, so the two are not combined. `CS_PIN_DIGEST=0` also leaves the tag. A local image with no registry digest (a `just` build) stays on its tag. See [Releases, upgrade and rollback](#releases-upgrade-and-rollback).
+`CS_AUTO_UPDATE=1` leaves `Image=` on the tag so `podman-auto-update.timer` can follow it. A digest never moves, so that timer is not used on a pinned unit. The VPS does not enable it: the host rolls itself with [On-box rollout](#on-box-rollout), which pins a new digest only after CI is green and nobody is playing. `CS_PIN_DIGEST=0` also leaves the tag. A local image with no registry digest (a `just` build) stays on its tag. See [Releases, upgrade and rollback](#releases-upgrade-and-rollback).
 
 Resolve the digest this host would pin, without changing the unit:
 
@@ -134,7 +134,30 @@ podman pull ghcr.io/kevintcoughlin/cs-server:1.4.2
 podman image inspect --format '{{.Digest}}' ghcr.io/kevintcoughlin/cs-server:1.4.2
 ```
 
-Roll forward by running the installer again. Roll back by running it with the previous digest (`CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:<digest>`).
+Roll forward by running the installer again, or let the on-box timer do it. Roll back by running the installer with the previous digest (`CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:<digest>`). The timer keeps the previous `Image=` line and puts it back if the new image does not answer.
+
+### On-box rollout
+
+`ops/bootstrap-vps.sh` installs `cs-server-update` for the deploy user and a systemd user timer. It fires at 04:15 America/Los_Angeles and every 20 minutes through 07:55 (`Persistent=false`, `RandomizedDelaySec=90s`). `CS_UPDATE_CALENDAR` replaces that `OnCalendar` when the bootstrap runs. `CS_UPDATE=0` or `--no-update` removes the timer.
+
+`CHANNEL=main` is the default, in `~cs/.config/cs-server/update.env`. The script pulls `ghcr.io/kevintcoughlin/cs-server:main`. The image workflow publishes that tag on a push to `main`, and also `:sha-<7 character commit>`. It does not publish an image for every commit: the workflow is path-filtered, so a docs-only push leaves `:main` where it was. The script reads `org.opencontainers.image.revision` from the pulled image, and continues only when that commit's check-runs and combined status are green. A commit message containing `[skip deploy]` or `[manual]` is not rolled. The Quadlet `Image=` line becomes `repo:sha-<7>@sha256:<digest>` using the digest Podman stored for this machine. If that digest is already pinned, nothing restarts.
+
+`CHANNEL=release` follows the latest stable GitHub release (not a draft or a prerelease, and not `main`). Release notes that match `BREAKING`, `manual step`, or `migration required` (`CS_UPDATE_BREAKING_RE`) are left for a person. With a mode-0600 `~cs/.config/cs-server/github.token`, that skip opens or comments on a GitHub issue. Without the token, the decision is only in the journal.
+
+Either channel waits until `cs-players` reports no humans on every port in `~cs/.config/cs-server/update.units`. A port that does not answer also waits. The timer retries until 07:55 and then leaves the server until the next morning. Before a restart it runs `cs-server-backup.service`. If the new image does not answer A2S, the previous `Image=` line is restored, the unit is restarted, and the service exits non-zero.
+
+`cs-server-restart`, `cs-reboot-if-idle`, and `cs-server-update` share `/run/lock/cs-server-maintenance.lock`. One of them runs at a time.
+
+```bash
+sudo -u cs /home/cs/.local/bin/cs-server-update --dry-run
+sudo -u cs /home/cs/.local/bin/cs-server-update --now
+cs update --dry-run
+cs update
+```
+
+`update.units` lists `name port [image]`. `scoutzknivez` is installed. The movement server's image (`localhost/cs-server:movement-*`) exists only on that box; CI does not build or publish it, so the line stays commented. When a GHCR image with the same `:main` and `:sha-<7>` tags exists, uncomment the line and name that image. A `localhost/` image is never rolled.
+
+Podman auto-update stays off for this reason: it can only follow a moving tag, and the unit is pinned to a digest so a bad publish cannot move it. The timer above is the rollout. Switching back to releases is one line in `update.env`: `CHANNEL=release`.
 
 ### Off-site backups
 
@@ -652,7 +675,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `METRICS_PORT` | empty | Serve Prometheus metrics on this port inside the container; see [Metrics](#metrics). `METRICS_BIND` (default `0.0.0.0`) is the address it listens on |
 | `FASTDL_URL` | empty | http(s) URL serving your `cstrike/` content (`sv_downloadurl`); see [FastDL](#fastdl-fast-downloads) |
 | `LOGS` | `1` | Write server log files (1=on, 0=off); see [Saved state and logs](#saved-state-and-logs) |
-| `LOG_RETENTION_DAYS` | `7` | Delete log files older than this many days (`0` keeps them all) |
+| `LOG_RETENTION_DAYS` | `30` | Delete log files older than this many days (`0` keeps them all) |
 | `LOGADDRESS` | empty | `host:port` of a log receiver such as HLstatsX (`logaddress_add`); needs `LOGS=1` |
 | `SERVER_IP` | empty | IPv4 address to bind and report to Steam (`+ip`); see [Host networking and Steam](#host-networking-and-steam) |
 | `SERVER_IP_WAIT` | `30` | Seconds to wait at start for `SERVER_IP` to be on an interface (after a reboot the service can start before the network has it); 0 does not wait |
@@ -998,7 +1021,7 @@ replaced.
 
 **Logs.** Log files are small (with only bots playing, under 2 MB a day in
 testing) but they record player names, SteamIDs and IP addresses, so files
-older than `LOG_RETENTION_DAYS` (default 7) are deleted at start and once a
+older than `LOG_RETENTION_DAYS` (default 30) are deleted at start and once a
 day. Set `LOGS=0` to write none.
 `LOGADDRESS=host:port` also streams the log lines over UDP to a stats
 collector.

@@ -69,7 +69,7 @@ MAP="${MAP:-${GAME_MAP}}"
 MAPCYCLE="${MAPCYCLE:-mapcycle.txt}"
 FASTDL_URL="${FASTDL_URL:-}"
 LOGS="${LOGS:-1}"
-LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"
+LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-30}"
 LOGADDRESS="${LOGADDRESS:-}"
 SERVER_IP="${SERVER_IP:-}"
 # How long to wait for SERVER_IP to be on an interface before starting.

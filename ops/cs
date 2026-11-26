@@ -1,0 +1,206 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+# Admin helper for the CS game VPS. Run as root (or as the deploy user).
+#   cs status                 players, map, uptime, reboot-pending, backup age
+#   cs logs [server] [-n N] [--no-follow]
+#   cs restart-if-idle        restart game servers that have no human players
+#   cs backup-now             run the state backup now (and the offsite copy if set up)
+#   cs update [--dry-run]     roll onto the published image when idle
+#   cs motd                   the short summary used in the login banner
+set -uo pipefail
+
+if [[ -r /etc/cs-server/admin.env ]]; then
+    # shellcheck disable=SC1091
+    source /etc/cs-server/admin.env
+fi
+CSU="${CS_DEPLOY_USER:-cs}"
+CSHOME="${CS_ADMIN_HOME:-}"
+if [[ -z "${CSHOME}" ]]; then
+    CSHOME=$(getent passwd "${CSU}" 2>/dev/null | cut -d: -f6 || true)
+fi
+UID_CS=$(id -u "${CSU}" 2>/dev/null || true)
+BACKUPS="${CS_BACKUP_DIR:-${CSHOME}/cs-server-backups}"
+QUADLETS="${CS_QUADLET_DIR:-${CSHOME}/.config/containers/systemd}"
+PLAYERS="${CS_PLAYERS:-/usr/local/sbin/cs-players}"
+REBOOT_STAMP="${CS_REBOOT_REQUIRED_FILE:-/var/run/reboot-required}"
+
+need_home() {
+    if [[ -z "${CSHOME}" || ! -d "${CSHOME}" ]]; then
+        echo "cs: no home directory for ${CSU}" >&2
+        exit 1
+    fi
+}
+
+as_cs() {
+    need_home
+    if [[ "$(id -un)" == "${CSU}" ]]; then
+        (cd /tmp && "$@")
+    elif [[ "$(id -u)" == 0 ]]; then
+        [[ -n "${UID_CS}" ]] || { echo "cs: ${CSU} has no uid" >&2; exit 1; }
+        (cd /tmp && runuser -u "${CSU}" -- env HOME="${CSHOME}" XDG_RUNTIME_DIR="/run/user/${UID_CS}" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${UID_CS}/bus" "$@")
+    else
+        echo "cs: run as root or ${CSU}" >&2
+        exit 1
+    fi
+}
+
+pm() {
+    # Podman warns about cgroup delegation on some hosts. Drop that line only.
+    as_cs podman "$@" 2> >(grep -v 'level=warning' >&2)
+}
+
+# "name port" per Quadlet game server. A unit with no published port is skipped
+# (FastDL publishes TCP and is not listed here when PublishPort is host:container).
+servers() {
+    local f name port
+    [[ -d "${QUADLETS}" ]] || return 0
+    for f in "${QUADLETS}"/*.container; do
+        [[ -f "${f}" ]] || continue
+        name=$(sed -n 's/^ContainerName=//p' "${f}" | head -1)
+        port=$(sed -n 's/^PublishPort=\([0-9]*\):.*/\1/p' "${f}" | head -1)
+        [[ -n "${name}" && -n "${port}" ]] && echo "${name} ${port}"
+    done | sort -k2 -n
+}
+
+ago() {
+    local s="$1"
+    if ((s < 3600)); then
+        printf '%sm\n' "$((s / 60))"
+    elif ((s < 172800)); then
+        printf '%sh %sm\n' "$((s / 3600))" "$(((s % 3600) / 60))"
+    else
+        printf '%sd\n' "$((s / 86400))"
+    fi
+}
+
+last_backup() {
+    local f secs
+    f=$(find "${BACKUPS}" -maxdepth 1 -name '*.tar.gz' -printf '%T@ %f\n' 2>/dev/null | sort -n | tail -1 || true)
+    [[ -n "${f}" ]] || { echo "none"; return; }
+    secs="${f%%.*}"
+    echo "$(ago "$(( $(date +%s) - secs ))") ago (${f#* })"
+}
+
+reboot_pending() {
+    if [[ -e "${REBOOT_STAMP}" ]]; then
+        echo "YES ($(tr '\n' ' ' < "${REBOOT_STAMP}.pkgs" 2>/dev/null | cut -c1-60))"
+    else
+        echo "no"
+    fi
+}
+
+a2s() {
+    CS_PLAYERS_TIMEOUT="${CS_PLAYERS_TIMEOUT:-3}" "${PLAYERS}" 127.0.0.1 "$1" 2>/dev/null || echo "no A2S reply"
+}
+
+cmd_status() {
+    echo "CS server status  $(date '+%Y-%m-%d %H:%M %Z')   host $(hostname)  kernel $(uname -r)"
+    echo
+    local name port st
+    while read -r name port; do
+        st=$(pm ps -a --filter "name=^${name}\$" --format '{{.Status}}' 2>/dev/null || true)
+        printf '%-20s :%-5s %-30s %s\n' "${name}" "${port}" "${st:-not found}" "$(a2s "${port}")"
+    done < <(servers)
+    echo
+    echo "reboot pending : $(reboot_pending)   (auto idle-reboot: $(systemctl is-enabled cs-reboot-if-idle.timer 2>/dev/null || echo disabled))"
+    echo "last backup    : $(last_backup)"
+    echo "disk /         : $(df -h / | awk 'NR==2{print $5" used of "$2}')   memory: $(free -h | awk '/Mem:/{print $7" available of "$2}')   swap used: $(free -h | awk '/Swap:/{print $3}')"
+    local failed
+    failed=$(systemctl --failed --no-legend 2>/dev/null | awk '{print $1}' | tr '\n' ' ' || true)
+    echo "failed units   : ${failed:-none}"
+    echo "ssh sessions   : $(who | wc -l)"
+}
+
+cmd_motd() {
+    local name port line
+    while read -r name port; do
+        ss -uHln "sport = :${port}" | grep -q . || continue
+        line=$(CS_PLAYERS_TIMEOUT=2 "${PLAYERS}" 127.0.0.1 "${port}" 2>/dev/null) || line="no A2S reply"
+        printf '  %-20s :%-5s %s\n' "${name}" "${port}" "${line}"
+    done < <(servers)
+    echo "  reboot pending: $(reboot_pending) | last backup: $(last_backup)"
+    echo "  admin helper: cs status | cs logs | cs backup-now | cs restart-if-idle"
+}
+
+cmd_logs() {
+    local want="" n=50 follow=1
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -n) n="${2:-50}"; shift ;;
+            --no-follow) follow=0 ;;
+            *) want="$1" ;;
+        esac
+        shift
+    done
+    local name="" cand
+    while read -r cand _; do
+        if [[ -z "${want}" && -z "${name}" ]]; then name="${cand}"; fi
+        [[ -n "${want}" && "${cand}" == *"${want}"* ]] && { name="${cand}"; break; }
+    done < <(servers)
+    [[ -n "${name}" ]] || {
+        echo "cs logs: no server matches '${want}'. Known: $(servers | awk '{print $1}' | tr '\n' ' ')" >&2
+        exit 1
+    }
+    if [[ "${follow}" == 1 ]]; then
+        echo "== ${name} (last ${n} lines, following; Ctrl-C to stop) =="
+        pm logs -f --tail "${n}" "${name}"
+    else
+        echo "== ${name} (last ${n} lines) =="
+        pm logs --tail "${n}" "${name}"
+    fi
+}
+
+cmd_restart_if_idle() {
+    need_home
+    echo "Players right now:"
+    local name port
+    while read -r name port; do
+        printf '  %-20s %s\n' "${name}" "$(a2s "${port}")"
+    done < <(servers)
+    echo "Running the idle restart (a server with human players, or one that does not answer, is left alone;"
+    echo "each server restarts at most once per Los Angeles day):"
+    if [[ $# -eq 0 ]]; then
+        as_cs "${CSHOME}/.local/bin/cs-server-restart" --now
+    else
+        as_cs "${CSHOME}/.local/bin/cs-server-restart" "$@"
+    fi
+}
+
+cmd_update() {
+    need_home
+    as_cs "${CSHOME}/.local/bin/cs-server-update" "$@"
+}
+
+cmd_backup_now() {
+    need_home
+    echo "Starting backup (this blocks until it finishes)..."
+    if as_cs systemctl --user start cs-server-backup.service; then
+        echo "backup service finished OK"
+    else
+        echo "backup FAILED: see 'journalctl _UID=${UID_CS} -u cs-server-backup'" >&2
+        exit 1
+    fi
+    echo "Newest archives:"
+    find "${BACKUPS}" -maxdepth 1 -name '*.tar.gz' -printf '%T@ %s %f\n' | sort -n | tail -4 | awk '{printf "  %s  %d bytes\n", $3, $2}'
+    echo "last backup: $(last_backup)"
+}
+
+case "${1:-status}" in
+    status) cmd_status ;;
+    motd) cmd_motd ;;
+    logs) shift; cmd_logs "$@" ;;
+    restart-if-idle) shift; cmd_restart_if_idle "$@" ;;
+    backup-now) cmd_backup_now ;;
+    update)
+        shift
+        if [[ $# -eq 0 ]]; then
+            cmd_update --now
+        else
+            cmd_update "$@"
+        fi
+        ;;
+    -h | --help | help) sed -n '4,9p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) echo "cs: unknown command '$1' (try: cs help)" >&2; exit 1 ;;
+esac

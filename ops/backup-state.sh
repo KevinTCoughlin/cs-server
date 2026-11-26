@@ -39,6 +39,10 @@ Usage:
 
 Stop the server before --restore. CS_BACKUP_DIR, CS_BACKUP_KEEP,
 CS_STATE_VOLUME, CS_RUNTIME and CS_SERVER_IMAGE override the defaults.
+Config directories under ~/.config (cs-server, cs-server-*, dod-server,
+dod-server-*) are archived too, as config-<name>-<utc>.tar.gz, without
+offsite.env. CS_CONFIG_ROOT overrides that directory. Restoring one of those
+archives puts the files back and leaves an existing offsite.env in place.
 EOF
 }
 
@@ -265,9 +269,71 @@ volume_from_archive() {
     printf '%s\n' "${BASH_REMATCH[1]}"
 }
 
+config_root() {
+    printf '%s\n' "${CS_CONFIG_ROOT:-${HOME}/.config}"
+}
+
+# Game config lives next to the state volume, not inside it. Movement and any
+# other instance (cs-server-<name>, dod-server-<name>) are included. offsite.env
+# holds bucket keys and is left out of the archive.
+list_config_dirs() {
+    local root="$1" dir
+    [[ -d "${root}" ]] || return 0
+    shopt -s nullglob
+    for dir in "${root}/cs-server" "${root}/cs-server-"* "${root}/dod-server" "${root}/dod-server-"*; do
+        [[ -d "${dir}" ]] || continue
+        basename "${dir}"
+    done
+    shopt -u nullglob
+}
+
+archive_config() {
+    local base="$1" root="$2" ts="$3" archive="" tmp=""
+    archive="${BACKUP_DIR}/config-${base}-${ts}.tar.gz"
+    tmp="${archive}.partial"
+    if ! tar -C "${root}" --exclude=offsite.env -czf "${tmp}" "${base}"; then
+        rm -f "${tmp}"
+        error "Could not archive ${root}/${base}"
+    fi
+    mv "${tmp}" "${archive}"
+    chmod 600 "${archive}"
+    rotate_archives "config-${base}"
+    info "Backed up config ${base} to ${archive}"
+}
+
+restore_config() {
+    local name="$1" archive="$2" root="" dest="" tmp="" saved=""
+    root=$(config_root)
+    dest="${root}/${name}"
+    if ! gzip -t -- "${archive}"; then
+        error "Archive is malformed or truncated; ${dest} was not changed"
+    fi
+    tmp=$(mktemp -d)
+    if ! tar -C "${tmp}" -xzf "${archive}"; then
+        rm -rf "${tmp}"
+        error "Archive did not extract; ${dest} was not changed"
+    fi
+    mkdir -p "${dest}"
+    if [[ -f "${dest}/offsite.env" ]]; then
+        saved=$(mktemp)
+        cp -a "${dest}/offsite.env" "${saved}"
+    fi
+    cp -a "${tmp}/${name}/." "${dest}/"
+    if [[ -n "${saved}" ]]; then
+        mv "${saved}" "${dest}/offsite.env"
+    fi
+    rm -f "${dest}/offsite.env.partial"
+    rm -rf "${tmp}"
+    info "Restored config ${name} from ${archive}"
+}
+
 if [[ "${ACTION}" == "restore" ]]; then
     volume="${CS_STATE_VOLUME:-$(volume_from_archive "${ARCHIVE}")}"
     volume_ok "${volume}"
+    if [[ "${volume}" == config-* ]]; then
+        restore_config "${volume#config-}" "${ARCHIVE}"
+        exit 0
+    fi
     restore_volume "${volume}" "${ARCHIVE}"
     exit 0
 fi
@@ -289,7 +355,15 @@ while IFS= read -r volume; do
     count=$((count + 1))
 done < <(list_volumes)
 
-if [[ "${count}" -eq 0 ]]; then
+config_ts=$(date -u '+%Y%m%dT%H%M%SZ')
+config_n=0
+while IFS= read -r config_base; do
+    [[ -n "${config_base}" ]] || continue
+    archive_config "${config_base}" "$(config_root)" "${config_ts}"
+    config_n=$((config_n + 1))
+done < <(list_config_dirs "$(config_root)")
+
+if [[ "${count}" -eq 0 && "${config_n}" -eq 0 ]]; then
     info "No cs-server-state volume yet; nothing to back up"
 else
     info "Kept the newest ${KEEP} archive(s) per volume in ${BACKUP_DIR}"

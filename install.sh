@@ -1074,11 +1074,13 @@ Environment=BOTS=${BOTS}
 Environment=MAPCYCLE=${START_CYCLE}
 Environment=LAN_MODE=${lan_mode}
 ${mode_env}${dod_env}${insecure_env}Environment=LOGS=1
-Environment=LOG_RETENTION_DAYS=7${fastdl_env}${server_ip_env}${metrics_env}
+Environment=LOG_RETENTION_DAYS=30${fastdl_env}${server_ip_env}${metrics_env}
 ReadOnly=true
 Tmpfs=/tmp
 DropCapability=ALL
 NoNewPrivileges=true
+# Under memory pressure the kernel kills the game before sshd and system services.
+PodmanArgs=--oom-score-adj=500
 HealthCmd=/healthcheck.sh
 HealthInterval=30s
 HealthTimeout=5s
@@ -1251,7 +1253,8 @@ install_docker() {
         -e "MAPCYCLE=${START_CYCLE}" \
         -e "LAN_MODE=${lan_mode}" \
         -e LOGS=1 \
-        -e LOG_RETENTION_DAYS=7 \
+        -e LOG_RETENTION_DAYS=30 \
+        --oom-score-adj=500 \
         ${fastdl_args[@]+"${fastdl_args[@]}"} \
         ${server_ip_args[@]+"${server_ip_args[@]}"} \
         ${metrics_args[@]+"${metrics_args[@]}"} \
