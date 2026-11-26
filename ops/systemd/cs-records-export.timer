@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Every 10 minutes. Persistent so a host that was off exports once after it
+# boots. This timer only starts cs-records-export.service.
+
+[Unit]
+Description=Export movement-server records every 10 minutes
+
+[Timer]
+OnCalendar=*:0/10
+AccuracySec=30s
+Persistent=true
+Unit=cs-records-export.service
+
+[Install]
+WantedBy=timers.target

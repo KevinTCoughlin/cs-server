@@ -42,7 +42,8 @@ scripts/mode.sh            Runtime mode switch (nipper|scoutz|auto) via the FIFO
 scripts/fetch-maps.sh      Fetch sha256-pinned maps from maps/manifest.tsv
 ops/cs-server              macOS launchd service wrapper (Apple container)
 ops/launchd/               launchd agent templates (server + Nipper Friday)
-ops/systemd/               systemd user timers (Nipper Friday, state backup, daily idle restart)
+ops/scripts/cs-records-export  Read-only export of movement records to records.json
+ops/systemd/               systemd user timers (Nipper Friday, state backup, daily idle restart, records export)
 ops/seccomp/               Docker's upstream default seccomp profile, kept in the image only for installers 1.1-1.4 (nothing current passes a profile; Docker 29.4.2 alone broke i386 sockets, install.sh refuses it)
 ops/firewall/              nftables query-flood rate limit + boot unit (opt-in, never auto-applied)
 config/
@@ -77,6 +78,7 @@ plugins/
     plugins.ini            Metamod plugin list (loads AMX Mod X)
 sound/
   quake/                   Quake sound WAVs (gitignored, see README.md)
+docs/records/              Movement records page (static HTML; sample records.json)
 quadlet/
   scoutzknivez.container   Systemd Quadlet unit (rootless Podman)
 tests/
@@ -115,6 +117,7 @@ tests/
 - **LAN profile**: `CS_PROFILE=lan` (`install.sh`) and `compose.lan.yml` (`just lan-party`) select host networking and `LAN_MODE=1`, because the LAN tab finds servers by broadcast. Never combine it with `NOMASTER=1` (`-nomaster` silences A2S_INFO, so the server is invisible) or `SERVER_IP` (a socket bound to one address hears no broadcasts). `tests/e2e_test.sh` boots once with `--network none` and checks the A2S_INFO reply.
 - **Instances**: `CS_INSTANCE=<name> CS_PORT=<port>` in `install.sh` derives `cs-server-<name>` (service and container), `~/.config/cs-server-<name>` and volume `cs-server-state-<name>`; unset, the names stay `scoutzknivez`, `~/.config/cs-server`, `cs-server-state`. Container port always equals host port (GoldSrc advertises its own). `install.sh` starts the generated unit with `systemctl start`; `enable` fails on Quadlet units.
 - **Quadlet for systemd**: `scoutzknivez.container` unit file enables auto-start, crash recovery (restart on-failure), and resource limits (512MB RAM, 2 CPUs).
+- **Movement records page**: `ops/scripts/cs-records-export` reads `cs-server-state-movement`'s `amxmodx/records/*.tsv` (same rows as `movement.sma` `load_records()`: skip `#` and short rows, drop out-of-order times, 15 per category) and writes `records.json` with a temp file and rename, skipping the write when the lists are unchanged. It does not start, stop, reload or restart the game server. `ops/systemd/cs-records-export.timer` runs it every 10 minutes as user `cs`. The page is `docs/records/index.html` on GitHub Pages (`https://kevintcoughlin.com/cs-server/records/`); it only fetches `./records.json`. The committed JSON is sample data. Do not put it under `docs/cstrike/`.
 - **Daily idle restart (VPS)**: `ops/restart-idle.sh`, installed by `ops/bootstrap-vps.sh` (`CS_RESTART=1`; `--no-restart` removes it; `--restart-only` installs it for an existing deploy user). The user timer fires at 05:00 America/Los_Angeles and every 20 minutes through 08:00 (`Persistent=false`, `RandomizedDelaySec=90s`). It restarts a Quadlet game unit when A2S_INFO reports no human players (`players` minus `bots`). A server that does not answer, including `NOMASTER=1`, stays up. One stamp per unit per Los Angeles day keeps a later pass from restarting it again. `HealthCmd=/healthcheck.sh` marks a game unit; FastDL uses a different health command and is skipped.
 
 ## Key Conventions
