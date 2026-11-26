@@ -878,7 +878,10 @@ if [[ "${ENGINE}" != "container" ]]; then
         fi
         sleep 1
     done
-    assert_eq "host-map FastDL still serves the baked default map" 1 "${served}"
+    if [[ "${served}" -ne 1 ]]; then
+        logs=$("${ENGINE}" logs "${MAPS_FASTDL}" 2>&1 || true)
+        fail "host-map FastDL did not serve the baked map: ${logs}"
+    fi
     # http_code <port> <path>
     http_code() {
         # shellcheck disable=SC2016 # expanded by the container's bash
@@ -908,7 +911,10 @@ if [[ "${ENGINE}" != "container" ]]; then
         fi
         sleep 1
     done
-    assert_eq "cleared-host FastDL serves the baked default map" 1 "${served}"
+    if [[ "${served}" -ne 1 ]]; then
+        logs=$("${ENGINE}" logs "${MAPS_YES}" 2>&1 || true)
+        fail "cleared-host FastDL did not serve the baked map: ${logs}"
+    fi
     code=$(http_code 27082 /cstrike/maps/cleared_one.bsp "${MAPS_YES}")
     assert_eq "FastDL serves a host map marked fastdl=yes" 200 "${code}"
     code=$(http_code 27082 /cstrike/maps/kz_man_everest.bsp "${MAPS_YES}")

@@ -37,7 +37,8 @@ PORT="$((10#${PORT}))"
 
 # Host maps mounted at MAPS_LOCAL. Publish a file only when the manifest
 # says fastdl=yes. The image tree is unchanged when MAPS_LOCAL is unset.
-if [[ -n "${MAPS_LOCAL:-}" ]]; then
+# check must not do this: it would delete the tree the running server is using.
+if [[ -n "${MAPS_LOCAL:-}" && "${1:-serve}" == "serve" ]]; then
     maps_overlay=""
     for maps_overlay in \
         "${HLDS_OVERLAY_SH:-}" \
