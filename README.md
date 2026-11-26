@@ -23,10 +23,10 @@ curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/insta
 
 Requires [Podman](https://podman.io/getting-started/installation) 4.4 or newer (5 or newer for health-gated updates) or [Docker](https://docs.docker.com/get-docker/). The script pulls the image from ghcr.io, creates config files, and starts the server on port 27015. With Podman it installs a systemd Quadlet unit for auto-start; with Docker it creates a container with restart policy.
 
-That runs the current release (`1.4.2`, the newest version in [CHANGELOG.md](CHANGELOG.md); `DEFAULT_VERSION` in `install.sh`). `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` override it. A digest pin is `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:…`. The moving `main` build is `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server:latest`. See [Releases, upgrade and rollback](#releases-upgrade-and-rollback). The installer from the release tag, with the version named:
+That runs the current release (`1.5.0`, the newest version in [CHANGELOG.md](CHANGELOG.md); `DEFAULT_VERSION` in `install.sh`). `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` override it. A digest pin is `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:…`. The moving `main` build is `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server:latest`. See [Releases, upgrade and rollback](#releases-upgrade-and-rollback). The installer from the release tag, with the version named:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.4.2/install.sh | CS_SERVER_VERSION=1.4.2 bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.5.0/install.sh | CS_SERVER_VERSION=1.5.0 bash
 ```
 
 On a new VPS, use [Deploy on a fresh VPS](#deploy-on-a-fresh-vps) instead of this one-liner.
@@ -130,8 +130,8 @@ To turn the timer off: `sudo systemctl disable --now cs-reboot-if-idle.timer`. T
 Resolve the digest this host would pin, without changing the unit:
 
 ```bash
-podman pull ghcr.io/kevintcoughlin/cs-server:1.4.2
-podman image inspect --format '{{.Digest}}' ghcr.io/kevintcoughlin/cs-server:1.4.2
+podman pull ghcr.io/kevintcoughlin/cs-server:1.5.0
+podman image inspect --format '{{.Digest}}' ghcr.io/kevintcoughlin/cs-server:1.5.0
 ```
 
 Roll forward by running the installer again, or let the on-box timer do it. Roll back by running the installer with the previous digest (`CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:<digest>`). The timer keeps the previous `Image=` line and puts it back if the new image does not answer.
@@ -911,7 +911,7 @@ curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/insta
 | Service / container | `scoutzknivez` | `dod-server` |
 | Config directory | `~/.config/cs-server` | `~/.config/dod-server` |
 | State volume | `cs-server-state` | `dod-server-state` |
-| Image | pinned release (`1.4.2`) | `1.4.2-dod` |
+| Image | pinned release (`1.5.0`) | `1.5.0-dod` |
 
 The config directory holds the game's `server.cfg` and `mapcycle.txt`, copied
 from the image on the first install and mounted read-only; edit them and
@@ -1260,14 +1260,14 @@ Each release is a git tag (`v1.0.0`), a [GitHub release](https://github.com/Kevi
 | `nightly` | Weekly rebuild of `main` (fresh base image) | Testing |
 | `@sha256:…` | Never | Exactly one build, including its base image |
 
-**Pin.** A fresh `install.sh` runs the release named by `DEFAULT_VERSION` in that script (currently `1.4.2`, kept equal to the newest `## [x.y.z]` heading in [CHANGELOG.md](CHANGELOG.md)). `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` still override it. `:latest` moves with every push to `main` and is not the default; set `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server:latest` to run it. `compose.yml` and [`quadlet/scoutzknivez.container`](quadlet/scoutzknivez.container) stay on `localhost/cs-server:latest` because those are local builds (`just quadlet`). The checked-in unit's `Notify=healthy` needs Podman 5; on Podman 4.4 through 4.9 the installer omits that line. After a pull, the installer writes `Image=<name>:<tag>@sha256:<digest>` into the Quadlet (and the Docker `run` image), using the digest this engine stored (`podman image inspect --format '{{.Digest}}'`, the same value `podman images --digests` shows). A multi-arch tag can list a second digest for the index; that one is not what the unit pins. Re-running the installer is the rollout: it pulls the tag you name and writes the new digest, so a daily run against `CS_SERVER_VERSION=1` (or `1.4`) moves the pin when that tag moves. `CS_AUTO_UPDATE=1` leaves the tag unpinned so `podman-auto-update.timer` can follow it; a digest pin and auto-update are not combined. `CS_PIN_DIGEST=0` also leaves the tag. The installer prints `CS_SERVER_IMAGE=<repo>@sha256:<digest>` for the rollback command.
+**Pin.** A fresh `install.sh` runs the release named by `DEFAULT_VERSION` in that script (currently `1.5.0`, kept equal to the newest `## [x.y.z]` heading in [CHANGELOG.md](CHANGELOG.md)). `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` still override it. `:latest` moves with every push to `main` and is not the default; set `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server:latest` to run it. `compose.yml` and [`quadlet/scoutzknivez.container`](quadlet/scoutzknivez.container) stay on `localhost/cs-server:latest` because those are local builds (`just quadlet`). The checked-in unit's `Notify=healthy` needs Podman 5; on Podman 4.4 through 4.9 the installer omits that line. After a pull, the installer writes `Image=<name>:<tag>@sha256:<digest>` into the Quadlet (and the Docker `run` image), using the digest this engine stored (`podman image inspect --format '{{.Digest}}'`, the same value `podman images --digests` shows). A multi-arch tag can list a second digest for the index; that one is not what the unit pins. Re-running the installer is the rollout: it pulls the tag you name and writes the new digest, so a daily run against `CS_SERVER_VERSION=1` (or `1.5`) moves the pin when that tag moves. `CS_AUTO_UPDATE=1` leaves the tag unpinned so `podman-auto-update.timer` can follow it; a digest pin and auto-update are not combined. `CS_PIN_DIGEST=0` also leaves the tag. The installer prints `CS_SERVER_IMAGE=<repo>@sha256:<digest>` for the rollback command.
 
 A release tag's copy of `install.sh` is the script from that tag. Pass `CS_SERVER_VERSION` when you curl a tag. The copy on `main` carries `DEFAULT_VERSION`.
 
 **Upgrade** by running the installer again with the new version. Config in `~/.config/cs-server/` is kept, the unit is rewritten, and a running server is restarted onto the new image (players get the 30 second countdown):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.4.2/install.sh | CS_SERVER_VERSION=1.4.2 bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.5.0/install.sh | CS_SERVER_VERSION=1.5.0 bash
 ```
 
 **From 1.0.x to 1.1.0, re-run the installer** rather than editing `Image=`:

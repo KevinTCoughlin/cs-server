@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-26
+
 ### Added
 - **Surf mode.** `MODE=surf` (`CS_MODE=surf`, `just mode surf`): air acceleration 100, no fall damage, bunny hop, no rounds, no bots. Surf maps have no timer buttons, so `movement.amxx` times a run between two zones kept per map in the state volume. The box around the spawn points is the start zone unless one is saved; an admin marks the end zone in game (`mv_zone end` from the client console on two opposite corners, `mv_zone show`, `mv_zone clear`), or the server console takes numbers (`mv_zone_set`). Until a map has an end zone it plays without a timer. `mapcycle-surf.txt` pins `surf_ski_5`, `surf_nice_fly_4`, `surf_srventer`, `surf_nice_fly` and `surf_colorama_beta`; like the climb maps they are not in the published image. A rotation can mix both kinds: the map's prefix picks the physics (`modes/surf_kz.cfg`, `surf_bkz.cfg`, `climb_surf.cfg`)
 - **Climb mode (KZ).** `MODE=climb` (`CS_MODE=climb`, `just mode climb`) runs climb maps with stock gravity and air acceleration, no rounds, instant respawn and no bots. A new plugin, `movement.amxx`, times a run between the map's start and stop buttons, gives each player checkpoints (`/cp`, `/tp`, `/stuck`, `/start`) and keeps two top-15 lists per map in the state volume: "pro" for runs without a teleport and "cp" for the rest (`/top`). Players pass through each other and cannot hurt each other. The rotation, `mapcycle-climb.txt`, starts with four pinned maps that have the standard timer buttons: `kz_man_everest`, `bkz_goldbhop`, `bkz_toonworld` and `kz_climbers_b01`. None is redistributed: the published image does not contain them, so the mode needs a local build (`just fetch-maps && just build`), and none is cleared for FastDL, so clients fetch them through the game's own download. The metrics gain `hlds_movement_runs_total` and `hlds_movement_bests_total`. Times are this server's own; they are not records of any climbing community
@@ -196,7 +198,8 @@ First tagged release. Images for it are on ghcr.io as `1.0.0`, `1.0` and `1` (`l
 - .env.example documenting environment variables
 - Quadlet systemd unit file shipped in-repo
 
-[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/KevinTCoughlin/cs-server/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/KevinTCoughlin/cs-server/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/KevinTCoughlin/cs-server/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/KevinTCoughlin/cs-server/compare/v1.3.0...v1.4.0

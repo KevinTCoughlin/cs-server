@@ -81,7 +81,7 @@ IMAGE_REPO="${REGISTRY}/kevintcoughlin/cs-server"
 # that tag moves with every push to main. CS_SERVER_VERSION and
 # CS_SERVER_IMAGE still override it. The same comparison lives in
 # ops/bootstrap-vps.sh (version_ge); keep the two copies in step.
-DEFAULT_VERSION="1.4.2"
+DEFAULT_VERSION="1.5.0"
 VERSION="${CS_SERVER_VERSION:-${DEFAULT_VERSION}}"
 VERSION="${VERSION#v}"
 if [[ -n "${VERSION}" && ! "${VERSION}" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
