@@ -23,10 +23,10 @@ curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/insta
 
 Requires [Podman](https://podman.io/getting-started/installation) 4.4 or newer (5 or newer for health-gated updates) or [Docker](https://docs.docker.com/get-docker/). The script pulls the image from ghcr.io, creates config files, and starts the server on port 27015. With Podman it installs a systemd Quadlet unit for auto-start; with Docker it creates a container with restart policy.
 
-That runs the current release (`1.4.2`, the newest version in [CHANGELOG.md](CHANGELOG.md); `DEFAULT_VERSION` in `install.sh`). `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` override it. A digest pin is `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:…`. The moving `main` build is `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server:latest`. See [Releases, upgrade and rollback](#releases-upgrade-and-rollback). The installer from the release tag, with the version named:
+That runs the current release (`1.5.0`, the newest version in [CHANGELOG.md](CHANGELOG.md); `DEFAULT_VERSION` in `install.sh`). `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` override it. A digest pin is `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:…`. The moving `main` build is `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server:latest`. See [Releases, upgrade and rollback](#releases-upgrade-and-rollback). The installer from the release tag, with the version named:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.4.2/install.sh | CS_SERVER_VERSION=1.4.2 bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.5.0/install.sh | CS_SERVER_VERSION=1.5.0 bash
 ```
 
 On a new VPS, use [Deploy on a fresh VPS](#deploy-on-a-fresh-vps) instead of this one-liner.
@@ -130,8 +130,8 @@ To turn the timer off: `sudo systemctl disable --now cs-reboot-if-idle.timer`. T
 Resolve the digest this host would pin, without changing the unit:
 
 ```bash
-podman pull ghcr.io/kevintcoughlin/cs-server:1.4.2
-podman image inspect --format '{{.Digest}}' ghcr.io/kevintcoughlin/cs-server:1.4.2
+podman pull ghcr.io/kevintcoughlin/cs-server:1.5.0
+podman image inspect --format '{{.Digest}}' ghcr.io/kevintcoughlin/cs-server:1.5.0
 ```
 
 Roll forward by running the installer again, or let the on-box timer do it. Roll back by running the installer with the previous digest (`CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server@sha256:<digest>`). The timer keeps the previous `Image=` line and puts it back if the new image does not answer.
@@ -415,7 +415,8 @@ Edit files in `config/` — they're bind-mounted into the container:
 | `config/mapcycle-nipper.txt` | Nipper Friday (knife mode) rotation |
 | `config/mapcycle-nipper-xmas.txt` | Nipper Friday Christmas rotation (Dec 1 to Jan 6) |
 | `config/mapcycle-climb.txt` | Climb mode (KZ) rotation |
-| `config/modes/*.cfg` | Per-mode gameplay (gravity, round time, money), run after `server.cfg`: `scoutz.cfg`, `knife.cfg` (Nipper Friday; `knife_he.cfg` for grenade maps), `vanilla.cfg`, `match.cfg`, `climb.cfg` |
+| `config/mapcycle-surf.txt` | Surf mode rotation |
+| `config/modes/*.cfg` | Per-mode gameplay (gravity, round time, money), run after `server.cfg`: `scoutz.cfg`, `knife.cfg` (Nipper Friday; `knife_he.cfg` for grenade maps), `vanilla.cfg`, `match.cfg`, `climb.cfg`, `surf.cfg` |
 | `config/autoexec.cfg` | Runs on server start |
 
 Changes to `server.cfg` take effect on the next map or via `just rcon "exec server.cfg"`.
@@ -544,6 +545,36 @@ server itself, which is slow for a map of 2 to 6 MB. The mode starts on the
 rotation's first map, and a map changes after `mp_timelimit` minutes (30) or
 by `rtv`. Leaving the mode with `just mode scoutz` takes up to three minutes,
 because no round ends here.
+
+### Surf
+
+`MODE=surf` is for surf maps: air acceleration 100, no fall damage, bunny hop,
+no rounds and no bots. The chat commands, the two top lists and the local
+build with fetched maps are the same as in [climb mode](#climb-kz).
+
+```bash
+just mode surf            # surf maps on mapcycle-surf.txt
+```
+
+Surf maps have no timer buttons, so a run is timed between two zones:
+
+- **Start zone.** The box around the map's spawn points, unless one is saved.
+  Leaving it starts the clock. Going back in cancels the run.
+- **End zone.** An admin marks it once per map; until then the map plays
+  without a timer. Stand on one corner of the finish and run `mv_zone end` in
+  the client console, then on the opposite corner and run it again.
+  `mv_zone start` replaces the start zone the same way, `mv_zone show` draws
+  both boxes, and `mv_zone clear` forgets them. These need the AMX Mod X
+  admin flag `h`.
+
+Zones are kept in the state volume (`amxmodx/zones/<map>.txt`). The server
+console can also save one from numbers: `mv_zone_set end x1 y1 z1 x2 y2 z2`.
+
+The rotation is `surf_ski_5`, `surf_nice_fly_4`, `surf_srventer`,
+`surf_nice_fly` and `surf_colorama_beta`. A rotation can mix surf and climb
+maps: the map's prefix picks the physics, so a `kz_` or `bkz_` map in a surf
+rotation gets climb settings and a `surf_` map in a climb rotation gets surf
+settings.
 
 ### Match (5v5)
 
@@ -721,7 +752,7 @@ This copies files from `sound/quake/` and `maps/` into `docs/cstrike/` with `.bz
 | `DOD_PASSWORD` | empty | Day of Defeat `sv_password`. Ignored by every other game. Installer: `CS_DOD_PASSWORD` |
 | `MAPCYCLE` | `mapcycle.txt` | Mapcycle file to use (e.g. `mapcycle-dust2.txt`, `mapcycle-nipper.txt`) |
 | `LAN_MODE` | `0` | LAN-only mode (1) or public server mode (0) |
-| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike), `match` (5v5: warmup, knife round, pause) or `climb` (KZ maps: timer, checkpoints, top lists; no bots unless `BOTS=1`) |
+| `MODE` | `scoutz` | Game mode at startup: `scoutz` (scout + knife), `knife` (Nipper Friday), `vanilla` (stock Counter-Strike), `match` (5v5: warmup, knife round, pause), `climb` (KZ maps: timer, checkpoints, top lists) or `surf` (surf maps: timer zones); the last two have no bots unless `BOTS=1` |
 | `METRICS_PORT` | empty | Serve Prometheus metrics on this port inside the container; see [Metrics](#metrics). `METRICS_BIND` (default `0.0.0.0`) is the address it listens on |
 | `FASTDL_URL` | empty | http(s) URL serving your `cstrike/` content (`sv_downloadurl`); see [FastDL](#fastdl-fast-downloads) |
 | `LOGS` | `1` | Write server log files (1=on, 0=off); see [Saved state and logs](#saved-state-and-logs) |
@@ -880,7 +911,7 @@ curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/insta
 | Service / container | `scoutzknivez` | `dod-server` |
 | Config directory | `~/.config/cs-server` | `~/.config/dod-server` |
 | State volume | `cs-server-state` | `dod-server-state` |
-| Image | pinned release (`1.4.2`) | `1.4.2-dod` |
+| Image | pinned release (`1.5.0`) | `1.5.0-dod` |
 
 The config directory holds the game's `server.cfg` and `mapcycle.txt`, copied
 from the image on the first install and mounted read-only; edit them and
@@ -1229,14 +1260,14 @@ Each release is a git tag (`v1.0.0`), a [GitHub release](https://github.com/Kevi
 | `nightly` | Weekly rebuild of `main` (fresh base image) | Testing |
 | `@sha256:…` | Never | Exactly one build, including its base image |
 
-**Pin.** A fresh `install.sh` runs the release named by `DEFAULT_VERSION` in that script (currently `1.4.2`, kept equal to the newest `## [x.y.z]` heading in [CHANGELOG.md](CHANGELOG.md)). `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` still override it. `:latest` moves with every push to `main` and is not the default; set `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server:latest` to run it. `compose.yml` and [`quadlet/scoutzknivez.container`](quadlet/scoutzknivez.container) stay on `localhost/cs-server:latest` because those are local builds (`just quadlet`). The checked-in unit's `Notify=healthy` needs Podman 5; on Podman 4.4 through 4.9 the installer omits that line. After a pull, the installer writes `Image=<name>:<tag>@sha256:<digest>` into the Quadlet (and the Docker `run` image), using the digest this engine stored (`podman image inspect --format '{{.Digest}}'`, the same value `podman images --digests` shows). A multi-arch tag can list a second digest for the index; that one is not what the unit pins. Re-running the installer is the rollout: it pulls the tag you name and writes the new digest, so a daily run against `CS_SERVER_VERSION=1` (or `1.4`) moves the pin when that tag moves. `CS_AUTO_UPDATE=1` leaves the tag unpinned so `podman-auto-update.timer` can follow it; a digest pin and auto-update are not combined. `CS_PIN_DIGEST=0` also leaves the tag. The installer prints `CS_SERVER_IMAGE=<repo>@sha256:<digest>` for the rollback command.
+**Pin.** A fresh `install.sh` runs the release named by `DEFAULT_VERSION` in that script (currently `1.5.0`, kept equal to the newest `## [x.y.z]` heading in [CHANGELOG.md](CHANGELOG.md)). `CS_SERVER_VERSION` and `CS_SERVER_IMAGE` still override it. `:latest` moves with every push to `main` and is not the default; set `CS_SERVER_IMAGE=ghcr.io/kevintcoughlin/cs-server:latest` to run it. `compose.yml` and [`quadlet/scoutzknivez.container`](quadlet/scoutzknivez.container) stay on `localhost/cs-server:latest` because those are local builds (`just quadlet`). The checked-in unit's `Notify=healthy` needs Podman 5; on Podman 4.4 through 4.9 the installer omits that line. After a pull, the installer writes `Image=<name>:<tag>@sha256:<digest>` into the Quadlet (and the Docker `run` image), using the digest this engine stored (`podman image inspect --format '{{.Digest}}'`, the same value `podman images --digests` shows). A multi-arch tag can list a second digest for the index; that one is not what the unit pins. Re-running the installer is the rollout: it pulls the tag you name and writes the new digest, so a daily run against `CS_SERVER_VERSION=1` (or `1.5`) moves the pin when that tag moves. `CS_AUTO_UPDATE=1` leaves the tag unpinned so `podman-auto-update.timer` can follow it; a digest pin and auto-update are not combined. `CS_PIN_DIGEST=0` also leaves the tag. The installer prints `CS_SERVER_IMAGE=<repo>@sha256:<digest>` for the rollback command.
 
 A release tag's copy of `install.sh` is the script from that tag. Pass `CS_SERVER_VERSION` when you curl a tag. The copy on `main` carries `DEFAULT_VERSION`.
 
 **Upgrade** by running the installer again with the new version. Config in `~/.config/cs-server/` is kept, the unit is rewritten, and a running server is restarted onto the new image (players get the 30 second countdown):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.4.2/install.sh | CS_SERVER_VERSION=1.4.2 bash
+curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/v1.5.0/install.sh | CS_SERVER_VERSION=1.5.0 bash
 ```
 
 **From 1.0.x to 1.1.0, re-run the installer** rather than editing `Image=`:

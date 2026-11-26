@@ -17,6 +17,7 @@ services:
       - ./config/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.txt:ro,Z
       - ./config/mapcycle-nipper-xmas.txt:/hlds/cstrike/mapcycle-nipper-xmas.txt:ro,Z
       - ./config/mapcycle-climb.txt:/hlds/cstrike/mapcycle-climb.txt:ro,Z
+      - ./config/mapcycle-surf.txt:/hlds/cstrike/mapcycle-surf.txt:ro,Z
       - ./config/modes:/hlds/cstrike/modes:ro,Z
       # Bans, admins, stats and logs: everything the server writes.
       - state:/hlds/state

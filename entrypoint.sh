@@ -64,9 +64,9 @@ if [[ "${GAME}" = "cstrike" && ( "${MODE}" = "vanilla" || "${MODE}" = "match" ) 
     MAP="${MAP:-de_dust2}"
     MAPCYCLE="${MAPCYCLE:-mapcycle-dust2.txt}"
 fi
-# Climb maps have no bot navigation and nothing for a bot to do.
-if [[ "${GAME}" = "cstrike" && "${MODE}" = "climb" ]]; then
-    MAPCYCLE="${MAPCYCLE:-mapcycle-climb.txt}"
+# Climb and surf maps have no bot navigation and nothing for a bot to do.
+if [[ "${GAME}" = "cstrike" && ( "${MODE}" = "climb" || "${MODE}" = "surf" ) ]]; then
+    MAPCYCLE="${MAPCYCLE:-mapcycle-${MODE}.txt}"
     # Start on the rotation's first map that this image has. The published
     # image has none of them: third-party maps are fetched and built in
     # locally (maps/manifest.tsv).
@@ -79,7 +79,7 @@ if [[ "${GAME}" = "cstrike" && "${MODE}" = "climb" ]]; then
             fi
         done < "${GAME}/${MAPCYCLE}"
         if [[ -z "${MAP:-}" ]]; then
-            echo "[entrypoint] MODE=climb: this image has none of the maps in ${MAPCYCLE}. Build one that does (just fetch-maps && just build), or set MAP and MAPCYCLE" >&2
+            echo "[entrypoint] MODE=${MODE}: this image has none of the maps in ${MAPCYCLE}. Build one that does (just fetch-maps && just build), or set MAP and MAPCYCLE" >&2
             exit 1
         fi
     fi
@@ -214,9 +214,9 @@ if [[ -n "${LOGADDRESS}" && "${LOGS}" != "1" ]]; then
     exit 1
 fi
 case "${MODE}" in
-    scoutz | knife | vanilla | match | climb) ;;
+    scoutz | knife | vanilla | match | climb | surf) ;;
     *)
-        echo "[entrypoint] MODE must be scoutz, knife, vanilla, match or climb" >&2
+        echo "[entrypoint] MODE must be scoutz, knife, vanilla, match, climb or surf" >&2
         exit 1
         ;;
 esac
@@ -294,7 +294,7 @@ prepare_state() {
     if [[ -d "${STATE_DIR}" ]] && command -v mountpoint >/dev/null 2>&1 && ! mountpoint -q "${STATE_DIR}"; then
         echo "[entrypoint] NOTE: ${STATE_DIR} is not a volume, so bans, admins, stats and logs are lost when this container is replaced. Mount one (-v cs-server-state:${STATE_DIR}, or Volume=cs-server-state:${STATE_DIR} in a Quadlet unit), or run the installer again." >&2
     fi
-    if ! mkdir -p "${STATE_DIR}/logs" "${STATE_DIR}/nav" "${STATE_DIR}/amxmodx/logs" "${STATE_DIR}/amxmodx/vault" "${STATE_DIR}/amxmodx/records" 2>/dev/null ||
+    if ! mkdir -p "${STATE_DIR}/logs" "${STATE_DIR}/nav" "${STATE_DIR}/amxmodx/logs" "${STATE_DIR}/amxmodx/vault" "${STATE_DIR}/amxmodx/records" "${STATE_DIR}/amxmodx/zones" 2>/dev/null ||
        [[ ! -w "${STATE_DIR}" || ! -w "${STATE_DIR}/amxmodx" ]]; then
         echo "[entrypoint] WARNING: ${STATE_DIR} is not writable by uid $(id -u); bans, admins, stats and logs will not be saved" >&2
         return 0
