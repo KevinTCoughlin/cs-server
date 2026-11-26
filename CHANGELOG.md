@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- **Movement FastDL.** `quadlet/cs-server-movement.container` and `quadlet/cs-fastdl-movement.container` are the movement server and its sidecar. Both `Image=` lines are the same string and have to be repointed together. `FASTDL_URL` is `http://HOST:27080/cstrike/` (replace `HOST`). The sidecar serves every map in that image, including ones `maps/manifest.tsv` marks `fastdl=no`, the same set the game server can send itself. The nftables input policy rate-limits `27080/tcp` per source (40 new connections a second, burst 80, and at most 60 connections) instead of a bare accept. `CS_FASTDL=1` keeps those rules; without it the bootstrap closes the port
+
 ## [1.5.0] - 2026-11-26
 
 ### Added

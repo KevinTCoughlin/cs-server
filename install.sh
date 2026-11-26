@@ -810,6 +810,7 @@ HealthRetries=3
 Restart=on-failure
 RestartSec=10
 MemoryMax=64M
+CPUQuota=50%
 
 [Install]
 WantedBy=default.target

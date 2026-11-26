@@ -132,4 +132,24 @@ set -e
 [[ "${status}" -ne 0 ]] || fail "missing users.ini should fail: ${out}"
 assert_contains "missing admin file fails the check" "${out}" "users.ini missing"
 
+game=$(sed -n 's/^Image=//p' "${ROOT}/quadlet/cs-server-movement.container")
+side=$(sed -n 's/^Image=//p' "${ROOT}/quadlet/cs-fastdl-movement.container")
+assert_eq "movement and its FastDL sidecar use one image" "${game}" "${side}"
+[[ -n "${game}" ]] || fail "movement quadlet has no Image="
+assert_contains "movement FastDL URL is a host placeholder" \
+    "$(cat "${ROOT}/quadlet/cs-server-movement.container")" \
+    "Environment=FASTDL_URL=http://HOST:27080/cstrike/"
+assert_contains "sidecar publishes 27080" \
+    "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" "PublishPort=27080:27080/tcp"
+assert_contains "sidecar is read-only" \
+    "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" "ReadOnly=true"
+assert_contains "sidecar drops capabilities" \
+    "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" "DropCapability=ALL"
+assert_contains "sidecar memory cap" \
+    "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" "MemoryMax=64M"
+assert_contains "sidecar cpu cap" \
+    "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" "CPUQuota=50%"
+assert_contains "sidecar health check" \
+    "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" "HealthCmd=/fastdl.sh check"
+
 printf 'qol tests passed\n'

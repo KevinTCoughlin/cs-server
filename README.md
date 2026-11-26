@@ -711,12 +711,26 @@ curl -fsSL https://raw.githubusercontent.com/KevinTCoughlin/cs-server/main/insta
   `CS_FASTDL_HOST` names another address or host name (a public server
   behind a router needs its public one, and `27080/tcp` forwarded);
   `CS_FASTDL_PORT` changes the port. An explicit `FASTDL_URL` still wins.
-- Open `27080/tcp` in the host firewall for the players' network.
+- Open `27080/tcp` in the host firewall for the players' network. On the
+  nftables input policy (`ops/firewall/cs-server-input.nft`, installed when
+  `CS_FASTDL=1`) a source may open 40 new connections a second (burst 80)
+  and hold at most 60 connections. Extra new connections are dropped. ufw
+  and firewalld still allow the port without that per-source limit.
 - One sidecar (`cs-server-fastdl`) serves every Counter-Strike server on the
   machine. `CS_FASTDL=1 bash install.sh --uninstall` removes it along with
   the server; without `CS_FASTDL=1` it stays for the others.
+- It serves every map in the image, including maps whose `maps/manifest.tsv`
+  row says `fastdl=no`. That is the same set a client can fetch from the
+  game server with `sv_allowdownload`. `just fastdl` is the other tree: it
+  fills GitHub Pages and skips `fastdl=no`.
 - By hand: `podman run -d --entrypoint /fastdl.sh -p 27080:27080 --read-only --cap-drop ALL <image>`
   and `FASTDL_URL=http://<host>:27080/cstrike/` on the server.
+- The movement server's pair is
+  [`quadlet/cs-server-movement.container`](quadlet/cs-server-movement.container)
+  and [`quadlet/cs-fastdl-movement.container`](quadlet/cs-fastdl-movement.container).
+  Both `Image=` lines are one string. Change a tag or a digest in both, or
+  the sidecar serves a different map set than the server is running.
+  Replace `HOST` in `FASTDL_URL` with the address clients use.
 
 The sidecar needs an image from 1.4.0 or newer; the installer says so when
 the image has none. It serves what is in the image. Maps you add later go into the image with a

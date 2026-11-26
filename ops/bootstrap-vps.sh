@@ -1419,7 +1419,7 @@ game_port_define() {
 }
 
 apply_firewall() {
-    local src_fw src_unit src_in src_in_unit fastdl_line="" game_define
+    local src_fw src_unit src_in src_in_unit game_define
     game_define=$(game_port_define)
     src_fw=$(ops_file firewall/cs-server.nft)
     src_unit=$(ops_file firewall/cs-server-firewall.service)
@@ -1434,13 +1434,22 @@ apply_firewall() {
     if [[ "${FIREWALL}" == "nftables" ]]; then
         src_in=$(ops_file firewall/cs-server-input.nft)
         src_in_unit=$(ops_file firewall/cs-server-input.service)
-        if [[ "${FASTDL}" == "1" ]]; then
-            fastdl_line="        tcp dport ${FASTDL_PORT} accept"
-        fi
-        awk -v ssh="${SSH_PORT}" -v game="${game_define}" -v fastdl="${fastdl_line}" '
+        # CS_FASTDL=1 keeps the three per-source rules and sets the port.
+        # Otherwise the block is removed so 27080 stays closed. A bare accept
+        # is not written: new connections over 40/s (burst 80) drop, then a
+        # source with more than 60 connections drops, then the rest is accepted.
+        awk -v ssh="${SSH_PORT}" -v game="${game_define}" -v port="${FASTDL_PORT}" -v enable="${FASTDL}" '
             /^define ssh_port/ { print "define ssh_port = " ssh; next }
             /^define game_port/ { print "define game_port = " game; next }
-            /^[[:space:]]*# FASTDL_RULE$/ { if (fastdl != "") print fastdl; next }
+            /^define fastdl_port/ {
+                if (enable == "1") print "define fastdl_port = " port
+                next
+            }
+            /^[[:space:]]*set fastdl_(new|ct) / { if (enable != "1") { skip = 1; next } }
+            skip && /^[[:space:]]*}/ { skip = 0; next }
+            skip { next }
+            /^[[:space:]]*# FASTDL_RULE/ { if (enable != "1") next }
+            /\$fastdl_port/ { if (enable != "1") next }
             { print }
         ' "${src_in}" > /etc/cs-server/input.nft
         chmod 644 /etc/cs-server/input.nft
