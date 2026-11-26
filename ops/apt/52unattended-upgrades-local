@@ -1,0 +1,6 @@
+// Kernel and library fixes need a reboot, but unattended-upgrades cannot see
+// game players. It installs updates; cs-reboot-if-idle.timer does the reboot
+// only when no human is connected to a game server.
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
