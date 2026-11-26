@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# 04:40 America/Los_Angeles on the 1st, after the daily backup. Persistent=true
+# so a VPS that was off on the 1st runs the check after it comes back.
+
+[Unit]
+Description=Monthly restore test of the CS state backups
+
+[Timer]
+OnCalendar=*-*-01 04:40:00 America/Los_Angeles
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -149,6 +149,6 @@ tests/
 | `MODE` | `scoutz` | Startup game mode: `scoutz`, `knife`, `vanilla` or `match` (vanilla and match default `MAP` to `de_dust2` and `MAPCYCLE` to `mapcycle-dust2.txt`) |
 | `FASTDL_URL` | empty | http(s) URL for `sv_downloadurl`; passed on the HLDS command line, never set in `server.cfg` (re-exec'd every map) |
 | `LOGS` | `1` | `+log on`; files land in the state volume (`/hlds/state/logs`) |
-| `LOG_RETENTION_DAYS` | `7` | Prune `*.log` older than this at start and daily (`0` = keep) |
+| `LOG_RETENTION_DAYS` | `30` | Prune `*.log` older than this at start and daily (`0` = keep) |
 | `LOGADDRESS` | empty | `host:port` for `+logaddress_add` |
 | `SERVER_IP` | empty | IPv4 for `+ip` (bind + report); for public servers on host networking. `healthcheck.sh` queries it instead of loopback |

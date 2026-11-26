@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Monthly check that the newest state archive can be read, and that the main
+# Counter-Strike volume boots in a scratch container. Installed for the deploy
+# user by ops/bootstrap-vps.sh when CS_BACKUP=1.
+
+[Unit]
+Description=Restore test of the newest CS state backup (scratch container, no network)
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cs-restore-test
+Nice=15
+CPUQuota=50%
+TimeoutStartSec=600
+SyslogIdentifier=cs-restore-test

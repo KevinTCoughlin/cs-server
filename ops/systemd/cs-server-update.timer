@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# 04:15 America/Los_Angeles, then every 20 minutes through 07:55. The script
+# rolls only when the server is empty and, on the last pass, leaves a busy
+# server until tomorrow. Persistent=false: a VPS that was off at 04:15 does
+# not roll when it comes back later. Bootstrap replaces OnCalendar when
+# CS_UPDATE_CALENDAR is set.
+
+[Unit]
+Description=Daily image rollout for game servers
+
+[Timer]
+OnCalendar=*-*-* 04..07:15/20:00 America/Los_Angeles
+RandomizedDelaySec=90s
+Persistent=false
+Unit=cs-server-update.service
+
+[Install]
+WantedBy=timers.target

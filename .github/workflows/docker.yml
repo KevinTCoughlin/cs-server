@@ -260,12 +260,16 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # Push to main publishes :main (type=ref,event=branch) and :sha-<7>
+          # (type=sha). cs-server-update CHANNEL=main follows :main, checks
+          # that commit's CI, and pins :sha-<7>@digest. Release tags are
+          # unchanged. A tag push does not move :main.
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha
+            type=sha,format=short,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Create and push the multi-arch manifest

@@ -1,0 +1,539 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Roll the game Quadlets forward on this machine.
+#
+# CHANNEL=main (the default) follows the image CI publishes for the main
+# branch: ghcr.io/kevintcoughlin/cs-server:main. That tag moves only when the
+# image workflow publishes. The commit embedded in the image
+# (org.opencontainers.image.revision) must have green GitHub checks, and the
+# Quadlet is pinned to the arch digest podman stored (Image=repo:sha-<7>@sha256:…).
+# A head commit message containing [skip deploy] or [manual] is not rolled.
+#
+# CHANNEL=release follows the latest non-draft, non-prerelease GitHub release
+# and skips notes that match CS_UPDATE_BREAKING_RE. Tagged releases only.
+#
+#   cs-server-update              inside the morning window
+#   cs-server-update --now        ignore the window
+#   cs-server-update --dry-run    resolve and print; do not back up or restart
+#
+# The timer (ops/systemd/cs-server-update.timer) fires through the early
+# morning. Humans online, or a port that does not answer, wait for a later
+# pass and are left until tomorrow after the deadline. A failed health check
+# restores the previous Image= line and exits non-zero.
+#
+# One flock, CS_MAINTENANCE_LOCK or /run/lock/cs-server-maintenance.lock, is
+# shared with cs-server-restart and cs-reboot-if-idle.
+set -euo pipefail
+
+CHANNEL="${CHANNEL:-main}"
+REPO="${CS_UPDATE_REPO:-KevinTCoughlin/cs-server}"
+IMAGE="${CS_UPDATE_IMAGE:-ghcr.io/kevintcoughlin/cs-server}"
+BREAKING_RE="${CS_UPDATE_BREAKING_RE:-BREAKING|manual step|migration required}"
+MANUAL_RE="${CS_UPDATE_MANUAL_RE:-\[skip deploy\]|\[manual\]}"
+START_HHMM="${CS_UPDATE_START:-0415}"
+DEADLINE_HHMM="${CS_UPDATE_DEADLINE:-0755}"
+PLAYERS="${CS_PLAYERS:-/usr/local/sbin/cs-players}"
+QUADLET_DIR="${CS_QUADLET_DIR:-${HOME:?HOME is not set}/.config/containers/systemd}"
+UNITS_FILE="${CS_UPDATE_UNITS:-${HOME}/.config/cs-server/update.units}"
+ENV_FILE="${CS_UPDATE_ENV:-${HOME}/.config/cs-server/update.env}"
+TOKEN_FILE="${CS_UPDATE_TOKEN_FILE:-${HOME}/.config/cs-server/github.token}"
+STATE_DIR="${CS_UPDATE_STATE_DIR:-${XDG_STATE_HOME:-${HOME}/.local/state}/cs-server-update}"
+HEALTH_TRIES="${CS_UPDATE_HEALTH_TRIES:-18}"
+HEALTH_SLEEP="${CS_UPDATE_HEALTH_SLEEP:-5}"
+SHA_LEN=7
+DRY=0
+FORCE=0
+
+usage() {
+    cat <<EOF
+Usage:
+  cs-server-update [--now] [--dry-run]
+
+CHANNEL=main follows :main (the image published for the main branch) and pins
+the digest. CHANNEL=release follows the latest stable GitHub release.
+A port with human players, or one that does not answer, waits for a later
+pass in the morning window (${START_HHMM}-${DEADLINE_HHMM} America/Los_Angeles).
+
+CS_UPDATE_UNITS          name, port, optional image (default: one scoutzknivez line)
+CS_UPDATE_CALENDAR       installed into the timer by bootstrap (OnCalendar)
+CS_MAINTENANCE_LOCK      shared flock path
+EOF
+}
+
+log() { printf '%s\n' "$*"; }
+
+if [[ -f "${ENV_FILE}" ]]; then
+    # shellcheck disable=SC1090
+    source "${ENV_FILE}"
+    CHANNEL="${CHANNEL:-main}"
+    REPO="${CS_UPDATE_REPO:-${REPO}}"
+    IMAGE="${CS_UPDATE_IMAGE:-${IMAGE}}"
+    BREAKING_RE="${CS_UPDATE_BREAKING_RE:-${BREAKING_RE}}"
+    MANUAL_RE="${CS_UPDATE_MANUAL_RE:-${MANUAL_RE}}"
+    START_HHMM="${CS_UPDATE_START:-${START_HHMM}}"
+    DEADLINE_HHMM="${CS_UPDATE_DEADLINE:-${DEADLINE_HHMM}}"
+    TOKEN_FILE="${CS_UPDATE_TOKEN_FILE:-${TOKEN_FILE}}"
+fi
+
+valid_hhmm() { [[ "$1" =~ ^([01][0-9]|2[0-3])[0-5][0-9]$ ]]; }
+
+hhmm_minutes() {
+    local v="$1"
+    printf '%s\n' "$((10#${v:0:2} * 60 + 10#${v:2:2}))"
+}
+
+clock_hhmm() {
+    if [[ -n "${CS_UPDATE_NOW:-}" ]]; then
+        valid_hhmm "${CS_UPDATE_NOW}" || { log "error: invalid CS_UPDATE_NOW"; exit 1; }
+        printf '%s\n' "${CS_UPDATE_NOW}"
+        return 0
+    fi
+    TZ=America/Los_Angeles date +%H%M
+}
+
+in_window() {
+    local now start deadline
+    valid_hhmm "${START_HHMM}" || START_HHMM=0415
+    valid_hhmm "${DEADLINE_HHMM}" || DEADLINE_HHMM=0755
+    now=$(hhmm_minutes "$(clock_hhmm)")
+    start=$(hhmm_minutes "${START_HHMM}")
+    deadline=$(hhmm_minutes "${DEADLINE_HHMM}")
+    ((now >= start && now <= deadline))
+}
+
+final_pass() {
+    local now deadline
+    valid_hhmm "${DEADLINE_HHMM}" || DEADLINE_HHMM=0755
+    now=$(hhmm_minutes "$(clock_hhmm)")
+    deadline=$(hhmm_minutes "${DEADLINE_HHMM}")
+    ((now >= deadline))
+}
+
+maintenance_lock() {
+    local path="${CS_MAINTENANCE_LOCK:-/run/lock/cs-server-maintenance.lock}" dir
+    dir=$(dirname "${path}")
+    if [[ ! -e "${path}" && -d "${dir}" && -w "${dir}" ]]; then
+        (umask 000; : >> "${path}") || true
+    fi
+    if [[ ! -w "${path}" ]]; then
+        path="${HOME}/.local/state/cs-server/maintenance.lock"
+        mkdir -p "$(dirname "${path}")"
+        (umask 000; : >> "${path}") || true
+    fi
+    command -v flock >/dev/null 2>&1 || return 0
+    exec 9>>"${path}"
+    if ! flock -n 9; then
+        log "another maintenance job is running; not updating"
+        exit 0
+    fi
+}
+
+# Print unit lines: name port image
+units() {
+    local line name port image rest
+    if [[ ! -f "${UNITS_FILE}" ]]; then
+        printf 'scoutzknivez 27015 %s\n' "${IMAGE}"
+        return 0
+    fi
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+        line="${line%%#*}"
+        [[ -n "${line//[[:space:]]/}" ]] || continue
+        read -r name port image rest <<<"${line}"
+        [[ -n "${name}" && -n "${port}" ]] || continue
+        [[ "${port}" =~ ^[0-9]+$ ]] || { log "error: bad port in ${UNITS_FILE}: ${line}"; exit 1; }
+        printf '%s %s %s\n' "${name}" "${port}" "${image:-${IMAGE}}"
+    done < "${UNITS_FILE}"
+}
+
+api_get() {
+    local url="$1" key="$2" hdr="" code="" etag="" rem=""
+    mkdir -p "${STATE_DIR}/http"
+    hdr=$(mktemp)
+    local cache="${STATE_DIR}/http/${key}"
+    local -a args=(-sS -D "${hdr}" -o "${cache}.new" -w '%{http_code}' --max-time 30
+        -H "Accept: application/vnd.github+json"
+        -H "User-Agent: cs-server-update"
+        -H "X-GitHub-Api-Version: 2022-11-28")
+    if [[ -s "${cache}.etag" ]]; then
+        args+=(-H "If-None-Match: $(cat "${cache}.etag")")
+    fi
+    code=$(curl "${args[@]}" "${url}") || { rm -f "${hdr}" "${cache}.new"; return 1; }
+    if [[ "${code}" == "304" && -s "${cache}.body" ]]; then
+        rm -f "${hdr}" "${cache}.new"
+        return 0
+    fi
+    if [[ "${code}" == "403" || "${code}" == "429" ]]; then
+        rm -f "${hdr}" "${cache}.new"
+        log "GitHub rate limit; not updating"
+        return 2
+    fi
+    if [[ "${code}" != "200" ]]; then
+        rm -f "${hdr}" "${cache}.new"
+        log "GitHub API ${code} for ${url}"
+        return 1
+    fi
+    mv -f "${cache}.new" "${cache}.body"
+    etag=$(awk 'tolower($1) == "etag:" { sub(/\r/, "", $2); print $2; exit }' "${hdr}")
+    [[ -n "${etag}" ]] && printf '%s\n' "${etag}" > "${cache}.etag"
+    rem=$(awk 'tolower($1) == "x-ratelimit-remaining:" { sub(/\r/, "", $2); print $2; exit }' "${hdr}")
+    rm -f "${hdr}"
+    if [[ "${rem}" == "0" ]]; then
+        log "GitHub rate limit exhausted after this response"
+    fi
+    return 0
+}
+
+note_skip() {
+    local title="$1" body="$2" perm="" token=""
+    log "${title}"
+    [[ -f "${TOKEN_FILE}" ]] || { log "no GitHub token; journal only"; return 0; }
+    perm=$(stat -c %a "${TOKEN_FILE}" 2>/dev/null || true)
+    if [[ "${perm}" != "600" ]]; then
+        log "token file ${TOKEN_FILE} must be mode 600; journal only"
+        return 0
+    fi
+    token=$(cat "${TOKEN_FILE}")
+    log "would notify GitHub (token present) about: ${title}"
+    CS_UPDATE_ISSUE_TITLE="${title}" CS_UPDATE_ISSUE_BODY="${body}" CS_UPDATE_TOKEN="${token}" \
+        CS_UPDATE_REPO="${REPO}"         python3 - <<'PY' || log "could not update the GitHub issue"
+import json, os, urllib.parse, urllib.request
+repo = os.environ["CS_UPDATE_REPO"]
+token = os.environ["CS_UPDATE_TOKEN"]
+title = os.environ["CS_UPDATE_ISSUE_TITLE"]
+body = os.environ["CS_UPDATE_ISSUE_BODY"]
+def req(url, data=None, method=None):
+    r = urllib.request.Request(url, data=data, method=method)
+    r.add_header("Accept", "application/vnd.github+json")
+    r.add_header("Authorization", "Bearer " + token)
+    r.add_header("User-Agent", "cs-server-update")
+    if data is not None:
+        r.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(r, timeout=30) as resp:
+        return json.load(resp)
+q = urllib.parse.quote(title)
+found = req(f"https://api.github.com/search/issues?q=repo:{repo}+is:issue+is:open+in:title+{q}")
+items = found.get("items") or []
+payload = json.dumps({"body": body}).encode()
+if items:
+    req(items[0]["comments_url"], payload, "POST")
+else:
+    req(f"https://api.github.com/repos/{repo}/issues",
+        json.dumps({"title": title, "body": body}).encode(), "POST")
+PY
+}
+
+checks_state() {
+    # Prints ok, pending, or failed.
+    python3 - "$1" "$2" <<'PY'
+import json, sys
+runs = json.load(open(sys.argv[1])).get("check_runs") or []
+status = json.load(open(sys.argv[2]))
+pending = [r.get("name", "?") for r in runs if r.get("status") != "completed"]
+bad_end = {"failure", "cancelled", "timed_out", "action_required", "startup_failure"}
+bad = [r.get("name", "?") for r in runs if r.get("conclusion") in bad_end]
+state = status.get("state") or ""
+if pending or (state == "pending" and status.get("statuses")):
+    print("pending")
+elif bad or state in ("failure", "error"):
+    print("failed")
+elif not runs and state not in ("success", ""):
+    print("pending")
+else:
+    print("ok")
+PY
+}
+
+resolve_main() {
+    local ref="${1}" cache revision short
+    if ! command -v podman >/dev/null 2>&1; then
+        log "error: podman is required"
+        return 1
+    fi
+    log "pulling ${ref}"
+    if ! podman pull "${ref}"; then
+        log "could not pull ${ref}"
+        return 1
+    fi
+    DIGEST=$(podman image inspect --format '{{.Digest}}' "${ref}" 2>/dev/null || true)
+    revision=$(podman image inspect --format '{{index .Labels "org.opencontainers.image.revision"}}' "${ref}" 2>/dev/null || true)
+    [[ "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || { log "no digest for ${ref}"; return 1; }
+    [[ "${revision}" =~ ^[0-9a-f]{40}$ ]] || { log "image ${ref} has no commit revision"; return 1; }
+    short="${revision:0:${SHA_LEN}}"
+    TARGET_REF="${IMAGE}:sha-${short}"
+    if ! api_get "https://api.github.com/repos/${REPO}/commits/${revision}" "commit-${revision}"; then
+        return 1
+    fi
+    cache="${STATE_DIR}/http/commit-${revision}.body"
+    MESSAGE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["commit"]["message"])' "${cache}")
+    if [[ "${MESSAGE}" =~ ${MANUAL_RE} ]]; then
+        note_skip "Update skipped: main commit ${short} is marked manual" \
+            "Commit ${revision} on ${ref} matches ${MANUAL_RE}. The Quadlet was not changed."
+        return 3
+    fi
+    if ! api_get "https://api.github.com/repos/${REPO}/commits/${revision}/check-runs?per_page=100" "checks-${revision}"; then
+        return 1
+    fi
+    if ! api_get "https://api.github.com/repos/${REPO}/commits/${revision}/status" "status-${revision}"; then
+        return 1
+    fi
+    case "$(checks_state "${STATE_DIR}/http/checks-${revision}.body" "${STATE_DIR}/http/status-${revision}.body")" in
+        pending)
+            log "CI for ${short} is still running; not updating"
+            return 3
+            ;;
+        failed)
+            log "CI for ${short} failed; not updating"
+            return 3
+            ;;
+        ok) ;;
+        *)
+            log "could not read CI status for ${short}"
+            return 1
+            ;;
+    esac
+    log "main image ${TARGET_REF} digest ${DIGEST} (commit ${short}, checks ok)"
+    return 0
+}
+
+resolve_release() {
+    local cache tag version
+    if ! api_get "https://api.github.com/repos/${REPO}/releases/latest" "release-latest"; then
+        return 1
+    fi
+    cache="${STATE_DIR}/http/release-latest.body"
+    tag=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tag_name"])' "${cache}")
+    MESSAGE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("body") or "")' "${cache}")
+    version="${tag#v}"
+    if [[ "${MESSAGE}" =~ ${BREAKING_RE} ]]; then
+        note_skip "Update skipped: ${tag} needs a human" \
+            "Release ${tag} matches ${BREAKING_RE}. The Quadlet was not changed."
+        return 3
+    fi
+    TARGET_REF="${IMAGE}:${version}"
+    log "pulling ${TARGET_REF}"
+    if ! podman pull "${TARGET_REF}"; then
+        log "could not pull ${TARGET_REF}"
+        return 1
+    fi
+    DIGEST=$(podman image inspect --format '{{.Digest}}' "${TARGET_REF}" 2>/dev/null || true)
+    [[ "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || { log "no digest for ${TARGET_REF}"; return 1; }
+    log "release image ${TARGET_REF} digest ${DIGEST}"
+    return 0
+}
+
+current_digest() {
+    local file="$1" line=""
+    [[ -f "${file}" ]] || return 1
+    line=$(sed -n 's/^Image=//p' "${file}" | head -1)
+    if [[ "${line}" == *@sha256:* ]]; then
+        printf '%s\n' "${line##*@}"
+        return 0
+    fi
+    return 1
+}
+
+players_busy() {
+    local name port image line out humans
+    while read -r name port image; do
+        if ! out=$("${PLAYERS}" 127.0.0.1 "${port}" 2>/dev/null); then
+            log "${name} port ${port}: player count unknown; not updating"
+            return 0
+        fi
+        humans=${out#humans=}
+        humans=${humans%% *}
+        if [[ ! "${humans}" =~ ^[0-9]+$ ]]; then
+            log "${name} port ${port}: player count unknown; not updating"
+            return 0
+        fi
+        if ((humans > 0)); then
+            log "${name} port ${port}: ${humans} human player(s); not updating"
+            return 0
+        fi
+    done < <(units)
+    return 1
+}
+
+rewrite_image() {
+    local file="$1" newline="$2" tmp
+    tmp=$(mktemp "${file}.XXXXXX")
+    if ! awk -v line="${newline}" 'BEGIN { found = 0 } /^Image=/ { print line; found = 1; next } { print } END { if (!found) exit 2 }' \
+        "${file}" > "${tmp}"; then
+        rm -f "${tmp}"
+        return 1
+    fi
+    mv -f "${tmp}" "${file}"
+}
+
+health_ok() {
+    local port="$1" i
+    for ((i = 1; i <= HEALTH_TRIES; i++)); do
+        if "${PLAYERS}" 127.0.0.1 "${port}" >/dev/null 2>&1; then
+            return 0
+        fi
+        if ((i < HEALTH_TRIES)); then
+            sleep "${HEALTH_SLEEP}"
+        fi
+    done
+    return 1
+}
+
+apply_units() {
+    local name port image file old new
+    local -a changed=()
+    mkdir -p "${STATE_DIR}"
+    while read -r name port image; do
+        case "${image}" in
+            localhost/*)
+                log "${name}: local image ${image} is not rolled (publish it to GHCR first)"
+                continue
+                ;;
+        esac
+        file="${QUADLET_DIR}/${name}.container"
+        [[ -f "${file}" ]] || { log "error: missing ${file}"; return 1; }
+        if cur=$(current_digest "${file}") && [[ "${cur}" == "${DIGEST}" ]]; then
+            log "${name}: already pinned to ${DIGEST}"
+            continue
+        fi
+        old=$(sed -n 's/^Image=//p' "${file}" | head -1)
+        printf '%s\n' "${old}" > "${STATE_DIR}/${name}.image"
+        new="Image=${TARGET_REF}@${DIGEST}"
+        if [[ "${DRY}" == "1" ]]; then
+            log "dry-run: ${name} would set ${new} (was Image=${old})"
+            continue
+        fi
+        rewrite_image "${file}" "${new}" || { log "error: could not rewrite ${file}"; return 1; }
+        changed+=("${name}")
+        log "${name}: Image=${new}"
+    done < <(units)
+    if [[ "${DRY}" == "1" ]]; then
+        return 0
+    fi
+    if ((${#changed[@]} == 0)); then
+        log "nothing to change"
+        return 0
+    fi
+    systemctl --user daemon-reload
+    for name in "${changed[@]}"; do
+        log "restarting ${name}"
+        systemctl --user restart "${name}" || { rollback "${changed[@]}"; return 1; }
+    done
+    local failed=0
+    while read -r name port image; do
+        local skip=1
+        for c in "${changed[@]}"; do
+            [[ "${c}" == "${name}" ]] && skip=0
+        done
+        [[ "${skip}" == "1" ]] && continue
+        if ! health_ok "${port}"; then
+            log "HEALTH CHECK FAILED: ${name} port ${port} did not answer"
+            failed=1
+        else
+            log "${name} port ${port}: answering"
+        fi
+    done < <(units)
+    if [[ "${failed}" == "1" ]]; then
+        rollback "${changed[@]}"
+        return 1
+    fi
+    log "rollout ok: ${TARGET_REF}@${DIGEST}"
+    return 0
+}
+
+rollback() {
+    local name file old
+    log "ROLLING BACK"
+    for name in "$@"; do
+        file="${QUADLET_DIR}/${name}.container"
+        old=$(cat "${STATE_DIR}/${name}.image")
+        if [[ -n "${old}" ]]; then
+            rewrite_image "${file}" "Image=${old}" || log "error: could not restore ${file}"
+            log "restored ${name} to Image=${old}"
+        fi
+    done
+    systemctl --user daemon-reload || true
+    for name in "$@"; do
+        systemctl --user restart "${name}" || log "error: restart of rolled-back ${name} failed"
+    done
+    local name port image
+    while read -r name port image; do
+        local want=1
+        for c in "$@"; do
+            [[ "${c}" == "${name}" ]] && want=0
+        done
+        [[ "${want}" == "1" ]] && continue
+        if health_ok "${port}"; then
+            log "rollback: ${name} port ${port} answers again"
+        else
+            log "ROLLBACK FAILED: ${name} port ${port} still does not answer"
+        fi
+    done < <(units)
+}
+
+main() {
+    local rc=0
+    case "${CHANNEL}" in
+        main | release) ;;
+        *) log "error: CHANNEL must be main or release (is ${CHANNEL})"; exit 1 ;;
+    esac
+    if [[ "${FORCE}" != "1" && "${DRY}" != "1" ]] && ! in_window; then
+        log "outside ${START_HHMM}-${DEADLINE_HHMM} America/Los_Angeles; not updating"
+        exit 0
+    fi
+    mkdir -p "${STATE_DIR}"
+    if [[ "${CHANNEL}" == "main" ]]; then
+        resolve_main "${IMAGE}:main" || rc=$?
+    else
+        resolve_release || rc=$?
+    fi
+    if [[ "${rc}" == "3" ]]; then
+        exit 0
+    fi
+    if [[ "${rc}" != "0" ]]; then
+        if [[ "${DRY}" == "1" || "${FORCE}" == "1" ]] || final_pass; then
+            log "could not resolve an image; giving up until the next run"
+            exit 0
+        fi
+        log "could not resolve an image; retrying later in the window"
+        exit 0
+    fi
+    if players_busy; then
+        if [[ "${FORCE}" == "1" && "${DRY}" != "1" ]]; then
+            log "not idle; not updating"
+            exit 0
+        fi
+        if final_pass && [[ "${DRY}" != "1" ]]; then
+            log "not idle at the end of the window; skipping until tomorrow"
+        else
+            log "not idle; retrying later in the window"
+        fi
+        exit 0
+    fi
+    if [[ "${DRY}" == "1" ]]; then
+        apply_units
+        exit 0
+    fi
+    maintenance_lock
+    if players_busy; then
+        log "not idle after taking the lock; not updating"
+        exit 0
+    fi
+    log "backing up before the rollout"
+    if ! systemctl --user start cs-server-backup.service; then
+        log "error: backup failed; the image was not changed"
+        exit 1
+    fi
+    apply_units
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --now) FORCE=1; shift ;;
+        --dry-run) DRY=1; shift ;;
+        --help | -h) usage; exit 0 ;;
+        *) log "error: unknown option: $1"; exit 1 ;;
+    esac
+done
+
+main

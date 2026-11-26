@@ -386,14 +386,24 @@ stamp_path() {
     printf '%s/%s-%s\n' "${dir}" "$1" "$(clock_day)"
 }
 
+# Shared with cs-reboot-if-idle and cs-server-update so a rollout, an idle
+# restart, and an idle reboot cannot run at the same time. CS_MAINTENANCE_LOCK
+# overrides the path (tests).
 take_lock() {
-    local dir
-    dir=$(state_dir)
-    mkdir -p "${dir}"
+    local path="${CS_MAINTENANCE_LOCK:-/run/lock/cs-server-maintenance.lock}" dir
+    dir=$(dirname "${path}")
+    if [[ ! -e "${path}" && -d "${dir}" && -w "${dir}" ]]; then
+        (umask 000; : >> "${path}") || true
+    fi
+    if [[ ! -w "${path}" ]]; then
+        path="${HOME}/.local/state/cs-server/maintenance.lock"
+        mkdir -p "$(dirname "${path}")"
+        (umask 000; : >> "${path}") || true
+    fi
     command -v flock >/dev/null 2>&1 || return 0
-    exec 9>"${dir}/run.lock"
+    exec 9>>"${path}"
     if ! flock -n 9; then
-        log "another restart check is already running"
+        log "another maintenance job is running; not restarting"
         exit 0
     fi
 }

@@ -20,6 +20,27 @@ PLAYERS="${CS_PLAYERS:-/usr/local/sbin/cs-players}"
 REQUIRED_FILE="${CS_REBOOT_REQUIRED_FILE:-/var/run/reboot-required}"
 say() { logger -t cs-reboot-if-idle -- "$*"; printf '%s\n' "$*"; }
 
+# Shared with cs-server-restart and cs-server-update.
+maintenance_lock() {
+    local path="${CS_MAINTENANCE_LOCK:-/run/lock/cs-server-maintenance.lock}" dir
+    dir=$(dirname "${path}")
+    if [[ ! -e "${path}" && -d "${dir}" && -w "${dir}" ]]; then
+        (umask 000; : >> "${path}") || true
+    fi
+    if [[ ! -w "${path}" ]]; then
+        path="${HOME:-/tmp}/.local/state/cs-server/maintenance.lock"
+        mkdir -p "$(dirname "${path}")"
+        (umask 000; : >> "${path}") || true
+    fi
+    command -v flock >/dev/null 2>&1 || return 0
+    exec 9>>"${path}"
+    if ! flock -n 9; then
+        say "another maintenance job is running; not rebooting"
+        exit 0
+    fi
+}
+maintenance_lock
+
 if [[ ! -e "${REQUIRED_FILE}" && "${CS_REBOOT_ASSUME_REQUIRED:-0}" != "1" ]]; then
     say "no reboot required"
     exit 0

@@ -32,7 +32,7 @@ services:
       # Prometheus endpoint inside the container; publish the port yourself.
       METRICS_PORT: ${METRICS_PORT:-}
       LOGS: ${LOGS:-1}
-      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-7}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
       LOGADDRESS: ${LOGADDRESS:-}
       SERVER_IP: ${SERVER_IP:-}
     # The image is immutable at run time: writes go to the state volume or

@@ -94,6 +94,9 @@ fi
 if [[ -z "${CS_RESTART+x}" ]]; then
     CS_RESTART=1
 fi
+if [[ -z "${CS_UPDATE+x}" ]]; then
+    CS_UPDATE=1
+fi
 RESTART_ONLY=0
 FASTDL="${CS_FASTDL:-0}"
 GAME_PORT="${CS_PORT:-27015}"
@@ -145,6 +148,7 @@ Options:
   --no-install        Set the host up and print a lasting install.sh command
   --no-backup         Do not install daily state-volume backups (CS_BACKUP=0)
   --no-restart        Do not install the daily idle-restart timer (CS_RESTART=0)
+  --no-update         Do not install the daily image rollout (CS_UPDATE=0)
   --restart-only      Install or remove only that timer, for an existing user
   --dod               Also install Day of Defeat on 27016/udp (CS_DOD=1)
   --harden-ssh        Password SSH off, root key login kept; nothing else
@@ -280,6 +284,7 @@ parse_args() {
             --no-install) RUN_INSTALL=0; shift ;;
             --no-backup) CS_BACKUP=0; shift ;;
             --no-restart) CS_RESTART=0; shift ;;
+            --no-update) CS_UPDATE=0; shift ;;
             --restart-only) RESTART_ONLY=1; shift ;;
             --dod) DOD=1; shift ;;
             --harden-ssh) HARDEN_SSH=1; shift ;;
@@ -336,6 +341,9 @@ validate() {
     fi
     if [[ "${CS_RESTART}" != "0" && "${CS_RESTART}" != "1" ]]; then
         error "Invalid CS_RESTART: ${CS_RESTART} (expected 0 or 1)"
+    fi
+    if [[ "${CS_UPDATE}" != "0" && "${CS_UPDATE}" != "1" ]]; then
+        error "Invalid CS_UPDATE: ${CS_UPDATE} (expected 0 or 1)"
     fi
     if [[ "${RESTART_ONLY}" == "1" && "${HARDEN_SSH}" == "1" ]]; then
         error "--restart-only and --harden-ssh are separate commands"
@@ -624,8 +632,11 @@ print_plan() {
     info "Packages: ${PACKAGES[*]}"
     info "Downloads: install ca-certificates and curl before anything is fetched"
     info "SSH: authentication unchanged (run --harden-ssh after a key login works; root key login stays unless --nopasswd-sudo)"
-    info "Hardening: unattended-upgrades (no automatic reboot), fail2ban sshd jail, sysctl 61-cs-hardening.conf"
+    info "Hardening: unattended-upgrades (no automatic reboot), fail2ban sshd jail, sysctl 60-cs-server.conf and 61-cs-hardening.conf"
     info "Idle reboot: cs-reboot-if-idle.timer, 04:05 to 07:45 America/Los_Angeles every 20 min, only when a reboot is pending, no human is playing, and no SSH session is open"
+    info "Journal: persistent, 200M, kept 1 month"
+    info "OOM: sshd -900, game containers 500"
+    info "Admin helper: /usr/local/bin/cs and the login banner"
     info "Firewall: $(firewall_words)"
     if [[ "${FIREWALL}" == "nftables" ]]; then
         info "Firewall reload: systemctl reload cs-server-input cs-server-firewall"
@@ -639,14 +650,21 @@ print_plan() {
     if [[ "${CS_BACKUP}" == "1" ]]; then
         info "Backups: on, daily, keep ${CS_BACKUP_KEEP:-14}, ~${DEPLOY_USER}/cs-server-backups"
         info "Off-site backups: hook enabled only when ~${DEPLOY_USER}/.config/cs-server/offsite.env is mode 600"
+        info "Restore test: monthly, 1st at 04:40 America/Los_Angeles"
     else
         info "Backups: off (CS_BACKUP=0)"
+    fi
+    if [[ "${CS_UPDATE}" == "1" ]]; then
+        info "Image rollout: cs-server-update.timer tracks main (CHANNEL=release for tags), 04:15 America/Los_Angeles every 20 min through 07:55"
+    else
+        info "Image rollout: off (CS_UPDATE=0)"
     fi
     if [[ "${REGEN_HOST_KEYS}" == "1" ]]; then
         warn "SSH host keys: this run generates new keys. Clients will see a changed fingerprint and must forget the old one (ssh-keygen -R <host>)."
     else
         info "SSH host keys: left as they are (pass --regenerate-host-keys once for a template image)"
     fi
+    warn_template_host_keys
     if [[ "${NOPASSWD_SUDO}" == "1" ]]; then
         info "Sudo: NOPASSWD for ${DEPLOY_USER}"
     fi
@@ -1085,12 +1103,181 @@ EOF
 
 install_sysctl() {
     local src=""
+    src=$(ops_file sysctl/60-cs-server.conf)
+    install -Dm644 "${src}" /etc/sysctl.d/60-cs-server.conf
     src=$(ops_file sysctl/61-cs-hardening.conf)
     install -Dm644 "${src}" /etc/sysctl.d/61-cs-hardening.conf
+    sysctl -p /etc/sysctl.d/60-cs-server.conf >/dev/null ||
+        warn "Could not apply vm.swappiness now. /etc/sysctl.d/60-cs-server.conf is installed for the next boot."
     if sysctl -p /etc/sysctl.d/61-cs-hardening.conf >/dev/null; then
-        ok "Sysctl hardening applied (/etc/sysctl.d/61-cs-hardening.conf)"
+        ok "Sysctl hardening applied (/etc/sysctl.d/60-cs-server.conf and 61-cs-hardening.conf)"
     else
         warn "Could not apply every sysctl now. /etc/sysctl.d/61-cs-hardening.conf is installed for the next boot."
+    fi
+}
+
+# Restart journald only when the drop-in content changes, so a second bootstrap
+# does not bounce the journal.
+install_journald() {
+    local src="" dest="/etc/systemd/journald.conf.d/50-cs-server.conf"
+    src=$(ops_file journald/50-cs-server.conf)
+    if [[ -f "${dest}" ]] && cmp -s "${src}" "${dest}"; then
+        ok "journald limits already installed"
+        return 0
+    fi
+    install -Dm644 "${src}" "${dest}"
+    systemctl restart systemd-journald
+    ok "journald: persistent storage, 200M, kept for 1 month"
+}
+
+# OOMScoreAdjust=-900 so the kernel kills the game before sshd. daemon-reload
+# does not change the running listener; write the live score when we can.
+install_ssh_oom() {
+    local src="" dest="/etc/systemd/system/ssh.service.d/oom.conf" pid=""
+    src=$(ops_file ssh/oom.conf)
+    install -d -m 755 /etc/systemd/system/ssh.service.d
+    if [[ ! -f "${dest}" ]] || ! cmp -s "${src}" "${dest}"; then
+        install -m 644 "${src}" "${dest}"
+        systemctl daemon-reload
+    fi
+    if systemctl cat ssh.service >/dev/null 2>&1; then
+        pid=$(systemctl show ssh -p MainPID --value 2>/dev/null || true)
+        if [[ "${pid}" =~ ^[1-9][0-9]*$ && -w "/proc/${pid}/oom_score_adj" ]]; then
+            printf '%s\n' -900 > "/proc/${pid}/oom_score_adj" ||
+                warn "Could not set the running sshd oom score. New sshd processes pick up the drop-in."
+        fi
+    fi
+    ok "sshd OOM score is -900 (the game container is 500)"
+}
+
+install_admin_kit() {
+    local src="" motd=""
+    src=$(ops_file cs)
+    motd=$(ops_file update-motd.d/50-cs-server)
+    install -d -m 755 /usr/local/bin /etc/update-motd.d /etc/cs-server
+    install -m 755 "${src}" /usr/local/bin/cs
+    install -m 755 "${motd}" /etc/update-motd.d/50-cs-server
+    printf 'CS_DEPLOY_USER=%s\n' "${DEPLOY_USER}" > /etc/cs-server/admin.env
+    chmod 644 /etc/cs-server/admin.env
+    ok "Admin helper installed: cs status, cs logs, cs backup-now, cs restart-if-idle"
+}
+
+install_restore_test() {
+    local home="" script="" unit="" timer=""
+    home=$(deploy_home)
+    if [[ "${CS_BACKUP}" != "1" ]]; then
+        if [[ -f "${home}/.config/systemd/user/cs-restore-test.timer" ]]; then
+            user_systemctl disable --now cs-restore-test.timer || true
+            rm -f \
+                "${home}/.config/systemd/user/cs-restore-test.service" \
+                "${home}/.config/systemd/user/cs-restore-test.timer" \
+                "${home}/.local/bin/cs-restore-test"
+            user_systemctl daemon-reload || true
+        fi
+        info "Monthly restore test: off (CS_BACKUP=0)"
+        return 0
+    fi
+    script=$(ops_file cs-restore-test)
+    unit=$(ops_file systemd/cs-restore-test.service)
+    timer=$(ops_file systemd/cs-restore-test.timer)
+    install -d -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" \
+        "${home}/.local/bin" "${home}/.config/systemd/user"
+    install -m 755 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" \
+        "${script}" "${home}/.local/bin/cs-restore-test"
+    install -m 644 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" \
+        "${unit}" "${home}/.config/systemd/user/cs-restore-test.service"
+    install -m 644 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" \
+        "${timer}" "${home}/.config/systemd/user/cs-restore-test.timer"
+    user_systemctl daemon-reload
+    user_systemctl enable --now cs-restore-test.timer
+    ok "Monthly restore test installed (1st of the month, 04:40 America/Los_Angeles)"
+}
+
+install_tmpfiles() {
+    local src=""
+    src=$(ops_file tmpfiles/cs-server.conf)
+    install -Dm644 "${src}" /etc/tmpfiles.d/cs-server.conf
+    if command -v systemd-tmpfiles >/dev/null 2>&1; then
+        systemd-tmpfiles --create /etc/tmpfiles.d/cs-server.conf >/dev/null || true
+    fi
+    ok "Maintenance lock file is declared (idle restart, idle reboot, image rollout)"
+}
+
+# Seed update.env and update.units only when missing, so a later bootstrap
+# does not reset CHANNEL or a movement line the operator added.
+install_update() {
+    local home="" script="" unit="" timer="" dest=""
+    home=$(deploy_home)
+    if [[ "${CS_UPDATE}" != "1" ]]; then
+        if [[ -f "${home}/.config/systemd/user/cs-server-update.timer" ]]; then
+            user_systemctl disable --now cs-server-update.timer || true
+            rm -f \
+                "${home}/.config/systemd/user/cs-server-update.service" \
+                "${home}/.config/systemd/user/cs-server-update.timer" \
+                "${home}/.local/bin/cs-server-update"
+            user_systemctl daemon-reload || true
+        fi
+        info "Image rollout: off (CS_UPDATE=0)"
+        return 0
+    fi
+    script=$(ops_file cs-server-update)
+    unit=$(ops_file systemd/cs-server-update.service)
+    timer=$(ops_file systemd/cs-server-update.timer)
+    install -d -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" \
+        "${home}/.local/bin" "${home}/.config/systemd/user" "${home}/.config/cs-server"
+    install -m 755 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" \
+        "${script}" "${home}/.local/bin/cs-server-update"
+    install -m 644 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" \
+        "${unit}" "${home}/.config/systemd/user/cs-server-update.service"
+    dest="${home}/.config/systemd/user/cs-server-update.timer"
+    if [[ -n "${CS_UPDATE_CALENDAR:-}" ]]; then
+        awk -v cal="${CS_UPDATE_CALENDAR}" '
+            /^OnCalendar=/ { print "OnCalendar=" cal; next }
+            { print }
+        ' "${timer}" > "${dest}"
+        chown "${DEPLOY_USER}:${DEPLOY_USER}" "${dest}"
+        chmod 644 "${dest}"
+    else
+        install -m 644 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${timer}" "${dest}"
+    fi
+    if [[ ! -f "${home}/.config/cs-server/update.env" ]]; then
+        cat > "${home}/.config/cs-server/update.env" <<EOF
+CHANNEL=main
+CS_UPDATE_REPO=KevinTCoughlin/cs-server
+CS_UPDATE_IMAGE=ghcr.io/kevintcoughlin/cs-server
+EOF
+        chown "${DEPLOY_USER}:${DEPLOY_USER}" "${home}/.config/cs-server/update.env"
+        chmod 644 "${home}/.config/cs-server/update.env"
+    fi
+    if [[ ! -f "${home}/.config/cs-server/update.units" ]]; then
+        cat > "${home}/.config/cs-server/update.units" <<EOF
+# name port [image]. The image defaults to CS_UPDATE_IMAGE.
+# One line per Quadlet. A localhost image is left alone.
+scoutzknivez ${GAME_PORT}
+# Movement is a local image (localhost/cs-server:movement-*) and is not built
+# or published by CI. When that image exists on GHCR with the same :main and
+# :sha-<7> tags, uncomment and name it:
+# cs-server-movement 27016 ghcr.io/kevintcoughlin/cs-server
+EOF
+        chown "${DEPLOY_USER}:${DEPLOY_USER}" "${home}/.config/cs-server/update.units"
+        chmod 644 "${home}/.config/cs-server/update.units"
+    fi
+    user_systemctl daemon-reload
+    user_systemctl enable --now cs-server-update.timer
+    ok "Image rollout installed (tracks main; CHANNEL=release in update.env for tags)"
+}
+
+# A RackNerd image ships host keys whose comment ends in nerdvm.com. Those
+# keys are shared with every clone of the template. The flag that replaces
+# them is off unless the operator passes it.
+warn_template_host_keys() {
+    local pub="/etc/ssh/ssh_host_ed25519_key.pub" line=""
+    [[ "${REGEN_HOST_KEYS}" == "1" ]] && return 0
+    command -v ssh-keygen >/dev/null 2>&1 || return 0
+    [[ -f "${pub}" ]] || return 0
+    line=$(ssh-keygen -lf "${pub}" 2>/dev/null || true)
+    if [[ "${line}" == *nerdvm.com* ]]; then
+        warn "SSH host key comment looks like a provider template. Pass --regenerate-host-keys once. Clients will see a new fingerprint."
     fi
 }
 
@@ -1482,6 +1669,8 @@ run_installer() {
             print_install_command "${installer}"
         fi
         install_offsite
+        install_restore_test
+        install_update
         return 0
     fi
     info "Running install.sh as ${DEPLOY_USER}"
@@ -1500,6 +1689,8 @@ run_installer() {
         "${runuser_bin}" -u "${DEPLOY_USER}" -- env "${unset_args[@]}" "${DOD_INSTALL_ENV[@]}" bash "${installer}"
     fi
     install_offsite
+    install_restore_test
+    install_update
 }
 
 parse_args "$@"
@@ -1566,6 +1757,10 @@ add_swap_if_small
 relax_userns
 configure_upgrades
 install_sysctl
+install_journald
+install_ssh_oom
+install_admin_kit
+install_tmpfiles
 install_idle_reboot
 configure_fail2ban
 apply_firewall
