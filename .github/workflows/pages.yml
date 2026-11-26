@@ -10,14 +10,19 @@ on:
     paths:
       - docs/**
       - .github/workflows/pages.yml
+  pull_request:
+    paths:
+      - docs/**
+      - .github/workflows/pages.yml
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# One deploy at a time; let an in-progress deploy finish.
+# One production deploy at a time. Pull requests build in their own group
+# so a check cannot hold up the deploy, and they never deploy.
 concurrency:
-  group: pages
+  group: ${{ github.event_name == 'pull_request' && format('pages-{0}', github.ref) || 'pages' }}
   cancel-in-progress: false
 
 jobs:
@@ -37,13 +42,15 @@ jobs:
           source: ./docs
           destination: ./_site
 
-      # docs/records is static (no front matter). Confirm Jekyll copied it,
-      # and that the records JSON never lands in the FastDL tree.
+      # docs/records is static (no front matter), so Jekyll copies it unchanged.
+      # The fetch call is fetch("./records.json", ...): a pattern that requires
+      # the closing paren immediately after the quote does not match, and with
+      # bash -e that failed the build before the artifact was uploaded.
       - name: Records page is in the site
         run: |
-          test -s _site/records/index.html
-          test -s _site/records/records.json
-          grep -q 'fetch("./records.json")' _site/records/index.html
+          test -s _site/records/index.html || { echo "missing _site/records/index.html" >&2; exit 1; }
+          test -s _site/records/records.json || { echo "missing _site/records/records.json" >&2; exit 1; }
+          grep -q 'fetch("./records.json"' _site/records/index.html || { echo "records page does not fetch ./records.json" >&2; exit 1; }
           if [ -d _site/cstrike ] && find _site/cstrike -name records.json -print -quit | grep -q .; then
             echo "records.json must not be published under cstrike/" >&2
             exit 1
@@ -55,6 +62,7 @@ jobs:
   deploy:
     name: Deploy
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
       pages: write
