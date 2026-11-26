@@ -46,8 +46,9 @@
 #      cs-reboot-if-idle, which reboots for a pending kernel update only when
 #      no human is on a game port and no SSH session is open.
 #   6. Install the query-flood nftables unit and reload it, so a second run
-#      picks up new ports. Allow SSH and 27015/udp (and 27016/udp when
-#      CS_DOD=1, and the FastDL port when CS_FASTDL=1) with nftables, or with
+#      picks up new ports. Allow SSH, 27015/udp and 27016/udp (the movement
+#      server, which this script does not install), plus the FastDL port when
+#      CS_FASTDL=1, with nftables, or with
 #      ufw when ufw is installed, or with firewalld when firewalld is already
 #      running. The nftables input policy is reloaded with the query-flood unit
 #   7. loginctl enable-linger for the deploy user. On Podman, also
@@ -509,6 +510,10 @@ firewall_words() {
     local extra="" ports="${GAME_PORT}/udp"
     if [[ "${DOD}" == "1" ]]; then
         ports="${GAME_PORT}/udp, dod ${DOD_PORT}/udp"
+    elif [[ "${GAME_PORT}" != "27016" ]]; then
+        # 27016 stays open for the movement server. Day of Defeat already
+        # names that port above.
+        ports="${GAME_PORT}/udp, 27016/udp"
     fi
     if [[ "${FASTDL}" == "1" ]]; then
         extra=", fastdl ${FASTDL_PORT}/tcp"
@@ -1409,12 +1414,22 @@ ops_file() {
     printf '%s\n' "${dest}"
 }
 
-# One port, or an nftables set when Day of Defeat is installed beside CS.
+# An nftables set of every game port this host should keep open. 27016 is
+# the movement server. Bootstrap does not install that unit, and rewriting
+# the define down to a single port would close it on the next run. Day of
+# Defeat uses 27016 unless CS_DOD_PORT names another port, which is added too.
 game_port_define() {
-    if [[ "${DOD}" == "1" ]]; then
-        printf '{ %s, %s }\n' "${GAME_PORT}" "${DOD_PORT}"
+    local list="${GAME_PORT}"
+    if [[ "${DOD}" == "1" && "${DOD_PORT}" != "${GAME_PORT}" ]]; then
+        list="${list}, ${DOD_PORT}"
+    fi
+    if [[ ", ${list}," != *", 27016,"* ]]; then
+        list="${list}, 27016"
+    fi
+    if [[ "${list}" == *,* ]]; then
+        printf '{ %s }\n' "${list}"
     else
-        printf '%s\n' "${GAME_PORT}"
+        printf '%s\n' "${list}"
     fi
 }
 
@@ -1470,7 +1485,7 @@ apply_firewall() {
         if [[ "${DOD}" == "1" ]]; then
             ok "nftables allows SSH ${SSH_PORT}/tcp and ${GAME_PORT}/udp and ${DOD_PORT}/udp"
         else
-            ok "nftables allows SSH ${SSH_PORT}/tcp and ${GAME_PORT}/udp"
+            ok "nftables allows SSH ${SSH_PORT}/tcp and ${GAME_PORT}/udp and 27016/udp"
         fi
         warn "Confirm a new SSH session before closing this one."
     elif [[ "${FIREWALL}" == "ufw" ]]; then
@@ -1478,6 +1493,8 @@ apply_firewall() {
         ufw allow "${GAME_PORT}/udp"
         if [[ "${DOD}" == "1" ]]; then
             ufw allow "${DOD_PORT}/udp"
+        elif [[ "${GAME_PORT}" != "27016" ]]; then
+            ufw allow 27016/udp
         fi
         if [[ "${FASTDL}" == "1" ]]; then
             ufw allow "${FASTDL_PORT}/tcp"
@@ -1495,6 +1512,8 @@ apply_firewall() {
         firewall-cmd --permanent --add-port="${GAME_PORT}/udp"
         if [[ "${DOD}" == "1" ]]; then
             firewall-cmd --permanent --add-port="${DOD_PORT}/udp"
+        elif [[ "${GAME_PORT}" != "27016" ]]; then
+            firewall-cmd --permanent --add-port=27016/udp
         fi
         if [[ "${FASTDL}" == "1" ]]; then
             firewall-cmd --permanent --add-port="${FASTDL_PORT}/tcp"

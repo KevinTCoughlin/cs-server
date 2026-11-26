@@ -1,7 +1,10 @@
-# Movement / surf server. Image= must be the same string as in
+# Movement / climb server. Image= must be the same string as in
 # quadlet/cs-fastdl-movement.container, including a digest pin. Repoint both
 # together: the sidecar serves the maps baked into its image, and a different
 # image than the game server is running hands clients the wrong files.
+# The box currently runs localhost/cs-server:movement-cfd95fa. This template
+# uses the stable name localhost/cs-server:movement. Retag that image, or
+# change both Image= lines to the sha tag, before copying these units over.
 # Replace HOST in FASTDL_URL with the address clients use (CS_FASTDL_HOST).
 # Do not set sv_downloadurl in server.cfg; the entrypoint maps FASTDL_URL to
 # +sv_downloadurl, which survives the per-map re-exec of server.cfg.
@@ -26,9 +29,9 @@ Volume=cs-server-state-movement:/hlds/state
 Environment=MAXPLAYERS=20
 Environment=PORT=27016
 Environment=BOTS=0
-Environment=MAPCYCLE=mapcycle-surf.txt
+Environment=MAPCYCLE=mapcycle-climb.txt
 Environment=LAN_MODE=0
-Environment=MODE=surf
+Environment=MODE=climb
 Environment=LOGS=1
 Environment=LOG_RETENTION_DAYS=30
 Environment=FASTDL_URL=http://HOST:27080/cstrike/

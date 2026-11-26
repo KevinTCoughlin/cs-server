@@ -151,5 +151,11 @@ assert_contains "sidecar cpu cap" \
     "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" "CPUQuota=50%"
 assert_contains "sidecar health check" \
     "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" "HealthCmd=/fastdl.sh check"
+assert_contains "sidecar has a writable tmpfs" \
+    "$(cat "${ROOT}/quadlet/cs-fastdl-movement.container")" "Tmpfs=/tmp"
+assert_contains "movement runs climb" \
+    "$(cat "${ROOT}/quadlet/cs-server-movement.container")" "Environment=MODE=climb"
+assert_contains "movement uses the climb rotation" \
+    "$(cat "${ROOT}/quadlet/cs-server-movement.container")" "Environment=MAPCYCLE=mapcycle-climb.txt"
 
 printf 'qol tests passed\n'

@@ -7,14 +7,16 @@
 # ufw is not installed. It does not flush other tables. The query-flood
 # limit stays in cs-server.nft, which is safe beside firewalld and ufw.
 #
-# bootstrap rewrites define ssh_port and define game_port. With CS_FASTDL=1
+# bootstrap rewrites define ssh_port and define game_port. The game set
+# stays { 27015, 27016 }: 27016 is the movement server, which bootstrap
+# does not install, and a later run must not close it. With CS_FASTDL=1
 # it also rewrites define fastdl_port and keeps the three rules under
 # FASTDL_RULE. Without CS_FASTDL it removes that block, so 27080 stays
-# closed. Loading this file as it is allows 22/tcp, 27015/udp, and
-# 27080/tcp with the FastDL limits below.
+# closed. Loading this file as it is allows 22/tcp, 27015/udp, 27016/udp,
+# and 27080/tcp with the FastDL limits below.
 
 define ssh_port = 22
-define game_port = 27015
+define game_port = { 27015, 27016 }
 define fastdl_port = 27080
 
 table inet cs_server_input
@@ -46,8 +48,8 @@ table inet cs_server_input {
         tcp dport $ssh_port accept
         udp dport $game_port accept
         # FASTDL_RULE: drop new connections over 40/s (burst 80), drop a source with more than 60 connections, then accept.
-        tcp dport $fastdl_port ct state new update @fastdl_new { ip saddr limit rate over 40/second burst 80 packets } drop
-        tcp dport $fastdl_port ct state new update @fastdl_ct { ip saddr ct count over 60 } drop
+        tcp dport $fastdl_port ct state new add @fastdl_new { ip saddr limit rate over 40/second burst 80 packets } drop
+        tcp dport $fastdl_port ct state new add @fastdl_ct { ip saddr ct count over 60 } drop
         tcp dport $fastdl_port accept
     }
 }
