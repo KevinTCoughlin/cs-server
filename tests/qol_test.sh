@@ -135,7 +135,8 @@ assert_contains "missing admin file fails the check" "${out}" "users.ini missing
 game=$(sed -n 's/^Image=//p' "${ROOT}/quadlet/cs-server-movement.container")
 side=$(sed -n 's/^Image=//p' "${ROOT}/quadlet/cs-fastdl-movement.container")
 assert_eq "movement and its FastDL sidecar use one image" "${game}" "${side}"
-[[ -n "${game}" ]] || fail "movement quadlet has no Image="
+assert_eq "movement quadlets name the published image" \
+    "ghcr.io/kevintcoughlin/cs-server-movement:main" "${game}"
 assert_contains "movement FastDL URL is a host placeholder" \
     "$(cat "${ROOT}/quadlet/cs-server-movement.container")" \
     "Environment=FASTDL_URL=http://HOST:27080/cstrike/"

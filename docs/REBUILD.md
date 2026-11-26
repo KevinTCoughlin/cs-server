@@ -62,22 +62,30 @@ is mode 0600. The bucket and the token are created by hand.
 ## On-box rollout
 
 `~cs/.config/cs-server/update.env` sets `CHANNEL=main`. The timer pulls
-`ghcr.io/kevintcoughlin/cs-server:main`, which the image workflow publishes
-on a push to `main` together with `:sha-<7 character commit>`. It pins
+`ghcr.io/kevintcoughlin/cs-server:main` for the Counter-Strike unit, and the
+`:main` tag of every other repository named in `update.units`. The image
+workflows publish those tags on a push to `main` together with a
+`:sha-<7 character commit>` tag. A unit is pinned to
 `:sha-<7>@sha256:<digest>` only when that commit's GitHub checks are green,
 the commit message does not contain `[skip deploy]` or `[manual]`, and no
 human is on a listed port. `CHANNEL=release` follows the latest stable GitHub
 release instead. See the README section "On-box rollout".
 
-The image workflow is path-filtered, so a commit that does not change the
+The image workflows are path-filtered, so a commit that does not change the
 server does not move `:main`. Podman auto-update is not used: a digest pin
 does not move, and this timer is what rolls a new digest on purpose.
+
+`update.units` can name more than one image. The movement repository is
+`ghcr.io/kevintcoughlin/cs-server-movement` (`:main`, `:sha-<7>`, and the
+release version tags). A sidecar listed on that line is pinned to the same
+digest and restarted in the same step; if the game port does not answer,
+both go back.
 
 ## Still done by hand
 
 | Thing | Why it is not in the bootstrap |
 | --- | --- |
-| Movement server image | The box runs `localhost/cs-server:movement-cfd95fa`. The Quadlet templates use `localhost/cs-server:movement`. Retag the loaded image, or set both `Image=` lines to the sha tag. CI does not build or publish it. The config directory is backed up (`config-cs-server-movement-*.tar.gz`). The image itself is not. [`quadlet/cs-server-movement.container`](../quadlet/cs-server-movement.container) (`MODE=climb`, `mapcycle-climb.txt`, `27016/udp`) and [`quadlet/cs-fastdl-movement.container`](../quadlet/cs-fastdl-movement.container) share one `Image=` line: repoint both together. |
+| Movement server image | CI publishes `ghcr.io/kevintcoughlin/cs-server-movement` (`:main`, `:sha-<7>`, and release version tags). It is the Counter-Strike build plus the climb and surf maps. A box still on `localhost/cs-server:movement-cfd95fa` switches by installing the new `cs-server-update`, setting both Quadlet `Image=` lines to `ghcr.io/kevintcoughlin/cs-server-movement:main`, and setting `update.units` to `cs-server-movement 27016 ghcr.io/kevintcoughlin/cs-server-movement cs-fastdl-movement`. The timer then pins one digest into both units. The config directory is backed up (`config-cs-server-movement-*.tar.gz`). The image comes from the registry. [`quadlet/cs-server-movement.container`](../quadlet/cs-server-movement.container) (`MODE=climb`, `mapcycle-climb.txt`, `27016/udp`) and [`quadlet/cs-fastdl-movement.container`](../quadlet/cs-fastdl-movement.container) share one `Image=` line. |
 | Movement FastDL | Copy both Quadlets into `~cs/.config/containers/systemd/`, replace `HOST` in `FASTDL_URL` with the public address, and run the bootstrap with `CS_FASTDL=1` so `27080/tcp` is opened with the per-source limits (40 new connections a second, burst 80, at most 60 connections). The sidecar serves every map in that image, including manifest rows with `fastdl=no`, the same as the game server's own download. `just fastdl` (GitHub Pages) still skips those maps. |
 | Provider panel | Hostname, firewall in front of the VM, rDNS, and the console live in the provider panel. A new VPS has a new address. |
 | DNS and listings | Every place that names the public address: FastDL URL, the website, server-browser listings, `connect` strings, and `CS_HEALTH_HOST`. |

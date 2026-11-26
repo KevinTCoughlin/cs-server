@@ -1,17 +1,18 @@
 # FastDL sidecar for the movement server. Image= must be the same string as
-# in quadlet/cs-server-movement.container, including a digest pin. Repoint
-# both together. The box currently runs localhost/cs-server:movement-cfd95fa;
-# this template uses localhost/cs-server:movement. This container serves every map, sound, sprite, model, gfx,
-# overview and wad in that image, including maps whose manifest row says
-# fastdl=no. That matches sv_allowdownload: the client can fetch whatever the
-# server has. GitHub Pages (just fastdl) is the tree that skips fastdl=no.
+# in quadlet/cs-server-movement.container, including a digest pin.
+# cs-server-update rewrites both together from
+# ghcr.io/kevintcoughlin/cs-server-movement (:main, then :sha-<7>@sha256:…).
+# This container serves every map, sound, sprite, model, gfx, overview and
+# wad in that image, including maps whose manifest row says fastdl=no. That
+# matches sv_allowdownload: the client can fetch whatever the server has.
+# GitHub Pages (just fastdl) is the tree that skips fastdl=no.
 [Unit]
 Description=CS 1.6 movement FastDL (maps over HTTP)
 Wants=network-online.target
 After=network-online.target
 
 [Container]
-Image=localhost/cs-server:movement
+Image=ghcr.io/kevintcoughlin/cs-server-movement:main
 ContainerName=cs-fastdl-movement
 PodmanArgs=--entrypoint /fastdl.sh
 PublishPort=27080:27080/tcp
