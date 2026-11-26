@@ -123,6 +123,7 @@ test:
     bash tests/bootstrap_test.sh
     bash tests/vps_hardening_test.sh
     bash tests/qol_test.sh
+    bash tests/server_health_test.sh
     bash tests/update_test.sh
     bash tests/restart_idle_test.sh
     bash tests/backup_test.sh

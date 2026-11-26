@@ -40,9 +40,9 @@ template comment (`nerdvm.com`), pass `--regenerate-host-keys` once. Clients
 see a new fingerprint. The bootstrap warns when it sees that comment.
 
 Set the repository variable `CS_HEALTH_HOST` to the new public IPv4 so the
-uptime workflow has somewhere to send A2S. `CS_HEALTH_PORT` defaults to
-27015. `CS_HEALTH_EXTRA_PORTS` is a space-separated list (for example
-`27016`).
+uptime workflow has somewhere to send A2S. `CS_HEALTH_PORTS` is an optional
+space-separated list of UDP ports. When it is unset, the check queries
+`27015` and `27016`.
 
 ## What backups restore
 

@@ -30,10 +30,15 @@
 // A map with neither buttons nor zones still plays; it has no timer.
 //
 // Checkpoints (say, or say_team):
-//   /cp       save the spot you stand on (on the ground only)
-//   /tp       back to the last checkpoint (also /gc)
-//   /stuck    back to the checkpoint before that one
+//   /cp       save a checkpoint. Climb: on the ground only. Surf: in the air
+//             too. Surf keeps five; climb keeps the last two.
+//   /tp       back to the last checkpoint (also /gc). Climb arrives stopped.
+//             Surf comes back with the saved speed and view angles. Either
+//             way the run is a "cp" run from then on.
+//   /stuck    the checkpoint before that one. On surf, say it again to walk
+//             one further back.
 //   /start    back to the start button, timer off (also /restart)
+//   /spec     toggle spectator. Going to spec stops and clears the run.
 //   /top      this map's best times
 //
 // A run that never teleported is a "pro" run; one that did is a "cp" run.
@@ -70,7 +75,8 @@
 // MODE=auto, scoutzknivez.amxx has already set localinfo sk_mapmode to surf
 // or climb (it is loaded first), and that wins, so an override in
 // modes/map-modes.ini changes the timer as well as the physics. MODE=climb
-// and MODE=surf leave this decision on the map name.
+// and MODE=surf leave this decision on the map name. The same flag
+// (g_bSurf) picks the checkpoint rules.
 
 #pragma semicolon 1
 
@@ -78,8 +84,18 @@
 #include <amxmisc>
 #include <fakemeta>
 #include <hamsandwich>
+#include <cstrike>
 
 #define MAX_TOP 15
+// Climb keeps the newest save and the one /stuck returns to. Surf keeps a
+// short stack so /stuck can walk back. CP_SLOTS is the array size and has to
+// be at least as big as either limit.
+#define CP_SLOTS_CLIMB 2
+#define CP_SLOTS_SURF 5
+#define CP_SLOTS 5
+#if CP_SLOTS < CP_SLOTS_SURF || CP_SLOTS < CP_SLOTS_CLIMB
+#error CP_SLOTS is smaller than a mode's checkpoint stack
+#endif
 #define KEY_LEN 48
 #define NAME_LEN 32
 #define TASK_HUD 7411
@@ -131,11 +147,15 @@ new bool:g_bHasStart[33];
 new Float:g_fStartOrigin[33][3];
 new Float:g_fStartAngles[33][3];
 
-// The last two checkpoints: [0] is the newest.
+// Checkpoints, newest first. Climb uses the first two slots. Surf uses five
+// and also keeps velocity, so /tp can put that speed back.
 new g_iSaved[33];
-new Float:g_fCpOrigin[33][2][3];
-new Float:g_fCpAngles[33][2][3];
-new bool:g_bCpDucked[33][2];
+new g_iCpAt[33];
+new Float:g_fCpOrigin[33][CP_SLOTS][3];
+new Float:g_fCpAngles[33][CP_SLOTS][3];
+new Float:g_fCpVelocity[33][CP_SLOTS][3];
+new bool:g_bCpDucked[33][CP_SLOTS];
+new bool:g_bCpGround[33][CP_SLOTS];
 
 // --- Top lists --------------------------------------------------------------
 
@@ -184,6 +204,7 @@ public plugin_init() {
     register_chat("/stuck", "cmd_stuck");
     register_chat("/start", "cmd_start");
     register_chat("/restart", "cmd_start");
+    register_chat("/spec", "cmd_spec");
     register_chat("/top", "cmd_top");
 
     register_clcmd("mv_zone", "cmd_zone", ADMIN_CFG, "<start|end|show|clear> - mark this map's timer zones");
@@ -227,6 +248,8 @@ public plugin_init() {
     }
     log_amx("[MV] %s: %s, %d pro and %d cp times", g_szMap, timer_kind(),
         g_iTopCount[CAT_PRO], g_iTopCount[CAT_CP]);
+    log_amx("[MV] %s: checkpoints %s", g_szMap,
+        g_bSurf ? "air, velocity restored" : "ground, velocity cleared");
 
     set_task(1.0, "show_timers", TASK_HUD, _, _, "b");
 }
@@ -306,6 +329,7 @@ reset_player(id) {
     g_bRunning[id] = false;
     g_bHasStart[id] = false;
     g_iSaved[id] = 0;
+    g_iCpAt[id] = -1;
     g_iCheckpoints[id] = 0;
     g_iTeleports[id] = 0;
     g_bSolid[id] = false;
@@ -319,13 +343,25 @@ public welcome(id) {
     if (!is_user_connected(id)) {
         return;
     }
-    client_print(id, print_chat, "[%s] say /cp to save a checkpoint, /tp to return to it, /start to go back, /top for the best times.", g_szTag);
+    if (g_bSurf) {
+        client_print(id, print_chat, "[%s] say /cp to save a checkpoint in the air, /tp to return with your speed, /spec to watch, /top for the best times.", g_szTag);
+    } else {
+        client_print(id, print_chat, "[%s] say /cp to save a checkpoint, /tp to return to it, /spec to watch, /top for the best times.", g_szTag);
+    }
     if (!timed()) {
         client_print(id, print_chat, "[%s] This map has no timer yet, so runs are not timed here.", g_szTag);
     }
 }
 
 public on_spawn(id) {
+    // Spectating ends the run. A later spawn must not resume it.
+    if (cs_get_user_team(id) == CS_TEAM_SPECTATOR) {
+        if (g_bRunning[id]) {
+            client_print(id, print_chat, "[%s] Run over.", g_szTag);
+        }
+        abandon_run(id);
+        return HAM_IGNORED;
+    }
     if (!is_user_alive(id) || !g_bRunning[id]) {
         return HAM_IGNORED;
     }
@@ -378,6 +414,7 @@ start_run(id, bool:fromButton = true) {
     g_iCheckpoints[id] = 0;
     g_iTeleports[id] = 0;
     g_iSaved[id] = 0;
+    g_iCpAt[id] = -1;
 
     g_bHasStart[id] = fromButton;
     if (fromButton) {
@@ -440,26 +477,48 @@ format_time_centis(centis, out[], len) {
 
 // --- Checkpoints ------------------------------------------------------------
 
+cp_limit() {
+    return g_bSurf ? CP_SLOTS_SURF : CP_SLOTS_CLIMB;
+}
+
+// Drop the run without recording it. Spectating and /start both use this.
+abandon_run(id) {
+    g_bRunning[id] = false;
+    g_iSaved[id] = 0;
+    g_iCpAt[id] = -1;
+    g_iCheckpoints[id] = 0;
+    g_iTeleports[id] = 0;
+}
+
 public cmd_checkpoint(id) {
     if (!is_user_alive(id)) {
         return PLUGIN_HANDLED;
     }
-    if (!(pev(id, pev_flags) & FL_ONGROUND)) {
+    // Climb saves on the ground only. Surf saves in the air as well.
+    if (!g_bSurf && !(pev(id, pev_flags) & FL_ONGROUND)) {
         client_print(id, print_center, "Stand on the ground to save a checkpoint");
         return PLUGIN_HANDLED;
     }
-    // The newest becomes the one /stuck goes back to.
-    for (new i = 0; i < 3; i++) {
-        g_fCpOrigin[id][1][i] = g_fCpOrigin[id][0][i];
-        g_fCpAngles[id][1][i] = g_fCpAngles[id][0][i];
+    new limit = cp_limit();
+    // Shift toward the older end. [0] stays the newest, which /stuck walks.
+    for (new s = limit - 1; s > 0; s--) {
+        for (new i = 0; i < 3; i++) {
+            g_fCpOrigin[id][s][i] = g_fCpOrigin[id][s - 1][i];
+            g_fCpAngles[id][s][i] = g_fCpAngles[id][s - 1][i];
+            g_fCpVelocity[id][s][i] = g_fCpVelocity[id][s - 1][i];
+        }
+        g_bCpDucked[id][s] = g_bCpDucked[id][s - 1];
+        g_bCpGround[id][s] = g_bCpGround[id][s - 1];
     }
-    g_bCpDucked[id][1] = g_bCpDucked[id][0];
 
     pev(id, pev_origin, g_fCpOrigin[id][0]);
     pev(id, pev_v_angle, g_fCpAngles[id][0]);
+    pev(id, pev_velocity, g_fCpVelocity[id][0]);
     g_bCpDucked[id][0] = bool:(pev(id, pev_flags) & FL_DUCKING);
-    g_iSaved[id] = min(g_iSaved[id] + 1, 2);
+    g_bCpGround[id][0] = bool:(pev(id, pev_flags) & FL_ONGROUND);
+    g_iSaved[id] = min(g_iSaved[id] + 1, limit);
     g_iCheckpoints[id]++;
+    g_iCpAt[id] = -1;
     client_print(id, print_center, "Checkpoint #%d", g_iCheckpoints[id]);
     return PLUGIN_HANDLED;
 }
@@ -470,7 +529,13 @@ public cmd_teleport(id) {
 }
 
 public cmd_stuck(id) {
-    teleport_cmd(id, 1);
+    new which = 1;
+    // Surf walks one slot further back on each /stuck. Climb only has the
+    // one before the newest, so it always asks for slot 1.
+    if (g_bSurf && g_iCpAt[id] >= 1) {
+        which = g_iCpAt[id] + 1;
+    }
+    teleport_cmd(id, which);
     return PLUGIN_HANDLED;
 }
 
@@ -482,6 +547,7 @@ teleport_cmd(id, which) {
         client_print(id, print_center, which ? "No earlier checkpoint" : "No checkpoint yet: say /cp");
         return;
     }
+    // A teleport makes the run a cp run, on surf and on climb.
     if (g_bRunning[id]) {
         g_iTeleports[id]++;
     }
@@ -489,31 +555,63 @@ teleport_cmd(id, which) {
 }
 
 go_to_checkpoint(id, which) {
-    place(id, g_fCpOrigin[id][which], g_fCpAngles[id][which], g_bCpDucked[id][which]);
+    if (g_bSurf) {
+        place(id, g_fCpOrigin[id][which], g_fCpAngles[id][which], g_bCpDucked[id][which],
+            true, g_fCpVelocity[id][which], g_bCpGround[id][which]);
+    } else {
+        new Float:fStop[3];
+        place(id, g_fCpOrigin[id][which], g_fCpAngles[id][which], g_bCpDucked[id][which],
+            false, fStop, true);
+    }
+    g_iCpAt[id] = which;
 }
 
 public cmd_start(id) {
     if (!is_user_connected(id)) {
         return PLUGIN_HANDLED;
     }
-    g_bRunning[id] = false;
-    g_iSaved[id] = 0;
-    g_iCheckpoints[id] = 0;
-    g_iTeleports[id] = 0;
+    new bool:hasStart = g_bHasStart[id];
+    abandon_run(id);
     if (!is_user_alive(id)) {
         return PLUGIN_HANDLED;
     }
-    if (g_bHasStart[id]) {
-        place(id, g_fStartOrigin[id], g_fStartAngles[id], false);
+    if (hasStart) {
+        new Float:fStop[3];
+        place(id, g_fStartOrigin[id], g_fStartAngles[id], false, false, fStop, true);
     } else {
         ExecuteHamB(Ham_CS_RoundRespawn, id);
     }
     return PLUGIN_HANDLED;
 }
 
-place(id, const Float:origin[3], const Float:angles[3], bool:ducked) {
-    set_pev(id, pev_velocity, Float:{ 0.0, 0.0, 0.0 });
-    set_pev(id, pev_basevelocity, Float:{ 0.0, 0.0, 0.0 });
+// Going to spec drops the run so a respawn cannot carry it on. Coming back
+// just joins a team again; the timer stays off until the next start.
+public cmd_spec(id) {
+    if (!is_user_connected(id) || is_user_bot(id)) {
+        return PLUGIN_HANDLED;
+    }
+    if (cs_get_user_team(id) == CS_TEAM_SPECTATOR) {
+        engclient_cmd(id, "spectate");
+        client_print(id, print_chat, "[%s] You are playing. Say /spec to watch.", g_szTag);
+        return PLUGIN_HANDLED;
+    }
+    new bool:wasRunning = g_bRunning[id];
+    abandon_run(id);
+    engclient_cmd(id, "spectate");
+    if (wasRunning) {
+        client_print(id, print_chat, "[%s] Run over. Say /spec to play again.", g_szTag);
+    } else {
+        client_print(id, print_chat, "[%s] Spectating. Say /spec to play.", g_szTag);
+    }
+    return PLUGIN_HANDLED;
+}
+
+// keepSpeed restores velocity and the ground flag. Climb and /start pass
+// false and arrive stopped. View angles are applied either way.
+place(id, const Float:origin[3], const Float:angles[3], bool:ducked, bool:keepSpeed, const Float:velocity[3], bool:onGround) {
+    new Float:fStop[3];
+    set_pev(id, pev_velocity, fStop);
+    set_pev(id, pev_basevelocity, fStop);
     if (ducked) {
         // A checkpoint saved crouching under a low ceiling: arrive crouched,
         // or the standing hull is stuck in it.
@@ -521,7 +619,21 @@ place(id, const Float:origin[3], const Float:angles[3], bool:ducked) {
         engfunc(EngFunc_SetSize, id, Float:{ -16.0, -16.0, -18.0 }, Float:{ 16.0, 16.0, 32.0 });
     }
     engfunc(EngFunc_SetOrigin, id, origin);
+    // SetOrigin can clear velocity, so the speed goes on after it.
+    if (keepSpeed) {
+        set_pev(id, pev_velocity, velocity);
+        new flags = pev(id, pev_flags);
+        if (onGround) {
+            flags |= FL_ONGROUND;
+        } else {
+            flags &= ~FL_ONGROUND;
+        }
+        set_pev(id, pev_flags, flags);
+    } else {
+        set_pev(id, pev_velocity, fStop);
+    }
     set_pev(id, pev_angles, angles);
+    set_pev(id, pev_v_angle, angles);
     set_pev(id, pev_fixangle, 1);
 }
 
@@ -738,6 +850,12 @@ public srv_record() {
 
 public on_frame() {
     for (new id = 1; id <= g_iMaxPlayers; id++) {
+        // The team menu and the spectate bind never pass through /spec.
+        // Stop the run here so a respawn does not keep the clock going.
+        if (g_bRunning[id] && is_user_connected(id) && cs_get_user_team(id) == CS_TEAM_SPECTATOR) {
+            abandon_run(id);
+            client_print(id, print_chat, "[%s] Run over.", g_szTag);
+        }
         g_bSolid[id] = bool:(g_bSemiclip && is_user_alive(id) && pev(id, pev_solid) == SOLID_SLIDEBOX);
     }
     return FMRES_IGNORED;

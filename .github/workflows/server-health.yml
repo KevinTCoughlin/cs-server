@@ -3,20 +3,23 @@
 #
 # Cloudflare Workers cannot send UDP and a check on the VPS cannot see the VPS
 # being down, so this runs on GitHub's runners. Every 15 minutes it asks each
-# game port A2S_INFO (and falls back to the engine's A2A_PING, which answers
-# even with NOMASTER=1). A port is "down" only when 3 tries 10 s apart all fail.
+# game port A2S_INFO. A server that answers with S2C_CHALLENGE gets the four
+# challenge bytes echoed on the same socket (a NUL in the challenge is kept),
+# and a port that still says nothing falls back to A2A_PING, which the engine
+# answers even with NOMASTER=1. A port is "down" only when 3 tries 10 s apart
+# all fail.
 #
 # One issue titled "Server down" tracks state: opened on the first failure,
 # commented on when the set of down ports changes or every 6 hours, closed on
-# recovery.
+# recovery. The comment lists every port, up or down.
 #
 # No third-party actions: the runner already has Python and the gh CLI, so
 # there is no action SHA to pin. Permissions are contents: read and issues: write.
 #
 # Repository variables (Settings > Secrets and variables > Actions > Variables):
-#   CS_HEALTH_HOST         required. The public IPv4 the server answers on.
-#   CS_HEALTH_PORT         default 27015
-#   CS_HEALTH_EXTRA_PORTS  space separated, e.g. "27016"
+#   CS_HEALTH_HOST   required. The public IPv4 the server answers on.
+#   CS_HEALTH_PORTS  optional, space separated. Default: 27015 27016
+#                    (Counter-Strike, and Slopes & Ladders | Surf + Climb).
 #
 # Notes: scheduled runs can start several minutes late, and GitHub disables
 # schedules in a repository with no activity for 60 days (re-enable under
@@ -38,7 +41,7 @@ concurrency:
 
 env:
   CS_HOST: ${{ vars.CS_HEALTH_HOST }}
-  CS_PORTS: ${{ vars.CS_HEALTH_PORT || '27015' }} ${{ vars.CS_HEALTH_EXTRA_PORTS }}
+  CS_PORTS: "${{ vars.CS_HEALTH_PORTS || '27015 27016' }}"
   ISSUE_TITLE: Server down
   ISSUE_LABEL: server-down
 
@@ -51,51 +54,263 @@ jobs:
         id: probe
         shell: python
         run: |
-          import os, socket, sys, time
+          # cs-server-health-probe-begin
+          # SPDX-License-Identifier: MIT
+          # SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+          """Ask each game port whether it is up, and name the ones that are not.
 
-          host = os.environ.get("CS_HOST", "").strip()
-          if not host:
-              print(
-                  "CS_HEALTH_HOST is unset. Add it under Settings > Secrets and "
-                  "variables > Actions > Variables.",
-                  file=sys.stderr,
-              )
-              sys.exit(1)
-          ports = [int(p) for p in os.environ["CS_PORTS"].split()]
-          INFO = b"\xff\xff\xff\xffTSource Engine Query\x00"
-          PING = b"\xff\xff\xff\xffi\x00"
+          CS_HOST is required (the workflow passes vars.CS_HEALTH_HOST). CS_PORTS is a
+          space-separated list; when it is empty the check uses 27015 and 27016.
 
-          def ask(port, payload):
-              sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-              sock.settimeout(5)
+          A port is up when A2S_INFO returns a server info payload. Modern servers
+          answer the first query with S2C_CHALLENGE (type byte A). The four challenge
+          bytes are sent back on the same socket, unchanged, so a NUL inside them is
+          not dropped. If info never arrives, A2A_PING is enough: the engine answers
+          that even with NOMASTER=1.
+
+          CS_HEALTH_TRIES (default 3), CS_HEALTH_TIMEOUT (default 5 seconds) and
+          CS_HEALTH_GAP (default 10 seconds) tune the retries. A miss is reported on
+          stdout and in GITHUB_OUTPUT; the process still exits 0 so the following step
+          can open or close the issue. Exit 1 is reserved for a broken configuration.
+          """
+
+          import os
+          import socket
+          import sys
+          import time
+
+          HEADER = b"\xff\xff\xff\xff"
+          INFO_QUERY = HEADER + b"TSource Engine Query\x00"
+          PING_QUERY = HEADER + b"i"
+          INFO_TYPES = {ord("I"), ord("m")}
+          CHALLENGE = ord("A")
+          PING_ACK = ord("j")
+          DETAIL_END = "HEALTH_DETAIL"
+
+
+          def fail(message):
+              print(message, file=sys.stderr)
+              raise SystemExit(1)
+
+
+          def env_int(name, default):
+              raw = os.environ.get(name, "").strip()
+              if not raw:
+                  return default
               try:
-                  sock.sendto(payload, (host, port))
-                  data, _ = sock.recvfrom(4096)
-                  return data[:4] == b"\xff\xff\xff\xff"
+                  value = int(raw)
+              except ValueError:
+                  fail(f"{name} must be an integer, got {raw!r}")
+              if value < 1:
+                  fail(f"{name} must be at least 1, got {raw!r}")
+              return value
+
+
+          def env_seconds(name, default, allow_zero):
+              raw = os.environ.get(name, "").strip()
+              if not raw:
+                  return default
+              try:
+                  value = float(raw)
+              except ValueError:
+                  fail(f"{name} must be a number, got {raw!r}")
+              if allow_zero and value < 0:
+                  fail(f"{name} must be zero or positive, got {raw!r}")
+              if not allow_zero and value <= 0:
+                  fail(f"{name} must be positive, got {raw!r}")
+              return value
+
+
+          def ports_from_env():
+              raw = os.environ.get("CS_PORTS", "").strip() or "27015 27016"
+              ports = []
+              for part in raw.split():
+                  if not part.isdigit():
+                      fail(f"port {part!r} is not a number")
+                  port = int(part)
+                  if not 1 <= port <= 65535:
+                      fail(f"port {part} is outside 1-65535")
+                  ports.append(port)
+              return ports
+
+
+          def one_line(text, limit):
+              cleaned = []
+              for char in text:
+                  if char.isprintable() and char not in "\r\n":
+                      cleaned.append(char)
+                  else:
+                      cleaned.append(" ")
+              return " ".join("".join(cleaned).split())[:limit]
+
+
+          def cstrings(buf, count):
+              parts = []
+              current = bytearray()
+              for byte in buf:
+                  if byte == 0:
+                      parts.append(bytes(current).decode("utf-8", "replace"))
+                      current = bytearray()
+                      if len(parts) >= count:
+                          return parts
+                  else:
+                      current.append(byte)
+              return parts
+
+
+          def describe(data):
+              """Return (name, map) from an A2S_INFO payload, or ("", "")."""
+              if len(data) < 6 or data[:4] != HEADER or data[4] not in INFO_TYPES:
+                  return "", ""
+              if data[4] == ord("I"):
+                  parts = cstrings(data[6:], 2)
+                  if len(parts) < 2:
+                      return "", ""
+                  return one_line(parts[0], 128), one_line(parts[1], 64)
+              # Legacy GoldSrc info: address, then hostname, then map.
+              parts = cstrings(data[5:], 3)
+              if len(parts) < 3:
+                  return "", ""
+              return one_line(parts[1], 128), one_line(parts[2], 64)
+
+
+          def recv_packet(sock):
+              try:
+                  data, _addr = sock.recvfrom(4096)
+              except OSError:
+                  return None
+              return data
+
+
+          def query_info(host, port, timeout):
+              """Return an info payload, or None.
+
+              A challenge is answered on this socket. Opening a second socket would
+              come from another source port, and the server would ignore the response.
+              """
+              sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+              sock.settimeout(timeout)
+              try:
+                  sock.sendto(INFO_QUERY, (host, port))
+                  data = recv_packet(sock)
+                  if data is None:
+                      return None
+                  if (
+                      len(data) >= 9
+                      and data[:4] == HEADER
+                      and data[4] == CHALLENGE
+                  ):
+                      # Four bytes, copied as-is. A 0x00 in here must stay in the packet.
+                      sock.sendto(INFO_QUERY + data[5:9], (host, port))
+                      data = recv_packet(sock)
+                      if data is None:
+                          return None
+                  if len(data) >= 5 and data[:4] == HEADER and data[4] in INFO_TYPES:
+                      return data
+                  return None
+              except OSError:
+                  return None
+              finally:
+                  sock.close()
+
+
+          def query_ping(host, port, timeout):
+              sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+              sock.settimeout(timeout)
+              try:
+                  sock.sendto(PING_QUERY, (host, port))
+                  data = recv_packet(sock)
               except OSError:
                   return False
               finally:
                   sock.close()
+              return bool(
+                  data is not None
+                  and len(data) >= 5
+                  and data[:4] == HEADER
+                  and data[4] == PING_ACK
+              )
 
-          def alive(port):
-              for attempt in range(3):
-                  if ask(port, INFO) or ask(port, PING):
-                      return True
-                  if attempt < 2:
-                      time.sleep(10)
-              return False
 
-          down = [p for p in ports if not alive(p)]
-          for port in ports:
-              print(f"{host}:{port} {'DOWN' if port in down else 'up'}")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
-              out.write("down=" + " ".join(str(p) for p in down) + "\n")
+          def check_port(host, port, tries, timeout, gap):
+              for attempt in range(tries):
+                  info = query_info(host, port, timeout)
+                  if info is not None:
+                      name, mapname = describe(info)
+                      return {"up": True, "name": name, "map": mapname, "via": "a2s"}
+                  if query_ping(host, port, timeout):
+                      return {"up": True, "name": "", "map": "", "via": "ping"}
+                  if attempt + 1 < tries and gap:
+                      time.sleep(gap)
+              return {"up": False, "name": "", "map": "", "via": ""}
+
+
+          def detail_line(port, result):
+              if result["up"] and result["name"]:
+                  return f"- {port} up: {result['name']}, map {result['map']}"
+              if result["up"]:
+                  return f"- {port} up: answered {result['via']}"
+              return f"- {port} down: no A2S_INFO or ping reply"
+
+
+          def write_output(name, value):
+              path = os.environ.get("GITHUB_OUTPUT", "").strip()
+              if not path:
+                  return
+              with open(path, "a", encoding="utf-8") as handle:
+                  if "\n" in value or value == DETAIL_END:
+                      body = "\n".join(
+                          line if line != DETAIL_END else f"{DETAIL_END}."
+                          for line in value.split("\n")
+                      )
+                      handle.write(f"{name}<<{DETAIL_END}\n{body}\n{DETAIL_END}\n")
+                  else:
+                      handle.write(f"{name}={value}\n")
+
+
+          def main():
+              host = os.environ.get("CS_HOST", "").strip()
+              if not host:
+                  fail(
+                      "CS_HEALTH_HOST is unset. Add it under Settings > Secrets and "
+                      "variables > Actions > Variables."
+                  )
+              ports = ports_from_env()
+              tries = env_int("CS_HEALTH_TRIES", 3)
+              timeout = env_seconds("CS_HEALTH_TIMEOUT", 5, allow_zero=False)
+              gap = env_seconds("CS_HEALTH_GAP", 10, allow_zero=True)
+
+              down = []
+              lines = []
+              for port in ports:
+                  result = check_port(host, port, tries, timeout, gap)
+                  lines.append(detail_line(port, result))
+                  if result["up"]:
+                      if result["name"]:
+                          extra = f" {result['name']} ({result['map']})"
+                      else:
+                          extra = f" ({result['via']})"
+                      print(f"{host}:{port} up{extra}", flush=True)
+                  else:
+                      print(f"{host}:{port} DOWN", flush=True)
+                      down.append(str(port))
+
+              write_output("down", " ".join(down))
+              write_output("detail", "\n".join(lines))
+
+
+          if __name__ == "__main__":
+              main()
+
+          # cs-server-health-probe-end
 
       - name: Open, update or close the issue
         env:
           GH_TOKEN: ${{ github.token }}
           DOWN: ${{ steps.probe.outputs.down }}
+          DETAIL: ${{ steps.probe.outputs.detail }}
         run: |
+          # cs-server-health-issue-begin
           set -euo pipefail
           gh label create "$ISSUE_LABEL" --color B60205 --description "Game server unreachable" \
             --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
@@ -107,13 +322,17 @@ jobs:
           if [ -z "$DOWN" ]; then
             if [ -n "$number" ]; then
               gh issue comment "$number" --repo "$GITHUB_REPOSITORY" \
-                --body "Recovered at $now: all of ${CS_PORTS} on ${CS_HOST} answer again. [Run]($run_url)"
+                --body "Recovered at $now: all of ${CS_PORTS} on ${CS_HOST} answer again. [Run]($run_url)
+
+          ${DETAIL}"
               gh issue close "$number" --repo "$GITHUB_REPOSITORY" --reason completed
             fi
             exit 0
           fi
 
           body="Down at $now: no A2S_INFO or ping reply from ${CS_HOST} on port(s): **${DOWN}** after 3 tries. [Run]($run_url)
+
+          ${DETAIL}
 
           Check: \`ssh\` to the VPS, then \`cs status\`. If the box does not answer at all, use the provider panel to see whether the VPS is running."
           if [ -z "$number" ]; then
@@ -130,3 +349,5 @@ jobs:
           if [ "$last_ports" != "$DOWN" ] || [ "$age" -ge 21600 ]; then
             gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "$body"
           fi
+
+          # cs-server-health-issue-end
