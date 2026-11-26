@@ -344,6 +344,21 @@ assert_contains "rclone sees the endpoint" "${output}" "offsite: remote now hold
 # The secret must not be echoed by the script itself.
 assert_not_contains "secret stays out of the log" "${output}" "test-secret"
 
+# OFFSITE_PRUNE=0: upload and list, never delete.
+printf 'OFFSITE_PRUNE=0\n' >> "${WORK}/config/offsite.env"
+offsite_case "${WORK}/config/offsite.env"
+[[ "${status}" -eq 0 ]] || fail "prune off: ${output}"
+calls=$(cat "${WORK}/rclone.calls")
+assert_contains "prune off still uploads" "${calls}" "copy ${WORK}/backups offsite:cs-server-backups"
+assert_not_contains "prune off never deletes" "${calls}" "delete"
+assert_contains "prune off says so" "${output}" "not pruning (OFFSITE_PRUNE=0)"
+
+sed -i 's/^OFFSITE_PRUNE=0$/OFFSITE_PRUNE=maybe/' "${WORK}/config/offsite.env"
+offsite_case "${WORK}/config/offsite.env"
+[[ "${status}" -ne 0 ]] || fail "OFFSITE_PRUNE=maybe succeeded: ${output}"
+assert_contains "a bad prune value is rejected" "${output}" "OFFSITE_PRUNE must be 0 or 1"
+assert_eq "a bad prune value runs nothing" "" "$(cat "${WORK}/rclone.calls")"
+
 offsite_case "" CS_OFFSITE_REMOTE="${WORK}/remote"
 [[ "${status}" -eq 0 ]] || fail "local remote: ${output}"
 assert_contains "local remote is the destination" "$(cat "${WORK}/rclone.calls")" "copy ${WORK}/backups ${WORK}/remote"

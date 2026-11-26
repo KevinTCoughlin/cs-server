@@ -185,6 +185,13 @@ OFFSITE_KEEP_DAYS=14
 
 Then re-run the bootstrap (or `sudo bash ops/bootstrap-vps.sh --no-install` on a machine that already has the server). It installs `rclone` and `~cs/.local/bin/cs-server-offsite`, and, only when that file is mode `600`, the user drop-in `~cs/.config/systemd/user/cs-server-backup.service.d/offsite.conf` so the upload runs after each daily backup. A re-run with the file missing, or with any other mode, removes the drop-in. The script uploads archives from the last 15 days (`KEEP_DAYS+1`, so a pruned remote object is not uploaded again from the longer local history) and deletes remote objects older than 14 days. A bucket lifecycle rule of 30 days is an optional backstop; this repo does not create the bucket or the token.
 
+That key can delete what it uploads, so whoever takes over the VPS can remove the off-site copies too. To close that, add `OFFSITE_PRUNE=0` to the file. The script then uploads and lists and never deletes, and the bucket does the rest:
+
+- a lifecycle rule that expires objects (R2: `wrangler r2 bucket lifecycle add <bucket> expire "" --expire-days 180`), which replaces the pruning, and
+- a lock that refuses deletes and overwrites for a while (R2: `wrangler r2 bucket lock add <bucket> keep "" --retention-days 30`; S3 and Backblaze B2 call it Object Lock).
+
+With the lock in place the key can still add objects, and nothing uploaded in the last 30 days can be removed with it. `OFFSITE_KEEP_DAYS` still sets how far back an upload looks.
+
 To stop uploads: delete `offsite.env` and re-run the bootstrap, or remove the drop-in and `systemctl --user daemon-reload`.
 
 ### Roll back the host hardening
