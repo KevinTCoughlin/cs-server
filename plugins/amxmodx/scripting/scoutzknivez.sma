@@ -11,10 +11,10 @@
 //            and only applies the mode's settings.
 //   match    5v5 competitive rules; match.amxx (in the mode's plugin list)
 //            runs the warmup, knife round, sides and pauses.
-//   climb    KZ maps: stock physics, no rounds; movement.amxx (in the mode's
-//            plugin list) runs the timer, checkpoints and top lists.
-//   surf     surf maps: air acceleration 100, no fall damage, no rounds;
-//            movement.amxx times runs between zones.
+//   climb    KZ maps: Kreedz legal physics, no rounds; movement.amxx (in the
+//            mode's plugin list) runs the timer, checkpoints and top lists.
+//   surf     surf maps: air acceleration 100, speed cap 3500, no fall damage,
+//            no rounds; movement.amxx times runs between zones.
 //   auto     per map: modes/map-modes.ini picks surf or climb from the map
 //            name (exact, then the longest prefix, then default). The chosen
 //            mode's cfg is exec'd after server.cfg. MODE=climb and MODE=surf

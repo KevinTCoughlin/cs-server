@@ -131,4 +131,65 @@ sk=$(grep -n '^scoutzknivez.amxx$' "${ROOT}/plugins/amxmodx/modes/auto.ini" | cu
 mv=$(grep -n '^movement.amxx$' "${ROOT}/plugins/amxmodx/modes/auto.ini" | cut -d: -f1)
 [[ -n "${sk}" && -n "${mv}" && "${sk}" -lt "${mv}" ]] || fail "scoutzknivez.amxx must be listed before movement.amxx"
 
+# Kreedz legal physics (https://kreedz.com/rules, Settings). Both mode files
+# set every key, because a cvar survives the map change. Surf differs only
+# where the pair below says so.
+cfg_value() {
+    local file="$1" key="$2" line
+    line=$(grep -E "^${key}[[:space:]]+" "$file" | tail -1) || true
+    [[ -n "${line}" ]] || fail "${file##*/} does not set ${key}"
+    printf '%s\n' "${line#"${key}"[[:space:]]}"
+}
+
+CLIMB_CFG="${ROOT}/config/modes/climb.cfg"
+SURF_CFG="${ROOT}/config/modes/surf.cfg"
+# key, climb value, surf value. Values checked against kreedz.com/rules on
+# 2026-11-26, except surf's air acceleration and speed cap.
+physics=(
+    "sv_gravity 800 800"
+    "sv_airaccelerate 10 100"
+    "sv_accelerate 5 5"
+    "sv_friction 4 4"
+    "edgefriction 2 2"
+    "sv_stopspeed 75 75"
+    "sv_maxvelocity 2000 3500"
+    "sv_maxspeed 320 320"
+    "sv_stepsize 18 18"
+    "sv_wateraccelerate 10 10"
+    "mp_forcechasecam 0 0"
+    "mp_timelimit 60 40"
+    "mp_falldamage 1 0"
+)
+for row in "${physics[@]}"; do
+    # shellcheck disable=SC2086 # three fields, no spaces inside them
+    set -- ${row}
+    assert_eq "climb.cfg $1" "$2" "$(cfg_value "${CLIMB_CFG}" "$1")"
+    assert_eq "surf.cfg $1" "$3" "$(cfg_value "${SURF_CFG}" "$1")"
+done
+
+# No separate movement server.cfg. The shared one sets chasecam 2 and a 30
+# minute clock; the mode file, exec'd after it, is what the movement server
+# actually plays. Other modes put the stock speed cap back so surf's 3500
+# does not leak out.
+assert_eq "server.cfg chasecam" 2 "$(cfg_value "${ROOT}/config/server.cfg" mp_forcechasecam)"
+for mode in scoutz knife vanilla match; do
+    assert_eq "${mode}.cfg restores the speed cap" 2000 \
+        "$(cfg_value "${ROOT}/config/modes/${mode}.cfg" sv_maxvelocity)"
+done
+
+sma=$(cat "${ROOT}/plugins/amxmodx/scripting/movement.sma")
+assert_contains "climb rejects an air checkpoint" "${sma}" \
+    '!g_bSurf && !(pev(id, pev_flags) & FL_ONGROUND)'
+assert_contains "surf teleport restores saved velocity" "${sma}" \
+    'true, g_fCpVelocity[id][which]'
+assert_contains "climb teleport clears velocity" "${sma}" \
+    'false, fStop, true'
+assert_contains "a teleport still counts as a cp run" "${sma}" \
+    'g_iTeleports[id]++'
+assert_contains "surf keeps five checkpoints" "${sma}" 'CP_SLOTS_SURF 5'
+assert_contains "climb keeps two checkpoints" "${sma}" 'CP_SLOTS_CLIMB 2'
+assert_contains "spectating stops the run" "${sma}" 'CS_TEAM_SPECTATOR'
+assert_contains "the plugin logs which checkpoint rules it picked" "${sma}" \
+    'checkpoints %s'
+
 printf 'map mode tests passed\n'
