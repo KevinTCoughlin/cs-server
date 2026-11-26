@@ -40,8 +40,8 @@ expect_invalid "METRICS_BIND must be an IPv4 address" METRICS_PORT=9137 METRICS_
 expect_invalid "PORT must be an integer from 1 to 65535" PORT=18446744073709551616
 expect_invalid "MAP must be a filename" "MAP=scoutzknivez;quit"
 expect_invalid "MAPCYCLE must be a filename" MAPCYCLE=../server.cfg
-expect_invalid "MODE must be scoutz, knife, vanilla, match, climb or surf" MODE=nipper
-expect_invalid "MODE must be scoutz, knife, vanilla, match, climb or surf" "MODE=knife;quit"
+expect_invalid "MODE must be scoutz, knife, vanilla, match, climb, surf or auto" MODE=nipper
+expect_invalid "MODE must be scoutz, knife, vanilla, match, climb, surf or auto" "MODE=knife;quit"
 expect_invalid "FASTDL_URL must be an http(s) URL" FASTDL_URL=ftp://example.com/cstrike/
 expect_invalid "FASTDL_URL must be an http(s) URL" FASTDL_URL=example.com/cstrike/
 expect_invalid "FASTDL_URL must be an http(s) URL" "FASTDL_URL=https://example.com/;quit"
@@ -318,6 +318,26 @@ args=$(cat "${WORK_DIR}/args")
 case "${args}" in
     *"+map surf_one "*"+mapcyclefile mapcycle-surf.txt "*"+localinfo sk_mode surf"*) ;;
     *) printf 'Expected the surf defaults, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+printf 'kz_one\nsurf_two\n' > "${WORK_DIR}/cstrike/mapcycle-movement.txt"
+: > "${WORK_DIR}/cstrike/maps/kz_one.bsp"
+run_stub MODE=auto
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"+map kz_one "*"+mapcyclefile mapcycle-movement.txt "*"+localinfo sk_mode auto"*) ;;
+    *) printf 'Expected the auto defaults, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+case "${args}" in
+    *"+bot_quota 0 +localinfo sk_bots 0"*) ;;
+    *) printf 'Expected no bots in auto mode, got: %s\n' "${args}" >&2; exit 1 ;;
+esac
+mkdir -p "${WORK_DIR}/cstrike/addons/amxmodx/configs/modes"
+: > "${WORK_DIR}/cstrike/addons/amxmodx/configs/modes/auto.ini"
+run_stub MODE=movement MAP=surf_two
+args=$(cat "${WORK_DIR}/args")
+case "${args}" in
+    *"+map surf_two "*"+mapcyclefile mapcycle-movement.txt "*"+localinfo sk_mode auto +localinfo amxx_plugins addons/amxmodx/configs/modes/auto.ini"*) ;;
+    *) printf 'Expected MODE=movement to be auto with its plugin list, got: %s\n' "${args}" >&2; exit 1 ;;
 esac
 [[ -d "${WORK_DIR}/state/amxmodx/zones" ]] || { printf 'No zones directory in the state volume\n' >&2; exit 1; }
 [[ -d "${WORK_DIR}/state/amxmodx/records" ]] || { printf 'No records directory in the state volume\n' >&2; exit 1; }

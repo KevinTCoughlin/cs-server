@@ -64,9 +64,19 @@ if [[ "${GAME}" = "cstrike" && ( "${MODE}" = "vanilla" || "${MODE}" = "match" ) 
     MAP="${MAP:-de_dust2}"
     MAPCYCLE="${MAPCYCLE:-mapcycle-dust2.txt}"
 fi
-# Climb and surf maps have no bot navigation and nothing for a bot to do.
-if [[ "${GAME}" = "cstrike" && ( "${MODE}" = "climb" || "${MODE}" = "surf" ) ]]; then
-    MAPCYCLE="${MAPCYCLE:-mapcycle-${MODE}.txt}"
+# movement is the same per-map mode as auto. mode.sh's "auto" stays the
+# Friday schedule; this alias is only the server's MODE.
+if [[ "${GAME}" = "cstrike" && "${MODE}" = "movement" ]]; then
+    MODE=auto
+fi
+# Climb, surf and auto have no bot navigation and nothing for a bot to do.
+# auto rotates both kinds (mapcycle-movement.txt) and picks settings per map.
+if [[ "${GAME}" = "cstrike" && ( "${MODE}" = "climb" || "${MODE}" = "surf" || "${MODE}" = "auto" ) ]]; then
+    if [[ "${MODE}" = "auto" ]]; then
+        MAPCYCLE="${MAPCYCLE:-mapcycle-movement.txt}"
+    else
+        MAPCYCLE="${MAPCYCLE:-mapcycle-${MODE}.txt}"
+    fi
     # Start on the rotation's first map that this image has. The published
     # image has none of them: third-party maps are fetched and built in
     # locally (maps/manifest.tsv).
@@ -214,9 +224,9 @@ if [[ -n "${LOGADDRESS}" && "${LOGS}" != "1" ]]; then
     exit 1
 fi
 case "${MODE}" in
-    scoutz | knife | vanilla | match | climb | surf) ;;
+    scoutz | knife | vanilla | match | climb | surf | auto) ;;
     *)
-        echo "[entrypoint] MODE must be scoutz, knife, vanilla, match, climb or surf" >&2
+        echo "[entrypoint] MODE must be scoutz, knife, vanilla, match, climb, surf or auto" >&2
         exit 1
         ;;
 esac

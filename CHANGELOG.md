@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- **Per-map surf and climb.** `MODE=auto` (also `MODE=movement`) reads `config/modes/map-modes.ini` when a map loads and execs `modes/surf.cfg` or `modes/climb.cfg` after `server.cfg`. `surf_` is surf. `kz_`, `bkz_`, `kz??_`, `hb_` and `bhop_` are climb. An `exact` line overrides a prefix, and `default` covers the rest. `mapcycle-movement.txt` lists both rotations; `rtv` follows it. `plugins/amxmodx/modes/auto.ini` loads the plugins both modes already share, and `movement.amxx` uses zones or buttons from the resolved mode. `MODE=climb` and `MODE=surf` are unchanged. `just mode auto` is still the Friday schedule; `just mode movement` switches a running server
+
 ## [1.5.0] - 2026-11-26
 
 ### Added

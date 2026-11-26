@@ -16,8 +16,10 @@
 #   mode.sh <engine> climb    KZ maps with a timer and checkpoints,
 #                             mapcycle-climb.txt
 #   mode.sh <engine> surf     surf maps with timer zones, mapcycle-surf.txt
+#   mode.sh <engine> movement surf and climb, chosen per map, mapcycle-movement.txt
 #   mode.sh <engine> auto     nipper from Fri 17:00 to Sat 04:00 local time,
-#                             scoutz otherwise; what the Friday schedule runs
+#                             scoutz otherwise; what the Friday schedule runs.
+#                             This is not the server's MODE=auto.
 #
 # <engine> is `container` (Apple), `podman` or `docker`. Does nothing (exit 0)
 # when the server isn't running, so scheduled runs never start or restart it.
@@ -35,7 +37,7 @@ END_HOUR="${NIPPER_END_HOUR:-4}"
 SEASON="${NIPPER_SEASON:-}"
 
 usage() {
-    echo "usage: ${0##*/} <container|podman|docker> <nipper|scoutz|vanilla|match|climb|surf|auto>" >&2
+    echo "usage: ${0##*/} <container|podman|docker> <nipper|scoutz|vanilla|match|climb|surf|movement|auto>" >&2
     exit 2
 }
 
@@ -96,6 +98,7 @@ case "${MODE}" in
     match) COMMAND="sk_switchmode match mapcycle-dust2.txt" ;;
     climb) COMMAND="sk_switchmode climb mapcycle-climb.txt" ;;
     surf) COMMAND="sk_switchmode surf mapcycle-surf.txt" ;;
+    movement) COMMAND="sk_switchmode auto mapcycle-movement.txt" ;;
     *) usage ;;
 esac
 

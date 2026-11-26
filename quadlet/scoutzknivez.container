@@ -14,6 +14,7 @@ Volume=%h/.config/cs-server/mapcycle-nipper.txt:/hlds/cstrike/mapcycle-nipper.tx
 Volume=%h/.config/cs-server/mapcycle-nipper-xmas.txt:/hlds/cstrike/mapcycle-nipper-xmas.txt:ro,Z
 Volume=%h/.config/cs-server/mapcycle-climb.txt:/hlds/cstrike/mapcycle-climb.txt:ro,Z
 Volume=%h/.config/cs-server/mapcycle-surf.txt:/hlds/cstrike/mapcycle-surf.txt:ro,Z
+Volume=%h/.config/cs-server/mapcycle-movement.txt:/hlds/cstrike/mapcycle-movement.txt:ro,Z
 Volume=%h/.config/cs-server/modes:/hlds/cstrike/modes:ro,Z
 Volume=cs-server-state:/hlds/state
 Environment=MAP=scoutzknivez
