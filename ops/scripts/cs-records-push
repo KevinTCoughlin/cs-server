@@ -1,0 +1,109 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Kevin T. Coughlin
+#
+# Publish records.json: commit it to the records-data branch as
+# docs/records/records.json and push with a repo deploy key. The Pages workflow
+# overlays that file on docs/ and deploys. Run by cs-records-export.service
+# after the export (ExecStartPost, failures ignored).
+#
+# Does nothing, and exits 0, until the deploy key exists. It never pushes
+# main, never touches the game server, and skips:
+#   - a records.json with no maps (the sample on the page is kept),
+#   - a file that is not valid JSON,
+#   - a file whose lists match what the branch already has,
+#   - a push less than CS_RECORDS_MIN_INTERVAL seconds after the last one
+#     (default 1800), so a busy night is a few deploys, not dozens.
+set -euo pipefail
+
+HOME_DIR=${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}
+SRC=${CS_RECORDS_OUT:-${HOME_DIR}/.local/share/cs-server/records.json}
+KEY=${CS_RECORDS_DEPLOY_KEY:-${HOME_DIR}/.ssh/cs-records-deploy_ed25519}
+REMOTE=${CS_RECORDS_REMOTE:-git@github.com:KevinTCoughlin/cs-server.git}
+BRANCH=${CS_RECORDS_BRANCH:-records-data}
+STATE=${CS_RECORDS_PUSH_STATE:-${HOME_DIR}/.local/state/cs-records-push}
+MIN_INTERVAL=${CS_RECORDS_MIN_INTERVAL:-1800}
+DEST=docs/records/records.json
+REPO="${STATE}/repo"
+
+say() { printf 'cs-records-push: %s\n' "$*"; }
+
+if [[ ! -f "${KEY}" ]]; then
+    say "no deploy key at ${KEY}; push not configured"
+    exit 0
+fi
+if [[ ! -s "${SRC}" ]]; then
+    say "no ${SRC}; nothing to publish"
+    exit 0
+fi
+
+# Valid JSON with at least one map.
+if ! python3 - "${SRC}" 2>/dev/null <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+sys.exit(0 if isinstance(doc.get("maps"), dict) and doc["maps"] else 1)
+PY
+then
+    say "records.json is invalid or has no maps; not publishing"
+    exit 0
+fi
+
+mkdir -p "${STATE}"
+chmod 700 "${STATE}"
+NOW=$(date +%s)
+LAST=0
+[[ -f "${STATE}/last-push" ]] && LAST=$(cat "${STATE}/last-push")
+if ((NOW - LAST < MIN_INTERVAL)); then
+    say "last push was $((NOW - LAST))s ago; waiting for ${MIN_INTERVAL}s"
+    exit 0
+fi
+
+export GIT_SSH_COMMAND="ssh -i ${KEY} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${STATE}/known_hosts -o ConnectTimeout=20"
+export GIT_TERMINAL_PROMPT=0
+
+if [[ ! -d "${REPO}/.git" ]]; then
+    git init -q "${REPO}"
+    git -C "${REPO}" remote add origin "${REMOTE}"
+fi
+cd "${REPO}"
+git config user.name "cs-records-export"
+git config user.email "cs-records-export@users.noreply.github.com"
+
+# Start from the remote branch when it exists, else an orphan branch holding
+# only the records file.
+if git fetch -q --depth=1 origin "${BRANCH}" 2>/dev/null; then
+    git checkout -q -B "${BRANCH}" FETCH_HEAD
+else
+    git checkout -q --orphan "${BRANCH}" 2>/dev/null || git checkout -q "${BRANCH}"
+    git rm -rq --cached . 2>/dev/null || true
+fi
+
+mkdir -p "$(dirname "${DEST}")"
+rc=0
+python3 - "${SRC}" "${DEST}" <<'PY' || rc=$?
+import json, sys
+src, dest = sys.argv[1:3]
+new = json.load(open(src, encoding="utf-8"))
+try:
+    old = json.load(open(dest, encoding="utf-8"))
+except (OSError, ValueError):
+    old = None
+keys = ("server", "disclaimer", "maps")
+if old is not None and all(old.get(k) == new.get(k) for k in keys):
+    sys.exit(3)
+with open(dest, "w", encoding="utf-8") as fh:
+    fh.write(json.dumps(new, indent=2, ensure_ascii=False) + "\n")
+PY
+if ((rc == 3)); then
+    say "lists unchanged on ${BRANCH}; nothing to push"
+    exit 0
+elif ((rc != 0)); then
+    say "could not stage records.json (exit ${rc})"
+    exit 1
+fi
+
+git add "${DEST}"
+git commit -q -m "records: update $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+git push -q origin "${BRANCH}"
+echo "${NOW}" >"${STATE}/last-push"
+say "pushed ${DEST} to ${BRANCH}"

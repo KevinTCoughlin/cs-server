@@ -12,6 +12,9 @@ Documentation=https://github.com/KevinTCoughlin/cs-server#records-page
 [Service]
 Type=oneshot
 ExecStart=%h/.local/bin/cs-records-export
+# Publish to the records-data branch. The leading - keeps a push problem from
+# failing the export. It does nothing until the deploy key is installed.
+ExecStartPost=-%h/.local/bin/cs-records-push
 Environment=CS_RECORDS_DIR=%h/.local/share/containers/storage/volumes/cs-server-state-movement/_data/amxmodx/records
 Environment=CS_RECORDS_OUT=%h/.local/share/cs-server/records.json
 Nice=10
