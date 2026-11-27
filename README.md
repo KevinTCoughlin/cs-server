@@ -680,8 +680,26 @@ override the two paths. Turn the timer off with
 The page is `docs/records/index.html`. It only fetches `./records.json`. The
 JSON committed next to it is sample data, marked `"sample": true`, so the
 site has something to render. It is not under `docs/cstrike/`, which is the
-FastDL tree. Enabling the timer writes the file on the VPS; it does not
-publish that file to the site.
+FastDL tree. Enabling the timer writes the file on the VPS; on its own it does
+not publish that file to the site.
+
+To publish, `ops/scripts/cs-records-push` (run by the service after each
+export, failures ignored) commits `records.json` to the `records-data` branch
+as `docs/records/records.json` and pushes it with a repo deploy key. The Pages
+workflow overlays that file on `docs/` when it has at least one map, and
+deploys. It does nothing until the key exists, skips a file with no maps or
+unchanged lists, and pushes at most once per 30 minutes
+(`CS_RECORDS_MIN_INTERVAL`). One-time setup, as user `cs` on the VPS:
+
+```bash
+install -Dm755 ops/scripts/cs-records-push ~/.local/bin/cs-records-push && install -Dm644 ops/systemd/cs-records-export.service -t ~/.config/systemd/user && systemctl --user daemon-reload
+ssh-keygen -t ed25519 -N '' -C cs-records-deploy -f ~/.ssh/cs-records-deploy_ed25519
+```
+
+Add `~/.ssh/cs-records-deploy_ed25519.pub` as a deploy key with write access
+(repository Settings, Deploy keys). The key can push any branch except where a
+ruleset blocks it, and `main` is protected, so the push never touches `main`.
+The `github-pages` environment must also allow deployments from `records-data`.
 
 ### Match (5v5)
 

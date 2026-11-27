@@ -6,7 +6,7 @@ name: Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, records-data]
     paths:
       - docs/**
       - .github/workflows/pages.yml
@@ -30,7 +30,26 @@ jobs:
     name: Build
     runs-on: ubuntu-24.04
     steps:
+      # A push to records-data only carries records.json. Build the site from
+      # main in that case; every other event builds its own ref.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref == 'refs/heads/records-data' && 'main' || '' }}
+
+      # cs-records-push (on the CS VPS) commits the live records.json to the
+      # records-data branch. Overlay it on the sample when it is valid and has
+      # at least one map. Pull requests build with the sample, as before.
+      - name: Overlay live records.json
+        if: github.event_name != 'pull_request'
+        run: |
+          git fetch --depth=1 origin records-data || { echo "no records-data branch; keeping the committed file"; exit 0; }
+          git show FETCH_HEAD:docs/records/records.json > "${RUNNER_TEMP}/records.json" || { echo "records-data has no records.json"; exit 0; }
+          if python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); sys.exit(0 if isinstance(d.get("maps"), dict) and d["maps"] and not d.get("sample") else 1)' "${RUNNER_TEMP}/records.json"; then
+            cp "${RUNNER_TEMP}/records.json" docs/records/records.json
+            echo "published live records.json from $(git rev-parse --short FETCH_HEAD)"
+          else
+            echo "records-data records.json is invalid, empty or a sample; keeping the committed file"
+          fi
 
       - name: Configure Pages
         uses: actions/configure-pages@v6
