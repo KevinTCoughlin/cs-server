@@ -3,6 +3,7 @@ maps/*.bsp
 maps/*.nav
 maps/*.res
 maps/*.txt
+maps/wads/*.wad
 !maps/.gitkeep
 
 # Compiled plugins (built in container)

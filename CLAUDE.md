@@ -48,7 +48,7 @@ ops/seccomp/               Docker's upstream default seccomp profile, kept in th
 ops/firewall/              nftables query-flood rate limit + boot unit (opt-in, never auto-applied)
 config/
   server.cfg               Game server settings (gravity, air control, rounds)
-  mapcycle.txt             Map rotation (3 scoutzknivez variants)
+  mapcycle.txt             Map rotation (scoutzknivez variants, fy_iceworld, cs_winter_assault)
   mapcycle-dust2.txt       Dust 2 rotation (classic de_dust2)
   mapcycle-nipper.txt      Nipper Friday (knife mode) rotation
   mapcycle-nipper-xmas.txt Nipper Friday Christmas rotation (Dec 1 to Jan 6)

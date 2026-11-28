@@ -112,6 +112,7 @@ printf 'wav two' > "${FIX}/pack/sound/other/unlisted.wav"
 printf '#!/bin/sh\necho pwned\n' > "${FIX}/pack/install.sh"
 printf 'model' > "${FIX}/pack/arena.mdl"
 printf 'overview' > "${FIX}/pack/overviews/arena.bmp"
+printf 'WAD3 marble' > "${FIX}/pack/de_vegas.wad"
 (cd "${FIX}/pack" && zip -q -r "${FIX}/pack.zip" .)
 
 mkdir -p "${FIX}/nobsp"
@@ -217,10 +218,12 @@ expect_rejected "short checksum" "sha256 must be 64 lowercase hex chars" plain "
 expect_rejected "uppercase checksum" "sha256 must be 64 lowercase hex chars" plain "${URL}" "${PLAIN_SUM^^}"
 expect_rejected "path in the map name" "bad map name" ../plain "${URL}" "${PLAIN_SUM}"
 expect_rejected "dotfile map name" "bad map name" .plain "${URL}" "${PLAIN_SUM}"
-expect_rejected "extra outside sound/" "must be a sound/<path>.wav" arena "${URL}" "${PACK_SUM}" test-license install.sh
-expect_rejected "extra that is not a wav" "must be a sound/<path>.wav" arena "${URL}" "${PACK_SUM}" test-license sound/arena/horn.sh
-expect_rejected "extra with a parent path" "must be a sound/<path>.wav" arena "${URL}" "${PACK_SUM}" test-license sound/../../horn.wav
-expect_rejected "second extra is bad" "must be a sound/<path>.wav" arena "${URL}" "${PACK_SUM}" test-license sound/arena/horn.wav,/etc/x.wav
+expect_rejected "extra outside sound/" "must be sound/<path>.wav or <name>.wad" arena "${URL}" "${PACK_SUM}" test-license install.sh
+expect_rejected "extra that is not a wav" "must be sound/<path>.wav or <name>.wad" arena "${URL}" "${PACK_SUM}" test-license sound/arena/horn.sh
+expect_rejected "extra with a parent path" "must be sound/<path>.wav or <name>.wad" arena "${URL}" "${PACK_SUM}" test-license sound/../../horn.wav
+expect_rejected "second extra is bad" "must be sound/<path>.wav or <name>.wad" arena "${URL}" "${PACK_SUM}" test-license sound/arena/horn.wav,/etc/x.wav
+expect_rejected "wad in a subdirectory" "must be sound/<path>.wav or <name>.wad" arena "${URL}" "${PACK_SUM}" test-license wads/de_vegas.wad
+expect_rejected "wad with a parent segment" "must be sound/<path>.wav or <name>.wad" arena "${URL}" "${PACK_SUM}" test-license a..b.wad
 
 expect_rejected "empty license column" "license column is empty" plain "${URL}" "${PLAIN_SUM}" ""
 
@@ -249,5 +252,26 @@ expect_ok "host destination"
 cmp -s "${FIX}/pack/maps/arena.bsp" "${TREE}/host/maps/arena.bsp" || fail "host destination: bsp"
 cmp -s "${FIX}/pack/sound/arena/horn.wav" "${TREE}/host/sound/arena/horn.wav" || fail "host destination: extra"
 [[ ! -e "${TREE}/maps/arena.bsp" ]] || fail "host destination: also wrote the repo maps/ tree"
+
+# A wad extra lands under maps/wads/ for a repo fetch, and a .res is written
+# when the zip did not have one, so a client is told to download the wad.
+reset
+row arena "${URL}" "${PACK_SUM}" test-license de_vegas.wad
+fetch CURL_SERVE="${FIX}/pack.zip" -- arena
+expect_ok "wad extra"
+cmp -s "${FIX}/pack/maps/arena.bsp" "${TREE}/maps/arena.bsp" || fail "wad extra: bsp"
+cmp -s "${FIX}/pack/de_vegas.wad" "${TREE}/maps/wads/de_vegas.wad" || fail "wad extra: wad was not written under maps/wads"
+[[ "$(cat "${TREE}/maps/arena.res")" == "de_vegas.wad" ]] || fail "wad extra: .res should list de_vegas.wad, got $(cat "${TREE}/maps/arena.res" 2>/dev/null || true)"
+[[ ! -e "${TREE}/de_vegas.wad" ]] || fail "wad extra: also wrote the repo root"
+
+# Host populate: the wad sits beside maps/, where the file mount expects it.
+reset
+mkdir -p "${TREE}/host"
+row arena "${URL}" "${PACK_SUM}" test-license de_vegas.wad
+fetch FETCH_MAPS_DEST="${TREE}/host/maps" FETCH_MAPS_ROOT="${TREE}/host" CURL_SERVE="${FIX}/pack.zip" -- arena
+expect_ok "host wad"
+cmp -s "${FIX}/pack/de_vegas.wad" "${TREE}/host/de_vegas.wad" || fail "host wad: not beside maps/"
+[[ -f "${TREE}/host/maps/arena.res" ]] || fail "host wad: missing .res"
+[[ ! -e "${TREE}/host/maps/wads/de_vegas.wad" ]] || fail "host wad: wrote maps/wads as well"
 
 printf 'fetch-maps tests passed\n'
