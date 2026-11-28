@@ -1,3 +1,8 @@
 scoutzknivez
 scoutzknivez_2k
 scoutzknivez_bender
+; fy_iceworld and cs_winter_assault are pinned in maps/manifest.tsv (fastdl=no).
+; The published image does not contain them. Fetch before a server using this
+; file can change to them: just fetch-maps, then a MAP_POLICY=local build.
+fy_iceworld
+cs_winter_assault

@@ -65,6 +65,8 @@ printf 'x' > "${bad}/scoutzknivez.nav"
 printf 'x' > "${bad}/kz_man_everest.bsp"
 printf 'x' > "${bad}/bkz_goldbhop.nav"
 printf 'x' > "${bad}/surf_ski_5.bsp.bz2"
+printf 'x' > "${bad}/de_vegas.wad"
+printf 'x' > "${bad}/cs_assault.wad"
 set +e
 output=$(bash "${ROOT}/scripts/check-published-maps.sh" "${bad}" 2>&1)
 status=$?
@@ -74,10 +76,11 @@ assert_contains "the allowlist is part of the report" "${output}" "allowlist:"
 assert_contains "an empty allowlist is shown" "${output}" "(none)"
 assert_contains "the context map list includes a stock map" "${output}" "de_dust2"
 assert_contains "the context map list includes a surf map that is present" "${output}" "surf_ski_5"
-for name in kz_man_everest.bsp bkz_goldbhop.nav surf_ski_5.bsp.bz2; do
+for name in kz_man_everest.bsp bkz_goldbhop.nav surf_ski_5.bsp.bz2 de_vegas.wad; do
     assert_contains "${name} is rejected" "${output}" "${name}: not on the redistribution allowlist"
 done
 assert_not_contains "stock maps are not rejected" "${output}" "de_dust2.bsp: not on the redistribution allowlist"
+assert_not_contains "a stock wad is not an uncleared extra" "${output}" "cs_assault.wad: not on the redistribution allowlist"
 assert_not_contains "first-party maps are not rejected" "${output}" "scoutzknivez.bsp: not on the redistribution allowlist"
 
 # Every uncleared pinned map is rejected on its own, not only the four.
@@ -135,6 +138,25 @@ for name in "${climb_v150[@]}" "${surf_v150[@]}"; do
 done
 [[ -f "${priv}/scoutzknivez.nav" ]] || fail "local install left out the bundled nav"
 
+# A wad next to an uncleared map stays out of a published copy and is copied
+# into the game directory (the parent of the maps dir) for a private one.
+wad_src="${WORK}/wad-src"
+wad_maps="${WORK}/wad-game/maps"
+mkdir -p "${wad_src}/wads" "${wad_maps}"
+printf 'WAD3' > "${wad_src}/wads/de_vegas.wad"
+printf 'stock-wad' > "${WORK}/wad-game/cs_assault.wad"
+printf 'bsp' > "${wad_src}/fy_iceworld.bsp"
+MAP_POLICY=cleared bash "${ROOT}/scripts/install-maps.sh" "${wad_src}" "${wad_maps}" >/dev/null
+[[ ! -e "${WORK}/wad-game/de_vegas.wad" ]] || fail "cleared install copied de_vegas.wad"
+[[ ! -e "${wad_maps}/fy_iceworld.bsp" ]] || fail "cleared install copied fy_iceworld.bsp"
+[[ -f "${WORK}/wad-game/cs_assault.wad" ]] || fail "cleared install removed the stock wad"
+priv_wad="${WORK}/wad-private/maps"
+mkdir -p "${priv_wad}"
+MAP_POLICY=local bash "${ROOT}/scripts/install-maps.sh" "${wad_src}" "${priv_wad}" >/dev/null
+[[ -f "${WORK}/wad-private/de_vegas.wad" ]] || fail "local install left de_vegas.wad out of the game directory"
+[[ -f "${priv_wad}/fy_iceworld.bsp" ]] || fail "local install left out fy_iceworld.bsp"
+cmp -s "${wad_src}/wads/de_vegas.wad" "${WORK}/wad-private/de_vegas.wad" || fail "local install changed the wad"
+
 # --from-image reads the game maps and the FastDL link. A stub engine prints
 # the listing a built image would.
 stub="${WORK}/engine"
@@ -176,9 +198,32 @@ scoutzknivez.bsp
 # fastdl maps
 de_dust2.bsp
 scoutzknivez.bsp
+# game wads
+cs_assault.wad
+halflife.wad
 LIST
 EOF
 bash "${ROOT}/scripts/check-published-maps.sh" --from-image "${stub}" local/cs-server:ci >/dev/null
+
+cat > "${stub}" <<'EOF'
+#!/bin/sh
+cat <<'LIST'
+# game maps
+de_dust2.bsp
+# fastdl maps
+de_dust2.bsp
+# game wads
+cs_assault.wad
+de_vegas.wad
+LIST
+EOF
+set +e
+output=$(bash "${ROOT}/scripts/check-published-maps.sh" --from-image "${stub}" local/cs-server:ci 2>&1)
+status=$?
+set -e
+[[ "${status}" -eq 1 ]] || fail "an image carrying de_vegas.wad was accepted"
+assert_contains "uncleared wad in the image is rejected" "${output}" "de_vegas.wad: not on the redistribution allowlist"
+assert_not_contains "stock wad in the image is kept" "${output}" "cs_assault.wad: not on the redistribution allowlist"
 
 # A missing FastDL directory is an empty list, not a failure.
 cat > "${stub}" <<'EOF'

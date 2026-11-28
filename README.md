@@ -423,7 +423,7 @@ Edit files in `config/` — they're bind-mounted into the container:
 | File | Purpose |
 |------|---------|
 | `config/server.cfg` | Settings shared by every mode (rates, bots, limits, hostname) |
-| `config/mapcycle.txt` | Map rotation (default scoutzknivez variants) |
+| `config/mapcycle.txt` | Map rotation: `scoutzknivez`, `scoutzknivez_2k`, `scoutzknivez_bender`, `fy_iceworld`, `cs_winter_assault` |
 | `config/mapcycle-dust2.txt` | Dust 2 rotation (classic de_dust2) |
 | `config/mapcycle-nipper.txt` | Nipper Friday (knife mode) rotation |
 | `config/mapcycle-nipper-xmas.txt` | Nipper Friday Christmas rotation (Dec 1 to Jan 6) |
@@ -433,6 +433,18 @@ Edit files in `config/` — they're bind-mounted into the container:
 | `config/autoexec.cfg` | Runs on server start |
 
 Changes to `server.cfg` take effect on the next map or via `just rcon "exec server.cfg"`.
+
+#### fy_iceworld and cs_winter_assault
+
+The default rotation also plays `fy_iceworld` (the classic fight-yard ice map, credited to Fantasy) and `cs_winter_assault` (Tech's winter remake of `cs_assault`). Both are pinned in `maps/manifest.tsv` and fetched with `just fetch-maps`. They are `fastdl=no`: the published image does not contain them, and this site's FastDL does not host them. A private build does:
+
+```bash
+just fetch-maps && just build    # MAP_POLICY=local, the compose and Apple container default
+```
+
+`fy_iceworld` needs `de_vegas.wad` from the same zip (the `lv_marble` texture). The fetch writes that wad and a `fy_iceworld.res` that lists it, so clients download the wad with the map. Its other textures and the `snow` sky ship with Counter-Strike. `cs_winter_assault` uses stock wads, the stock `snowlake_` sky, and stock sounds and models. Neither archive includes a bot `.nav`. The local image links a missing mesh into the state volume, and bots write it once on the first load.
+
+On a server that bind-mounts `mapcycle.txt`, copy the new file into the config directory only after the maps are in the container. The installer leaves an existing `mapcycle.txt` alone. `rtv` offers a map once its `.bsp` is on the server.
 
 ### Friday Dust 2
 

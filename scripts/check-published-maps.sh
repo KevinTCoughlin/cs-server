@@ -52,11 +52,30 @@ if [[ -z "${image}" && ${#dirs[@]} -eq 0 ]]; then
 fi
 
 blocked=" "
+# Basenames of extras on rows that are not cleared (a wad in the game
+# directory, a sound under sound/). The map name alone does not catch them:
+# de_vegas.wad is not a map called de_vegas.
+blocked_files=" "
 allowlist=""
 while IFS= read -r name; do
     [[ -n "${name}" ]] || continue
     blocked+="${name} "
 done < <(bash "${HERE}/cleared-maps.sh" --uncleared)
+manifest="${MAPS_MANIFEST:-$(cd "${HERE}/.." && pwd)/maps/manifest.tsv}"
+if [[ -f "${manifest}" ]]; then
+    while IFS= read -r row || [[ -n "${row}" ]]; do
+        [[ -z "${row}" || "${row}" == \#* ]] && continue
+        IFS=$'\037' read -r _name _url _sum _license _attr extras fastdl <<< "${row//$'\t'/$'\037'}"
+        [[ "${fastdl:-no}" == yes ]] && continue
+        [[ -n "${extras}" && "${extras}" != "-" ]] || continue
+        extra_list=()
+        IFS=',' read -r -a extra_list <<< "${extras}"
+        for extra in ${extra_list[@]+"${extra_list[@]}"}; do
+            [[ -n "${extra}" ]] || continue
+            blocked_files+="${extra##*/} "
+        done
+    done < "${manifest}"
+fi
 while IFS= read -r name; do
     [[ -n "${name}" ]] || continue
     allowlist+="${name}"$'\n'
@@ -79,7 +98,8 @@ rejected=0
 consider() {
     local label=$1 base=$2 name
     name=$(map_of "${base}")
-    if [[ -n "${name}" && "${blocked}" == *" ${name} "* ]]; then
+    if { [[ -n "${name}" && "${blocked}" == *" ${name} "* ]] ||
+         [[ -n "${base}" && "${blocked_files}" == *" ${base} "* ]]; }; then
         printf '%s/%s: not on the redistribution allowlist\n' "${label}" "${base}" >&2
         rejected=1
     fi
@@ -155,6 +175,11 @@ emit() {
 }
 emit /hlds/cstrike/maps "game maps"
 emit /usr/local/share/cs-server/fastdl/cstrike/maps "fastdl maps"
+printf "# game wads\n"
+shopt -s nullglob
+for f in /hlds/cstrike/*.wad; do
+    printf "%s\n" "${f##*/}"
+done
 ')
     label=""
     names=()
@@ -174,6 +199,7 @@ emit /usr/local/share/cs-server/fastdl/cstrike/maps "fastdl maps"
                 consider "${label:-image}" "${line}"
                 case "${line}" in
                     *.bsp | *.bsp.bz2) names+=("$(map_of "${line}")") ;;
+                    *.wad) names+=("${line}") ;;
                 esac
                 ;;
         esac

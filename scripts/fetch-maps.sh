@@ -18,7 +18,11 @@
 # Verified downloads are cached by hash in .cache/maps/ (FETCH_MAPS_CACHE), so
 # a pack shared by several rows is downloaded once. From a zip only
 # <name>.bsp/.nav/.res/.txt (matched by basename) and the row's listed extras
-# are extracted; nothing in it is executed.
+# are extracted; nothing in it is executed. An extra is sound/<path>.wav or a
+# <name>.wad that belongs in the game directory. A repo fetch writes that wad
+# under maps/wads/ (install-maps.sh copies it on a local image). A host
+# populate writes it beside maps/. When the zip has no <name>.res, a wad extra
+# gets one so clients download the wad with the map.
 # wanted() is a predicate used in conditions.
 # shellcheck disable=SC2310
 set -euo pipefail
@@ -32,7 +36,25 @@ EXTRA_ROOT="${FETCH_MAPS_ROOT:-${ROOT}}"
 CACHE="${FETCH_MAPS_CACHE:-${ROOT}/.cache/maps}"
 ALLOWED_EXT=(bsp nav res txt)
 MAX_BYTES=314572800 # 300 MiB
-EXTRA_RE='^sound/[A-Za-z0-9_][A-Za-z0-9_/-]*\.wav$'
+# sound/<path>.wav, or a wad that sits in the game directory (no subdirectory).
+is_sound_extra() {
+    [[ "$1" =~ ^sound/[A-Za-z0-9_][A-Za-z0-9_/-]*\.wav$ && "$1" != *..* ]]
+}
+
+is_wad_extra() {
+    [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*\.wad$ && "$1" != *..* ]]
+}
+
+# Where a wad extra is written. Host populates keep it next to maps/ so a
+# file mount is <host>/<name>.wad. A repo fetch keeps it under maps/wads/,
+# out of the maps/ file list install-maps.sh copies one name at a time.
+wad_dir() {
+    if [[ "${EXTRA_ROOT}" != "${ROOT}" ]]; then
+        printf '%s\n' "${EXTRA_ROOT}"
+    else
+        printf '%s\n' "${DEST}/wads"
+    fi
+}
 
 die() { echo "[fetch-maps] error: $*" >&2; exit 1; }
 log() { echo "[fetch-maps] $*"; }
@@ -101,8 +123,9 @@ fetch_one() {
         IFS=',' read -r -a extra_list <<< "${extras}"
     fi
     for extra in ${extra_list[@]+"${extra_list[@]}"}; do
-        [[ "${extra}" =~ ${EXTRA_RE} && "${extra}" != *..* ]] ||
-            die "${name}: extra '${extra}' must be a sound/<path>.wav"
+        if ! is_sound_extra "${extra}" && ! is_wad_extra "${extra}"; then
+            die "${name}: extra '${extra}' must be sound/<path>.wav or <name>.wad"
+        fi
     done
 
     file=$(download "${name}" "${url}" "${sum}")
@@ -125,18 +148,36 @@ fetch_one() {
         done <<< "${entries}"
         [[ -f "${work}/out/${name}.bsp" ]] || die "${name}: zip has no ${name}.bsp"
 
+        local wad_count=0 wad_dest=""
         for extra in ${extra_list[@]+"${extra_list[@]}"}; do
             found=0
             while IFS= read -r entry; do
                 if [[ "${entry}" == "${extra}" || "${entry}" == */"${extra}" ]]; then
-                    mkdir -p "${work}/extra/${extra%/*}"
-                    unzip -p "${file}" "${entry}" > "${work}/extra/${extra}"
+                    if is_wad_extra "${extra}"; then
+                        [[ -n "${wad_dest}" ]] || wad_dest=$(wad_dir)
+                        mkdir -p "${wad_dest}"
+                        unzip -p "${file}" "${entry}" > "${wad_dest}/${extra}"
+                        wad_count=$((wad_count + 1))
+                    else
+                        mkdir -p "${work}/extra/${extra%/*}"
+                        unzip -p "${file}" "${entry}" > "${work}/extra/${extra}"
+                    fi
                     found=1
                     break
                 fi
             done <<< "${entries}"
             [[ "${found}" -eq 1 ]] || die "${name}: zip has no ${extra}"
         done
+        # Clients learn about a wad from the map's .res. The archive often
+        # ships the wad and no list; write the list the zip did not.
+        if [[ "${wad_count}" -gt 0 && ! -f "${work}/out/${name}.res" ]]; then
+            : > "${work}/out/${name}.res"
+            for extra in ${extra_list[@]+"${extra_list[@]}"}; do
+                if is_wad_extra "${extra}"; then
+                    printf '%s\n' "${extra}" >> "${work}/out/${name}.res"
+                fi
+            done
+        fi
 
         mkdir -p "${DEST}"
         cp "${work}/out/"* "${DEST}/"

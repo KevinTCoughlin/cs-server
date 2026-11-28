@@ -6,8 +6,10 @@
 # (docs/cstrike/maps/). Use `unknown-no-fastdl` when terms are unclear; the
 # server can still offer it through its slow built-in download.
 #
-# extras (optional): comma-separated custom files from the same zip, under
-# sound/ only, that the map needs; `-` for none.
+# extras (optional): comma-separated files from the same zip the map needs
+# beyond its .bsp/.nav/.res/.txt. Each one is sound/<path>.wav or a <name>.wad
+# that belongs in the game directory. `-` for none. A wad with no .res in the
+# zip gets a generated <name>.res so clients download it.
 #
 # fastdl: `yes` only once the author's terms allow re-hosting. This column
 # is the redistribution allowlist. scripts/cleared-maps.sh is the only
@@ -43,6 +45,23 @@
 # ZBot would generate one at map load (very slow under qemu). Generate it once
 # on an x86 host (`bot_nav_generate`), then add a row and a mapcycle entry.
 #
+# Default rotation additions (config/mapcycle.txt):
+# fy_iceworld is the GameBanana re-upload of the classic fight-yard map
+# (mods/86288, file fy_iceworld_4bd65.zip). The page credits Fantasy as the
+# level designer and Arman Ossi Loko submitted it; the "who made fy_iceworld"
+# note on that page is why this is unknown-no-fastdl rather than the site's
+# default CC BY-NC-ND 4.0. The bsp uses stock textures snow and c_stone1
+# (c_stone1 is in the retail cs_assault.wad) and the stock sky "snow". One
+# texture, lv_marble, is only in the de_vegas.wad that the same zip ships, so
+# that wad is the extra. No custom sounds, sprites or sky files.
+# cs_winter_assault is Tech's winter remake of cs_assault (mods/92568, the
+# zip, not the older rar). paulus33 re-uploaded it, so the same license note
+# applies. Its wads (halflife, liquids, cstrike, cs_office, cs_assault), sky
+# snowlake_, sounds ambience/wind2.wav and ambience/jetflyby1.wav, hostage
+# models and sprites/glow01.spr all ship with Counter-Strike or Half-Life.
+# The zip is the bsp and a readme. Neither map ships a .nav; a local image
+# links the missing mesh into the state volume so bots can write it once.
+#
 # name	url	sha256	license	attribution	extras	fastdl
 nipperhouse	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	-	no
 ka_beams	https://gamebanana.com/dl/1050767	f2055adff3c0c11b77b222f71c2cea9ba3e7e7138be1cbf62f28854b8d28d7c6	CC-BY-NC-ND-4.0	NIPPER (Nathaniel Miller), gamebanana.com/mods/467088	-	no
@@ -63,3 +82,5 @@ surf_nice_fly_4	https://gamebanana.com/dl/297597	5efd596d3b2956d109fbb472042a542
 surf_srventer	https://gamebanana.com/dl/298375	40f0f1643599490c8658a49dec2522c39176ec8b016313361ad3fb4adebb12d5	CC-BY-NC-ND-4.0	MPD, gamebanana.com author upload	-	no
 surf_nice_fly	https://gamebanana.com/dl/308762	5315a5435981d473aabde2a5ea254e698e493c61204bca895ef51c698b1b040c	CC-BY-NC-ND-4.0	MPD, gamebanana.com author upload	-	no
 surf_colorama_beta	https://gamebanana.com/dl/287810	08ba9363bd6263edd54bdef2eddd112b3ae43c327aeeeb855e42927313dd376b	CC-BY-NC-ND-4.0	burden, gamebanana.com author upload	-	no
+fy_iceworld	https://gamebanana.com/dl/427749	ba1f5d7e9cc314bba9189bbbc6787dbea0fdf543c6f5b68a6936ce742a7bcec2	unknown-no-fastdl	Fantasy (level designer); GameBanana re-upload by Arman Ossi Loko, gamebanana.com/mods/86288. Site default CC BY-NC-ND 4.0 is not the author's terms	de_vegas.wad	no
+cs_winter_assault	https://gamebanana.com/dl/1178529	9f13bb27d7fa127ba818a8a0d6f17d23b3b3fe75ff73d889c1880a37eef8acee	unknown-no-fastdl	Tech (bartmcco@pixi.com); GameBanana re-upload by paulus33, gamebanana.com/mods/92568. Site default CC BY-NC-ND 4.0 is not the author's terms	-	no
